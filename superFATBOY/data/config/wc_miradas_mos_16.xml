@@ -1,0 +1,26 @@
+<dataset wavelength_scale_guess="0.25" n_segments="2" min_lines_to_refine_nonlinear_guess="12" fit_order="3">
+        <order slitlet="12" segment="2" min_wavelength="21615" max_wavelength="22170" wavelength_scale_guess="0.2910 -1.6e-5"/>
+        <order slitlet="12" segment="1" min_wavelength="20935" max_wavelength="21600" wavelength_scale_guess="0.3450 -1.2e-5"/>
+        <order slitlet="11" segment="2" min_wavelength="21615" max_wavelength="22170" wavelength_scale_guess="0.2910 -1.6e-5"/>
+        <order slitlet="11" segment="1" min_wavelength="20935" max_wavelength="21600" wavelength_scale_guess="0.3450 -1.2e-5"/>
+        <order slitlet="10" segment="2" min_wavelength="21615" max_wavelength="22170" wavelength_scale_guess="0.2910 -1.6e-5"/>
+        <order slitlet="10" segment="1" min_wavelength="20935" max_wavelength="21600" wavelength_scale_guess="0.3450 -1.2e-5"/>
+	<order slitlet="9" segment="2" min_wavelength="21615" max_wavelength="22170" wavelength_scale_guess="0.2910 -1.6e-5"/>
+	<order slitlet="9" segment="1" min_wavelength="20935" max_wavelength="21600" wavelength_scale_guess="0.3450 -1.2e-5"/>
+        <order slitlet="8" segment="2" min_wavelength="21615" max_wavelength="22170" wavelength_scale_guess="0.2910 -1.6e-5"/>
+        <order slitlet="8" segment="1" min_wavelength="20935" max_wavelength="21600" wavelength_scale_guess="0.3450 -1.2e-5"/>
+        <order slitlet="7" segment="2" min_wavelength="21615" max_wavelength="22170" wavelength_scale_guess="0.2910 -1.6e-5"/>
+        <order slitlet="7" segment="1" min_wavelength="20935" max_wavelength="21600" wavelength_scale_guess="0.3450 -1.2e-5"/>
+        <order slitlet="6" segment="2" min_wavelength="21615" max_wavelength="22170" wavelength_scale_guess="0.2910 -1.6e-5"/>
+        <order slitlet="6" segment="1" min_wavelength="20935" max_wavelength="21600" wavelength_scale_guess="0.3450 -1.2e-5"/>
+        <order slitlet="5" segment="2" min_wavelength="21615" max_wavelength="22170" wavelength_scale_guess="0.2910 -1.6e-5"/>
+        <order slitlet="5" segment="1" min_wavelength="20935" max_wavelength="21600" wavelength_scale_guess="0.3450 -1.2e-5"/>
+        <order slitlet="4" segment="2" min_wavelength="21615" max_wavelength="22170" wavelength_scale_guess="0.2910 -1.6e-5"/>
+        <order slitlet="4" segment="1" min_wavelength="20935" max_wavelength="21600" wavelength_scale_guess="0.3450 -1.2e-5"/>
+        <order slitlet="3" segment="2" min_wavelength="21615" max_wavelength="22170" wavelength_scale_guess="0.2910 -1.6e-5"/>
+        <order slitlet="3" segment="1" min_wavelength="20935" max_wavelength="21600" wavelength_scale_guess="0.3450 -1.2e-5"/>
+        <order slitlet="2" segment="2" min_wavelength="21615" max_wavelength="22170" wavelength_scale_guess="0.2910 -1.6e-5"/>
+        <order slitlet="2" segment="1" min_wavelength="20935" max_wavelength="21600" wavelength_scale_guess="0.3450 -1.2e-5"/>
+        <order slitlet="1" segment="2" min_wavelength="21615" max_wavelength="22170" wavelength_scale_guess="0.2910 -1.6e-5"/>
+        <order slitlet="1" segment="1" min_wavelength="20935" max_wavelength="21600" wavelength_scale_guess="0.3450 -1.2e-5"/>
+</dataset>

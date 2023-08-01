@@ -1,0 +1,2 @@
+Main-Class: sfbPlot.SuperFatboyPlot
+Class-Path: sfbPlot.jar javaUFProtocol.jar javaUFLib.jar

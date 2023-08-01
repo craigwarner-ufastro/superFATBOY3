@@ -1,0 +1,5 @@
+#!/bin/tcsh -f
+
+java -Xms64m -Xmx512m -jar sfbPlot.jar $argv[1-] & 
+
+exit
