@@ -59,24 +59,37 @@ class osirisSpectrum(fatboySpectrum):
     ## Each should have a different fdu.section value.  For instance, newfirm has 4 detectors or CIRCE has multiple nramps.
     def getMultipleExtensions(self):
         extendedImages = []
+        startSec = 1
 
-        self.setSection(1)
-        currImage = osirisSpectrum(self.filename, log=self._log, tag=self._tag)
-        currImage.setSection(2)
-        currImage.setIdentifier("manual", self._id[:-2], self._index) #Strip S1 from end of _id
-        if (self.getObsType() is not None):
-            currImage.setType(self.getObsType(), False) #Set obs type if identified in XML
-        currImage._objectTags = self._objectTags #Copy over object tags for calibs from XML
-        for key in self._properties:
-            #Set all properties from XML too
-            currImage.setProperty(key, self.getProperty(key))
-        extendedImages.append(currImage)
+        image = pyfits.open(self.filename)
+        if (image[0].data is not None):
+            startSec = 0
+        self.setSection(startSec)
+
+        for j in range(startSec+1, len(image)):
+            currImage = osirisSpectrum(self.filename, log=self._log, tag=self._tag)
+            currImage.setSection(j)
+            currImage.setIdentifier("manual", self._id[:-2], self._index) #Strip S1 from end of _id
+            if (self.getObsType() is not None):
+                currImage.setType(self.getObsType(), False) #Set obs type if identified in XML
+            currImage._objectTags = self._objectTags #Copy over object tags for calibs from XML
+            for key in self._properties:
+                #Set all properties from XML too
+                currImage.setProperty(key, self.getProperty(key))
+            extendedImages.append(currImage)
+        image.close()
 
         return extendedImages
     #end getMultipleExtensions
 
     ## This method can be overridden in subclasses to support images with multiple data extensions, represented as multiple fatboyDataUnits.
     def hasMultipleExtensions(self):
+        image = pyfits.open(self.filename)
+        n_ext = len(image)
+        image.close()
+        if (n_ext == 1):
+            self.setSection(0)
+            return False
         return True
     #end hasMultipleExtensions
 

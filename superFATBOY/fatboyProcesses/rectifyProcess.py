@@ -585,12 +585,22 @@ class rectifyProcess(fatboyProcess):
         minCovFrac = float(self.getOption("min_coverage_fraction", fdu.getTag()))
         skybox = float(self.getOption("sky_boxsize", fdu.getTag()))
         min_gauss_width = float(self.getOption("min_continuum_fwhm", fdu.getTag()))
+        yinit = self.getOption("skyline_trace_yinit", fdu.getTag())
+        find_ylo = self.getOption("skyline_find_ylo", fdu.getTag())
+        find_yhi = self.getOption("skyline_find_yhi", fdu.getTag())
         useTwoPasses = False
         if (self.getOption("sky_two_pass_detection", fdu.getTag()).lower() == "yes"):
             useTwoPasses = True
         useArclamps = False
         if (self.getOption("use_arclamps", fdu.getTag()).lower() == "yes"):
             useArclamps = True
+
+        debug = False
+        if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
+            debug = True
+        writePlots = False
+        if (self.getOption("write_plots", fdu.getTag()).lower() == "yes"):
+            writePlots = True
 
         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
             xsize = fdu.getShape()[1]
@@ -600,6 +610,13 @@ class rectifyProcess(fatboyProcess):
             xsize = fdu.getShape()[0]
             ysize = fdu.getShape()[1]
 
+        if (find_ylo is None):
+            find_ylo = 0
+        find_ylo = int(find_ylo)
+        if (find_yhi is None):
+            find_yhi = ysize
+        find_yhi = int(find_yhi)
+
         print("rectifyProcess::calcLongslitSkylineRectification> Searching for sky/arclamp to trace out, using "+skyFDU.getFullId()+"...")
         self._log.writeLog(__name__, "Searching for sky/arclamp to trace out, using "+skyFDU.getFullId()+"...")
 
@@ -607,9 +624,9 @@ class rectifyProcess(fatboyProcess):
         xcenters = []
         #Take 1-d sum and median filter
         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-            oned = sum(skyData, 0)
+            oned = sum(skyData[find_ylo:find_yhi,:], 0)
         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-            oned = sum(skyData, 1)
+            oned = sum(skyData[:,find_ylo:find_yhi], 1)
 
         if (self._fdb.getGPUMode()):
             oned = gpumedianfilter(oned)
@@ -623,6 +640,9 @@ class rectifyProcess(fatboyProcess):
             z = smooth1dCPU(oned, 5, 1)
         medVal = arraymedian(z, nonzero=True)
         sig = z[where(z != 0)].std()
+
+        if (usePlot and (debug or writePlots)):
+            plt.plot(z)
 
         #Zero out the first and last 15 pixels
         z[:15] = 0.
@@ -752,8 +772,19 @@ class rectifyProcess(fatboyProcess):
         print("rectifyProcess::calcLongslitSkylineRectification> Using "+str(nlines)+ " lines to trace out skyline rectification over y-range = ["+str(ylo)+":"+str(yhi)+"]...")
         self._log.writeLog(__name__, "Using "+str(nlines)+ " lines to trace out skyline rectification over y-range = ["+str(ylo)+":"+str(yhi)+"]...")
 
+        if (usePlot and (debug or writePlots)):
+            plt.xlabel("Pixel; Nlines = "+str(nlines))
+            plt.ylabel("Flux; y-range = ["+str(ylo)+":"+str(yhi)+"]")
+            if (writePlots):
+                plt.savefig(outdir+"/rectified/skylines_"+fdu._id+".png", dpi=200)
+            if (debug):
+                plt.show()
+            plt.close()
+
         #Setup list of y positions every 10 pixels
-        yinit = (ylo+yhi)//2
+        if (yinit is None):
+            yinit = (ylo+yhi)//2
+        yinit = int(yinit)
         step = 10
         ys = list(range(yinit, ylo-step, -1*step))+list(range(yinit+step, yhi, step))
         #Index array used for fitting
@@ -797,7 +828,10 @@ class rectifyProcess(fatboyProcess):
             if (gaussWidth < 2):
                 #Minimum 2 pixels
                 gaussWidth = 2
+            gaussWidth /= sqrt(2)
 
+            if (usePlot and self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
+                print("LINE", xcen, yinit)
             #Loop over ys every 10 pixels and try to fit Gaussian across skyline
             for j in range(len(ys)):
                 if (ys[j] == yinit+step):
@@ -814,27 +848,36 @@ class rectifyProcess(fatboyProcess):
                 #Sum 11 pixel box and fit 1-d Gaussian
                 #Use 11 instead of 5 to wash out noise more and obtain better fit
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    x = sum(skyData[ys[j]-5:ys[j]+6,:], 0, dtype=float64)
+                    x = sum(skyData[ys[j]-5:ys[j]+6,xlo:xhi], 0, dtype=float64)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    x = sum(skyData[:,ys[j]-5:ys[j]+6], 1, dtype=float64)
+                    x = sum(skyData[xlo:xhi,ys[j]-5:ys[j]+6], 1, dtype=float64)
+                if (len(x) < skybox):
+                    continue
                 #Make sure it doesn't move off chip
                 if (xlo < 0):
                     xlo = 0
                 if (xhi >= xsize):
                     xhi = xsize-1
+                x[x<0] = 0
+
                 #Initial guesses for Gaussian fit
                 p = zeros(4, dtype=float64)
-                p[0] = max(x[xlo:xhi])
-                p[1] = (where(x[xlo:xhi] == p[0]))[0][0]+xlo
+                p[0] = max(x)
+                p[1] = (where(x == p[0]))[0][0]+xlo
                 p[2] = gaussWidth
                 p[3] = gpu_arraymedian(x.copy())
                 if (abs(p[1]-currX) > skybox):
                     #Highest value is > skybox pixels from the previously fit peak.  Throw out this point
                     continue
                 try:
-                    lsq = leastsq(gaussResiduals, p, args=(xind[xlo:xhi], x[xlo:xhi]))
+                    lsq = leastsq(gaussResiduals, p, args=(xind[xlo:xhi], x))
                 except Exception as ex:
                     continue
+
+                #print ("\t",xcen, ys[j], xlo, xhi, lsq)
+                #if (j == 0):
+                #    plt.plot(arange(len(x))+xlo, x)
+                #    plt.show()
 
                 #Error checking results of leastsq call
                 if (lsq[1] == 5):
@@ -862,7 +905,13 @@ class rectifyProcess(fatboyProcess):
                 else:
                     #FWHM is over a factor of 2 different than first fit.  Throw this point out
                     if (lsq[0][2] > 2*gaussWidth or lsq[0][2] < 0.5*gaussWidth):
-                        continue
+                        if (gaussWidth == skybox/3. and lsq[0][2] < 0.5*gaussWidth and lsq[0][2] > 1):
+                            #Special case, gaussWidth did not update on first pass because it was super narrow.
+                            #Update here.
+                            gaussWidth = max(abs(lsq[0][2]), 1.5)
+                        else:
+                            #print ("ERR6", gaussWidth, lsq[0][2])
+                            continue
                     #Sanity check
                     #Calculate predicted "ref" value of X based on slope of previous
                     #fit datapoints
@@ -927,6 +976,7 @@ class rectifyProcess(fatboyProcess):
                         #Discard if farther than maxerr away from refX
                         if (abs(ys[j]-currY) < 4*step and maxerr > 1 and abs(lsq[0][1]-currX) > maxerr):
                             #Also discard if < 20 pixels in Y from last fit datapoint, and deltaX > 1
+                            #print ("ERR3")
                             continue
                         #update currX, currY, append to all lists
                         currX = lsq[0][1]
@@ -3091,6 +3141,12 @@ class rectifyProcess(fatboyProcess):
         self._options.setdefault('sky_two_pass_detection', 'yes')
         self._optioninfo.setdefault('sky_two_pass_detection', 'Use 2-pass detection to try to ensure skylines are\nfound in both halves of image')
 
+        self._options.setdefault('skyline_find_ylo', None)
+        self._optioninfo.setdefault('skyline_find_ylo', 'Defaults to 0.  Used to specify a range of the chip to sum\na 1-d cut across and attemt to find any sky or lamp lines.\nIn the case of highly curved orders, a narrower range is needed.')
+        self._options.setdefault('skyline_find_yhi', None)
+        self._optioninfo.setdefault('skyline_find_yhi', 'Defaults to ysize.  Used to specify a range of the chip to sum\na 1-d cut across and attemt to find any sky or lamp lines.\nIn the case of highly curved orders, a narrower range is needed.')
+        self._options.setdefault('skyline_trace_yinit', None)
+
         self._options.setdefault('use_arclamps', 'no')
         self._optioninfo.setdefault('use_arclamps', 'no = use master "clean sky", yes = use master arclamp')
         self._options.setdefault('use_zero_as_center_fitting', 'no')
@@ -4260,6 +4316,7 @@ class rectifyProcess(fatboyProcess):
                 if (gaussWidth < 2):
                     #Minimum 2 pixels
                     gaussWidth = 2
+                gaussWidth /= sqrt(2)
 
                 if (usePlot and self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
                     print("LINE", xcen, yinit)
