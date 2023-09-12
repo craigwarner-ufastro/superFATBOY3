@@ -416,8 +416,9 @@ class fatboyQuery:
                                     currImage.setTag(subtag, True)
                                 if ((sfix is not None and fname.find(sfix) > 0) or (pattern is not None and fname.find(pattern) > fname.find(sindex))):
                                     currImage.setSuffix(True)
-                                    currImage.findIdentifier()
-                                (fileprefix, sfileindex) = self.findIdentAndIndex(fname, suffix=currImage._suffix)
+                                    #currImage.findIdentifier()
+                                #(fileprefix, sfileindex) = self.findIdentAndIndex(fname, suffix=currImage._suffix)
+                                (fileprefix, sfileindex) = currImage.findIdentifier(delim=self._delim)
                                 if (name is None):
                                     #if name attribute not specified, use file prefix as ident
                                     ident = fileprefix.replace('/','_')
@@ -541,8 +542,9 @@ class fatboyQuery:
                                     currImage.setTag(subtag, True)
                                 if ((sfix is not None and fname.find(sfix) > 0) or (pattern is not None and fname.find(pattern) > fname.find(sindex))):
                                     currImage.setSuffix(True)
-                                    currImage.findIdentifier()
-                                (fileprefix, sfileindex) = self.findIdentAndIndex(fname, suffix=currImage._suffix)
+                                    #currImage.findIdentifier()
+                                #(fileprefix, sfileindex) = self.findIdentAndIndex(fname, suffix=currImage._suffix)
+                                (fileprefix, sfileindex) = currImage.findIdentifier(delim=self._delim)
                                 if (name is None):
                                     #if name attribute not specified, use file prefix as ident
                                     ident = fileprefix.replace('/','_')
@@ -824,8 +826,9 @@ class fatboyQuery:
                             currImage.setTag(subtag, True)
                         if (sfix is not None and fname.find(sfix) > 0):
                             currImage.setSuffix(True)
-                            currImage.findIdentifier()
-                        (fileprefix, sfileindex) = self.findIdentAndIndex(fname, suffix=currImage._suffix)
+                            #currImage.findIdentifier()
+                        #(fileprefix, sfileindex) = self.findIdentAndIndex(fname, suffix=currImage._suffix)
+                        (fileprefix, sfileindex) = currImage.findIdentifier(delim=self._delim)
                         if (name is None):
                             #if name attribute not specified, use file prefix as ident
                             ident = fileprefix.replace('/','_')

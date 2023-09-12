@@ -153,8 +153,17 @@ class fatboyDataUnit:
     #end enable
 
     ## Find prefix and index
-    def findIdentifier(self):
+    #9/11/23 - take delim as optional arg and return fileprefix, sfileindex
+    #to replace logic from findIdentAndIndex in fatboyQuery.py
+    def findIdentifier(self, delim=None):
         if (self._suffix):
+            if (delim is not None):
+                #Everything before delimiter
+                self._index = self.filename[:self.filename.find(delim)]
+                self._id = self.filename[self.filename.find(delim) + len(delim):self.filename.rfind('.')]
+                self._id = str(self._id) #convert from unicode to str!!
+                self._index = str(self._index) #convert fron unicode to str!!
+                return (self._id, self._index)
             #handle case for suffix
             dpos = self.filename.rfind('.')
             if (self.filename.endswith('.fz')):
@@ -172,9 +181,18 @@ class fatboyDataUnit:
             self._id = self.filename[cpos:dpos]
             while (self._id.startswith('.') or self._id.startswith('-') or self._id.startswith('_')):
                 self._id = self._id[1:]
+            self._id = str(self._id) #convert from unicode to str!!
+            self._index = str(self._index) #convert fron unicode to str!!
             self._identFull = self._id+'.'+self._index+'.fits'
-            return
+            return (self._id, self._index)
         #normal prefix case
+        if (delim is not None):
+            #Everything before delimiter
+            self._id = self.filename[:self.filename.rfind(delim, 0, self.filename.rfind('.'))]
+            self._index = self.filename[self.filename.rfind(delim, 0, self.filename.rfind('.')) + len(delim):self.filename.rfind('.')]
+            self._id = str(self._id) #convert from unicode to str!!
+            self._index = str(self._index) #convert fron unicode to str!!
+            return (self._id, self._index)
         dpos = self.filename.rfind('.')
         if (self.filename.endswith('.fz')):
             dpos = self.filename[:-3].rfind('.')
@@ -186,7 +204,10 @@ class fatboyDataUnit:
         while (self._id.endswith('.') or self._id.endswith('-') or self._id.endswith('_')):
             self._id = self._id[:-1]
         self._index = self.filename[cpos+1:dpos]
+        self._id = str(self._id) #convert from unicode to str!!
+        self._index = str(self._index) #convert fron unicode to str!!
         self._identFull = self._id+'.'+self._index+'.fits'
+        return (self._id, self._index)
     #end findIdentifier
 
     ## Find first data extension
