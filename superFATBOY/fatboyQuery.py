@@ -81,8 +81,8 @@ class fatboyQuery:
                 filesuffix = fname[fname.find(self._delim) + len(self._delim):fname.rfind('.')]
             else:
                 dpos = fname.rfind('.')
-                if (fname.endswith('.fz')):
-                    #Handle .fits.fz files
+                if (fname.endswith('.fz') or fname.endswith('.gz')):
+                    #Handle .fits.fz or .gz files
                     dpos = fname[:-3].rfind('.')
                 #Start with position 0 and find leftmost non-numerical character
                 spos = 0
@@ -108,8 +108,8 @@ class fatboyQuery:
             sfileindex = fname[fname.rfind(self._delim, 0, fname.rfind('.')) + len(self._delim):fname.rfind('.')]
         else:
             dpos = fname.rfind('.')
-            if (fname.endswith('.fz')):
-                #Handle .fits.fz files
+            if (fname.endswith('.fz') or fname.endswith('.gz')):
+                #Handle .fits.fz or .gz files
                 dpos = fname[:-3].rfind('.')
             cpos = dpos-1
             #Find rightmost non-numerical character before .fits
@@ -222,10 +222,12 @@ class fatboyQuery:
                             sindex = '0'+sindex
                         matches = glob.glob(pfix+'*'+sindex+'.fits')
                         matches.extend(glob.glob(pfix+'*'+sindex+'.fits.fz'))
+                        matches.extend(glob.glob(pfix+'*'+sindex+'.fits.gz'))
                         if (len(matches) == 0 and self._dir is not None):
                             #in case dir is specified check source dir if no matches in current dir
                             matches = glob.glob(self._dir+"/"+pfix+'*'+sindex+'.fits')
                             matches.extend(glob.glob(self._dir+"/"+pfix+'*'+sindex+'.fits.fz'))
+                            matches.extend(glob.glob(self._dir+"/"+pfix+'*'+sindex+'.fits.gz'))
                         if (len(matches) > 0):
                             #add match to filenames
                             matches.sort()
@@ -373,33 +375,41 @@ class fatboyQuery:
                                 if (self._dir is not None):
                                     matches = glob.glob(self._dir+"/"+subdir+pfix+'*'+sindex+'.fits')
                                     matches.extend(glob.glob(self._dir+"/"+subdir+pfix+'*'+sindex+'.fits.fz'))
+                                    matches.extend(glob.glob(self._dir+"/"+subdir+pfix+'*'+sindex+'.fits.gz'))
                                 else:
                                     #if no dir specified, assume cwd
                                     matches = glob.glob(subdir+pfix+'*'+sindex+'.fits')
                                     matches.extend(glob.glob(subdir+pfix+'*'+sindex+'.fits.fz'))
+                                    matches.extend(glob.glob(subdir+pfix+'*'+sindex+'.fits.gz'))
                             elif (sfix is not None):
                                 #Check suffix next, then pattern
                                 if (self._dir is not None):
                                     matches = glob.glob(self._dir+"/"+subdir+"*"+sindex+"*"+sfix+"*.fits")
                                     matches.extend(glob.glob(self._dir+"/"+subdir+"*"+sindex+"*"+sfix+"*.fits.fz"))
+                                    matches.extend(glob.glob(self._dir+"/"+subdir+"*"+sindex+"*"+sfix+"*.fits.gz"))
                                 else:
                                     #if no dir specified, assume cwd
                                     matches = glob.glob(subdir+"*"+sindex+"*"+sfix+"*.fits")
                                     matches.extend(glob.glob(subdir+"*"+sindex+"*"+sfix+"*.fits.fz"))
+                                    matches.extend(glob.glob(subdir+"*"+sindex+"*"+sfix+"*.fits.gz"))
                             elif (pattern is not None):
                                 #Don't add more wildcards to pattern
                                 if (self._dir is not None):
                                     matches = glob.glob(self._dir+"/"+subdir+pattern+sindex+'.fits')
                                     matches.extend(glob.glob(self._dir+"/"+subdir+pattern+sindex+'.fits.fz'))
+                                    matches.extend(glob.glob(self._dir+"/"+subdir+pattern+sindex+'.fits.gz'))
                                     #Allow pattern to be prefix or suffix
                                     matches.extend(glob.glob(self._dir+"/"+subdir+sindex+pattern+'.fits'))
                                     matches.extend(glob.glob(self._dir+"/"+subdir+sindex+pattern+'.fits.fz'))
+                                    matches.extend(glob.glob(self._dir+"/"+subdir+sindex+pattern+'.fits.gz'))
                                 else:
                                     matches = glob.glob(subdir+pattern+sindex+'.fits')
                                     matches.extend(glob.glob(subdir+pattern+sindex+'.fits.fz'))
+                                    matches.extend(glob.glob(subdir+pattern+sindex+'.fits.gz'))
                                     #Allow pattern to be prefix or suffix
                                     matches.extend(glob.glob(subdir+sindex+pattern+'.fits'))
                                     matches.extend(glob.glob(subdir+sindex+pattern+'.fits.fz'))
+                                    matches.extend(glob.glob(subdir+sindex+pattern+'.fits.gz'))
                             if (matches is None):
                                 print("Warning: could not find file index matching value "+sindex)
                                 self._log.writeLog(__name__, "could not find file index matching value "+sindex, type=fatboyLog.WARNING)
@@ -499,33 +509,41 @@ class fatboyQuery:
                                 if (self._dir is not None):
                                     matches = glob.glob(self._dir+"/"+subdir+pfix+'*'+sindex+'.fits')
                                     matches.extend(glob.glob(self._dir+"/"+subdir+pfix+'*'+sindex+'.fits.fz'))
+                                    matches.extend(glob.glob(self._dir+"/"+subdir+pfix+'*'+sindex+'.fits.gz'))
                                 else:
                                     #if no dir specified, assume cwd
                                     matches = glob.glob(subdir+pfix+'*'+sindex+'.fits')
                                     matches.extend(glob.glob(subdir+pfix+'*'+sindex+'.fits.fz'))
+                                    matches.extend(glob.glob(subdir+pfix+'*'+sindex+'.fits.gz'))
                             elif (sfix is not None):
                                 #Check suffix next, then pattern
                                 if (self._dir is not None):
                                     matches = glob.glob(self._dir+"/"+subdir+"*"+sindex+"*"+sfix+"*.fits")
                                     matches.extend(glob.glob(self._dir+"/"+subdir+"*"+sindex+"*"+sfix+"*.fits.fz"))
+                                    matches.extend(glob.glob(self._dir+"/"+subdir+"*"+sindex+"*"+sfix+"*.fits.gz"))
                                 else:
                                     #if no dir specified, assume cwd
                                     matches = glob.glob(subdir+"*"+sindex+"*"+sfix+"*.fits")
                                     matches.extend(glob.glob(subdir+"*"+sindex+"*"+sfix+"*.fits.fz"))
+                                    matches.extend(glob.glob(subdir+"*"+sindex+"*"+sfix+"*.fits.gz"))
                             elif (pattern is not None):
                                 #Don't add more wildcards to pattern
                                 if (self._dir is not None):
                                     matches = glob.glob(self._dir+"/"+subdir+pattern+sindex+'.fits')
                                     matches.extend(glob.glob(self._dir+"/"+subdir+pattern+sindex+'.fits.fz'))
+                                    matches.extend(glob.glob(self._dir+"/"+subdir+pattern+sindex+'.fits.gz'))
                                     #Allow pattern to be prefix or suffix
                                     matches.extend(glob.glob(self._dir+"/"+subdir+sindex+pattern+'.fits'))
                                     matches.extend(glob.glob(self._dir+"/"+subdir+sindex+pattern+'.fits.fz'))
+                                    matches.extend(glob.glob(self._dir+"/"+subdir+sindex+pattern+'.fits.gz'))
                                 else:
                                     matches = glob.glob(subdir+pattern+sindex+'.fits')
                                     matches.extend(glob.glob(subdir+pattern+sindex+'.fits.fz'))
+                                    matches.extend(glob.glob(subdir+pattern+sindex+'.fits.gz'))
                                     #Allow pattern to be prefix or suffix
                                     matches.extend(glob.glob(subdir+sindex+pattern+'.fits'))
                                     matches.extend(glob.glob(subdir+sindex+pattern+'.fits.fz'))
+                                    matches.extend(glob.glob(subdir+sindex+pattern+'.fits.gz'))
                             if (matches is None):
                                 #No matches found.  Don't print out warning message here as some indices may not exist.
                                 continue
@@ -666,19 +684,23 @@ class fatboyQuery:
                             if (self._dir is not None):
                                 matches = glob.glob(self._dir+"/"+subdir+pfix+'*'+'.fits')
                                 matches.extend(glob.glob(self._dir+"/"+subdir+pfix+'*'+'.fits.fz'))
+                                matches.extend(glob.glob(self._dir+"/"+subdir+pfix+'*'+'.fits.gz'))
                             else:
                                 #if no dir specified, assume cwd
                                 matches = glob.glob(subdir+pfix+'*'+'.fits')
                                 matches.extend(glob.glob(subdir+pfix+'*'+'.fits.fz'))
+                                matches.extend(glob.glob(subdir+pfix+'*'+'.fits.gz'))
                         elif (sfix is not None):
                             #Check suffix next, then pattern
                             if (self._dir is not None):
                                 matches = glob.glob(self._dir+"/"+subdir+"*"+sfix+"*.fits")
                                 matches.extend(glob.glob(self._dir+"/"+subdir+"*"+sfix+"*.fits.fz"))
+                                matches.extend(glob.glob(self._dir+"/"+subdir+"*"+sfix+"*.fits.gz"))
                             else:
                                 #if no dir specified, assume cwd
                                 matches = glob.glob(subdir+"*"+sfix+"*.fits")
                                 matches.extend(glob.glob(subdir+"*"+sfix+"*.fits.fz"))
+                                matches.extend(glob.glob(subdir+"*"+sfix+"*.fits.gz"))
                         matches.sort()
                         try:
                             startDt = datetime.strptime(startTs, fmt)
@@ -777,27 +799,33 @@ class fatboyQuery:
                     if (self._dir is not None):
                         matches = glob.glob(self._dir+"/"+subdir+pfix+'*.fits')
                         matches.extend(glob.glob(self._dir+"/"+subdir+pfix+'*.fits.fz'))
+                        matches.extend(glob.glob(self._dir+"/"+subdir+pfix+'*.fits.gz'))
                     else:
                         #if no dir specified, assume cwd
                         matches = glob.glob(subdir+pfix+'*.fits')
                         matches.extend(glob.glob(subdir+pfix+'*.fits.fz'))
+                        matches.extend(glob.glob(subdir+pfix+'*.fits.gz'))
                 elif (sfix is not None):
                     #Check suffix next, then pattern
                     if (self._dir is not None):
                         matches = glob.glob(self._dir+"/"+subdir+"*"+sfix+"*.fits")
                         matches.extend(glob.glob(self._dir+"/"+subdir+"*"+sfix+"*.fits.fz"))
+                        matches.extend(glob.glob(self._dir+"/"+subdir+"*"+sfix+"*.fits.gz"))
                     else:
                         #if no dir specified, assume cwd
                         matches = glob.glob(subdir+"*"+sfix+"*.fits")
                         matches.extend(glob.glob(subdir+"*"+sfix+"*.fits.fz"))
+                        matches.extend(glob.glob(subdir+"*"+sfix+"*.fits.gz"))
                 elif (pattern is not None):
                     #Don't add more wildcards to pattern
                     if (self._dir is not None):
                         matches = glob.glob(self._dir+"/"+subdir+pattern+'.fits')
                         matches.extend(glob.glob(self._dir+"/"+subdir+pattern+'.fits.fz'))
+                        matches.extend(glob.glob(self._dir+"/"+subdir+pattern+'.fits.gz'))
                     else:
                         matches = glob.glob(subdir+pattern+'.fits')
                         matches.extend(glob.glob(subdir+pattern+'.fits.fz'))
+                        matches.extend(glob.glob(subdir+pattern+'.fits.gz'))
                 if (matches is None):
                     #No matches found.
                     if (calibFilename is not None):

@@ -52,18 +52,7 @@ ifneq "$(shell echo $PYTHON_INCLUDE | grep 3)" ""
 endif
 
 ifndef PYTHON3_INCLUDE
-  ifneq "$(wildcard /usr/include/python3.8)" ""
-    PYTHON3_INCLUDE = /usr/include/python3.8
-  endif
-  ifneq "$(wildcard /usr/include/python3.7)" ""
-    PYTHON3_INCLUDE = /usr/include/python3.7
-  endif
-  ifneq "$(wildcard /usr/include/python3.6)" ""
-    PYTHON3_INCLUDE = /usr/include/python3.6
-  endif
-  ifneq "$(wildcard /usr/include/python3.5)" ""
-    PYTHON3_INCLUDE = /usr/include/python3.5
-  endif
+  PYTHON3_INCLUDE = $(shell python3-config --includes | awk '{print $1}' | cut -c 3-)
   ifeq "$(wildcard $(PYTHON3_INCLUDE))" ""
     $(warning PYTHON3_INCLUDE not defined)
   endif
