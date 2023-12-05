@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<queries>
+<!-- Change dataset dir to point to your data.
+        note datatype = osirisSpectrum
+        Set your specmode to be longslit for longslit data
+        Set dispersion = vertical or horizontal (at some point it changed)
+
+        This is set up to have calibs in subdirectories, e.g. bias, flat, arc 
+        This uses the HgAr lamp - there is also a Neon lamp
+-->
+  <dataset dir="/path/to/data/GTC7-19BFLO/OB0011/" datatype="osirisSpectrum"> 
+
+    <object type="auto" subdir="object" name="qso" suffix="20190909-OSIRIS">
+      <index start="2270993" stop="2270994"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+    </object>
+
+    <calib type="bias" subdir="bias" name="OsirisBias" suffix="20190909-OSIRIS-OsirisBias">
+      <index start="2269572" stop="2269582"/>
+    </calib>
+
+    <calib type="flat" subdir="flat" name="OsirisFlat" suffix="20190909-OSIRIS-OsirisSpectralFlat">
+      <index start="2271004" stop="2271008"/>
+    </calib>
+
+    <calib type="arclamp" subdir="arc" name="HgAr_lamp" suffix="20190909-OSIRIS-OsirisCalibrationLamp">
+      <index start="2271002" stop="2271002"/>
+    </calib>
+
+<!--
+    <calib type="arclamp" subdir="arc" name="Ne_lamp" suffix="20190909-OSIRIS-OsirisCalibrationLamp">
+      <index start="2271003" stop="2271003"/>
+    </calib>
+-->
+
+    <calib type="standard" subdir="stds" name="standard" suffix="20190909-OSIRIS-OsirisLongSlitSpectroscopy">
+      <index start="2270999" stop="2270999"/>
+    </calib>
+
+  </dataset>
+</queries>
+
+<!-- process list below - comments are next to options that may change -->
+<processes>
+  <process name="noisemap">
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="biasSubtract">
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+
+  <process name="createMasterArclamps">
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="cosmicRaysSpec">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+<!-- you may try different cosmic ray algorithms but dcr seems to work best -->
+    <option name="cosmic_ray_algorithm" value="dcr"/>
+    <option name="cosmic_ray_method" value="replace"/>
+  </process>
+
+<!-- you may try running without flat field division if you have problems -
+        they may be due to bad flat fields -->
+  <process name="flatDivideSpec">
+    <option name="flat_method" value="dome_on"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="skySubtractSpec">
+    <option name="sky_method" value="median_boxcar"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="rectify">
+    <option name="fit_order" value="1"/>
+    <option name="sky_fit_order" value="2"/>
+<!-- continuum_trace_xinit should be a pixel value in the dispersion
+        direction where there is continuum -->
+    <option name="continuum_trace_xinit" value="1000"/>
+<!-- the following options MAY need to be added only IF it has difficulty
+        finding and tracing out sky lines or arclamp lines:
+    <option name="skyline_trace_yinit" value="1220"/>
+    <option name="skyline_find_ylo" value="1020"/>
+    <option name="skyline_find_yhi" value="1420"/>
+        The first should be a pixel value where there is line flux.
+        The next two are used in the case of highly curved lines - it should
+        define a pixel range to collapse to 1-d to find skylines to be traced
+        out.
+-->
+    <option name="write_calib_output" value="yes"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="drihizzle_kernel" value="turbo"/>
+    <option name="drihizzle_dropsize" value="1"/>
+    <option name="debug_mode" value="no"/>
+  </process>
+
+  <process name="shiftAdd">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="wavelengthCalibrate">
+<!-- the following line list works for the HgAr lamp with OSIRIS in 2019
+        if you use the Neon lamp you will need a different line list -->
+    <option name="line_list" value="osiris_HgAr_air_nist.dat"/>
+    <option name="fit_order" value="3"/>
+<!-- wavelength scale guess and min and max wavelength may need to be changed
+        based on your actual data and which filters and gratings are used.
+        Note that wavelength_scale_guess may be negative. -->
+    <option name="wavelength_scale_guess" value="3.8"/>
+    <option name="min_wavelength" value="2400"/>
+    <option name="max_wavelength" value="8880" />
+    <option name="use_arclamps" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+<!-- turn debug_mode to yes to show plots as wavelength calibration is
+        performed.  These are the same plots that write_plots will write to
+        disk. -->
+    <option name="write_plots" value="yes"/>
+    <option name="debug_mode" value="no"/>
+  </process>
+
+  <process name="extractSpectra">
+    <option name="extract_nspec" value="1"/>
+    <option name="extract_method" value="auto"/>
+    <option name="extract_weighting" value="linear"/>
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="calibStarDivide">
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+</processes>
+
+
+<parameters>
+<!-- set your outputdir -->
+  <param name="outputdir" value="/path/to/outputdir"/>
+  <param name="overwite_files" value="yes"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="clean_up" value="no"/>
+  <param name="prefix_delimiter" value="none"/>
+<!-- you may increase or decrease memory image limit based on how much
+    memory your machine has but 60 should be good for most machines -->
+  <param name="memory_image_limit" value="60"/> 
+  <param name="rotpa_keyword" value="INSTRPA"/>
+<!-- set gpumode = no if your machine does not have an nVidia GPU with CUDA -->
+  <param name="gpumode" value="yes"/>
+  <param name="gain_keyword" value="GAIN"/>
+  <param name="readnoise_keyword" value="RDNOISE"/>
+  <param name="grism_keyword" value="GRISM"/>
+  <param name="filter_keyword" value="FILTER4"/>
+  <param name="object_keyword" value="OBJECT"/>
+  <param name="pixscale_keyword" value="CD1_1"/>
+  <param name="relative_offset_arcsec" value="yes"/>
+  <param name="verbosity" value="normal"/>
+
+</parameters>
+</fatboy>

@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<queries>
+<!-- Change dataset dir to point to your data.
+        note datatype = miradasSpectrum
+        Set dispersion = vertical
+
+        You should have an object, and dark, flat, and lamp calibs
+-->
+  <dataset dir="/path/to/data" datatype="miradasSpectrum">
+
+    <calib name="dark30s" type="dark" prefix="dark30s">
+      <index start="1" stop="5"/>
+    </calib>
+
+    <object type="auto" name="mos_targ_order_31" prefix="mos_targ_order_31">
+      <index start="1" stop="2"/>
+      <property name="dispersion" value="vertical"/>
+    </object>
+
+    <calib name="mos_flat_order_31" type="flat" prefix="mos_flat_order_31">
+      <index start="1" stop="2"/>
+      <property name="flat_type" value="lamp_on"/>
+      <property name="dispersion" value="vertical"/>
+    </calib>
+
+    <calib name="UArNe_MOS_Order_31" type="arclamp" prefix="UArNe_MOS_Order_31">
+      <index start="1" stop="2"/>
+      <property name="dispersion" value="vertical"/>
+    </calib>
+
+  </dataset>
+</queries>
+
+<!-- process list below - comments are next to options that may change 
+        NOTE that any process that has debug_mode=no this can be changed to
+        yes to display extra debug information and sometimes interactive plots
+-->
+<processes>
+<!-- Comment out linearity if coefficients are unknown.
+        A coefficient of 1 will do nothing to the data
+-->
+  <process name="linearity">
+    <option name="linearity_coeffs" value="1"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="noisemap">
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="darkSubtract">
+    <option name="prompt_for_missing_dark" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="createCleanSkies">
+    <option name="combine_method" value="min"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="createMasterArclamps">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+<!-- slitlet_autodetect_nslits is 12 for MOS mode.
+        In simulated data, 1600 is a good value for slitlet_autodetect_x.
+        It should be a pixel value (0 to 4095) where the flat field is
+        illuminated well.
+        fit_order of 4 works for simulated data, which is highly curved.
+-->
+  <process name="findSlitlets">
+    <option name="write_output" value="yes"/>
+    <option name="slitlet_autodetect_x" value="1600"/>
+    <option name="slitlet_autodetect_nslits" value="12"/>
+    <option name="padding" value="2"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="fit_order" value="4"/>
+    <option name="trace_slitlets_individually" value="yes"/>
+  </process>
+
+<!-- cosmicRaysSpec is commented out when using simulated data so is
+        untested so far but dcr has worked well on other instruments.
+        "lacos" (LA Cosmic) and "deepcr" are other possible algorithms
+        to use.
+-->
+  <process name="cosmicRaysSpec">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="cosmic_ray_algorithm" value="dcr"/>
+    <option name="cosmic_ray_method" value="mask"/>
+  </process>
+
+  <process name="flatDivideSpec">
+    <option name="flat_method" value="dome_on"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="flat_selection" value="all"/>
+  </process>
+
+<!-- bad pixel mask has been simulated with 10000 random pixels to be
+        bad in bmp.10000.fits.  You can change this FITS file to be
+        an actual bad pixel mask.
+        OR use clipping_high and clipping_low to try to calculate
+                a bad pixel mask from the flat field
+        OR simply comment out this process
+
+        behavior can be "mask" or "interpolate"
+
+        There are many interpolation_algorithms that can be seen with a
+        superFatboy3.py -list
+-->
+  <process name="badPixelMaskSpec">
+    <option name="write_calib_output" value="yes"/>
+    <calib name="badPixelMask" value="bpm.10000.fits"/>
+    <option name="clipping_high" value="4.0"/>
+    <option name="clipping_low" value="0.25"/>
+    <option name="behavior" value="interpolate"/>
+    <option name="interpolation_algorithm" value="median_neighbor"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="skySubtractSpec">
+    <option name="sky_method" value="dither"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+<!-- It is possible options to rectify may need to be tweaked:
+        mos_fit_order
+        mos_sky_fit_order
+        min_threshold
+        continuum_find_xlo
+        continuum_find_xhi
+        continuum_trace_xinit
+        sky_max_slope
+        *All of these were chosen based on simulated MOS data and work
+        well with simulated data.  These can be tweaked for real data,
+        particularly the continuum_ options which specify the high and
+        low x values to use for a 1-d cut to identify continua and the
+        x value to start the trace at for each continuum.
+-->
+  <process name="rectify">
+    <option name="mos_fit_order" value="3"/>
+    <option name="mos_sky_fit_order" value="3"/>
+    <option name="min_threshold" value="4"/>
+    <option name="continuum_find_xlo" value="1700"/>
+    <option name="continuum_find_xhi" value="1900"/>
+    <option name="continuum_trace_xinit" value="1800"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="drihizzle_kernel" value="turbo"/>
+    <option name="drihizzle_dropsize" value="1"/>
+    <option name="max_continua_per_slit" value="3"/>
+    <option name="sky_max_slope" value="0.6"/>
+    <option name="mos_find_lines_alternate_method" value="yes"/>
+    <option name="mos_sky_step_size" value="2"/>
+    <option name="sky_boxsize" value="10"/>
+    <option name="mos_mode" value="independent_slitlets"/>
+    <option name="n_segments" value="2"/>
+    <option name="use_arclamps" value="yes"/>
+  </process>
+
+<!-- in MOS mode in simulated data, it was necessary to set
+        box_lo and box_hi to 1000 and 3000 due to low illumination
+        at the top and bottom of the frame.  These may need to be
+        tweaked.
+        centroid_method may be use_derivatives or fit_2d_gaussian
+-->
+  <process name="miradasCollapseSpaxels">
+    <option name="use_integer_shifts" value="no"/>
+    <option name="do_centroids" value="yes"/>
+    <option name="box_lo" value="1000"/>
+    <option name="box_hi" value="3000"/>
+    <option name="centroid_method" value="use_derivatives"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+<!-- centroid_method may be use_derivatives or fit_2d_gaussian -->
+  <process name="miradasCreate3dDatacubes">
+    <option name="use_integer_shifts" value="no"/>
+    <option name="do_centroids" value="yes"/>
+    <option name="centroid_method" value="use_derivatives"/>
+    <option name="write_output" value="yes"/>
+  </process>
+  
+<!-- centroid_method may be use_derivatives or fit_2d_gaussian -->
+  <process name="miradasCharacterizePSF">
+    <option name="centroid_method" value="use_derivatives"/>
+    <option name="detection_threshold" value="2"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="doubleSubtract">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="shiftAdd">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+<!-- The default line list is to use Redman_UArNe_lines.dat.
+        ***The wavelength_calibration_file should be set to
+                wc_miradas_mos_XX.xml where XX is the order number (31 below)!
+        This specifies the wavelength scale initial guesses for each slitlet
+        In MOS mode, resample_to_common_scale should be yes
+-->
+  <process name="wavelengthCalibrate">
+    <option name="calibrate_slitlets_individually" value="yes"/>
+    <option name="line_list" value="Redman_UArNe_lines.dat"/>
+    <option name="wavelength_scale_guess" value="0.25"/>
+    <option name="fit_order" value="3"/>
+    <option name="write_output" value="yes"/>
+    <option name="n_brightest_lines" value="14"/>
+    <option name="max_bright_line_separation" value="1000"/>
+    <option name="wavelength_calibration_file" value="wc_miradas_mos_31.xml"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="debug_mode" value="no"/>
+    <option name="resample_to_common_scale" value="yes"/>
+    <option name="nonlinear" value="yes"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="use_initial_guess_on_fail" value="yes"/>
+    <option name="n_brightest_data" value="5"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="extractSpectra">
+    <option name="extract_method" value="auto"/>
+    <option name="extract_nspec" value="3"/>
+    <option name="extract_weighting" value="linear"/>
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="gaussian_box_size" value="10"/>
+    <option name="debug_mode" value="no"/>
+  </process>
+
+  <process name="miradasCombineSlices">
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+</processes>
+
+<parameters>
+<!-- set your outputdir -->
+  <param name="outputdir" value="/path/to/outputdir"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="gain_keyword" value="GAIN_1"/>
+  <param name="readnoise_keyword" value="RDNOIS_1"/>
+  <param name="filter_keyword" value="FILTNAME"/>
+  <param name="grism_keyword" value="GRATNAME"/>
+  <param name="object_keyword" value="OBJECT"/>
+  <param name="verbosity" value="normal"/>
+<!-- set gpumode = no if your machine does not have an nVidia GPU with CUDA -->
+  <param name="gpumode" value="no"/>
+</parameters>
+</fatboy>
