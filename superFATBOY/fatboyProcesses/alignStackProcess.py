@@ -30,9 +30,9 @@ class alignStackProcess(fatboyProcess):
         if (yboxsize == -1):
             yboxsize = fdu.getShape()[0]
         if (xcenter == -1):
-            xcenter = fdu.getShape()[1]/2
+            xcenter = fdu.getShape()[1]//2
         if (ycenter == -1):
-            ycenter = fdu.getShape()[0]/2
+            ycenter = fdu.getShape()[0]//2
 
         doMedianFilter = True
         if (self.getOption('xregister_median_filter2d', fdu.getTag()).lower() == "no"):
