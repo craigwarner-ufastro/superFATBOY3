@@ -314,6 +314,10 @@ class fatboyProcess:
             if (not writeShortLogHeader):
                 #only set to false if a process is executed
                 self._shortlog.writeLog(__name__, "Time: "+str(time.time()-tt)+"; Total: "+str(time.time()-self._fdb._t), printCaller=False, tabLevel=3)
+        for j in range(len(calibs)-1, -1, -1):
+            currFDU = calibs[j]
+            if (not currFDU.inUse):
+                calibs.remove(currFDU)
     #end recursivelyExecute
 
     ## Set default options here.  Should be overridden by subclasses!

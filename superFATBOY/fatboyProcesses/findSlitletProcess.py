@@ -751,6 +751,7 @@ class findSlitletProcess(fatboyProcess):
                         cut1d -= cut1d.min()
                     if (do_invert):
                         cut1d = (cut1d.max()-cut1d)**2  #square
+                        medVal = arraymedian(cut1d)
                         cut1d = medianfilterCPU(cut1d)
                         cut1d[cut1d < 0] = 0
                     #Check that there is data in this cut
@@ -800,12 +801,14 @@ class findSlitletProcess(fatboyProcess):
                         f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t3\n')
                         #negative boxsize = ignore unless first datapoint
                         continue
+                    if (not do_invert):
+                        medVal = arraymedian(cut1d)
                     if (j == 0):
                         #First datapoint -- update currX, currY, append to all lists
                         f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t0\n')
                         currY = lsq[0][1]
                         currX = xs[0]
-                        meds.append(arraymedian(cut1d))
+                        meds.append(medVal)
                         maxcors.append(max(ccor))
                         xcoords.append(xs[j])
                         ycoords.append(lsq[0][1])
@@ -868,7 +871,7 @@ class findSlitletProcess(fatboyProcess):
                             f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t0\n')
                             currY = lsq[0][1]
                             currX = xs[j]
-                            meds.append(arraymedian(cut1d))
+                            meds.append(medVal)
                             maxcors.append(max(ccor))
                             xcoords.append(xs[j])
                             ycoords.append(lsq[0][1])
@@ -880,7 +883,7 @@ class findSlitletProcess(fatboyProcess):
                             f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t0\n')
                             currY = lsq[0][1]
                             currX = xs[j]
-                            meds.append(arraymedian(cut1d))
+                            meds.append(medVal)
                             maxcors.append(max(ccor))
                             xcoords.append(xs[j])
                             ycoords.append(lsq[0][1])
@@ -899,7 +902,7 @@ class findSlitletProcess(fatboyProcess):
                             f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t0\n')
                             currY = lsq[0][1]
                             currX = xs[j]
-                            meds.append(arraymedian(cut1d))
+                            meds.append(medVal)
                             maxcors.append(max(ccor))
                             xcoords.append(xs[j])
                             ycoords.append(lsq[0][1])
@@ -941,7 +944,7 @@ class findSlitletProcess(fatboyProcess):
                             z1[-1] = concatenate([z1[-1], zeros(xstride)-yf0])
                         continue
 
-                    b = (meds[segmask] > arraymedian(meds[segmask])-2.5*meds[segmask].std())*(maxcors[segmask] > arraymedian(maxcors[segmask])-2.5*maxcors[segmask].std())
+                    b = (meds[segmask] >= arraymedian(meds[segmask])-2.5*meds[segmask].std())*(maxcors[segmask] >= arraymedian(maxcors[segmask])-2.5*maxcors[segmask].std())
                     seg_xcoords = xcoords[segmask][b]
                     seg_ycoords = ycoords[segmask][b]
 

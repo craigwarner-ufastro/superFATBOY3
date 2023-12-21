@@ -38,10 +38,10 @@ class sinfoniRegisterStackProcess(fatboyProcess):
             yboxsize = shp[0]
         if (xcenter == -1):
             #xcenter = fdu.getShape()[1]/2
-            xcenter = shp[1]/2
+            xcenter = shp[1]//2
         if (ycenter == -1):
             #ycenter = fdu.getShape()[0]/2
-            ycenter = shp[0]/2
+            ycenter = shp[0]//2
 
         doMedianFilter = True
         if (self.getOption('xregister_median_filter2d', fdu.getTag()).lower() == "no"):

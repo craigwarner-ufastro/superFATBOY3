@@ -132,7 +132,7 @@ class fatboyDataUnit:
             del self._data #use del to release memory
         self._data = None
         #Clean up memory managed properties
-        for key in self._properties:
+        for key in list(self._properties):
             if (isinstance(self._properties[key], str) and self._properties[key] == "memory_managed"):
                 #data tag that has been backed up to disk for memory management purposes
                 infile = "temp-fatboy/property_"+key+"_"+self.getFullId()
@@ -501,7 +501,7 @@ class fatboyDataUnit:
     ## Initialize reads certain values from the header and determines the shape.  It also finds the mef extension if not previously done.
     def initialize(self):
         ##Look at _keywords that are comma separated and turn them into lists (e.g. FILTER1, FILTER2)
-        for key in self._keywords:
+        for key in list(self._keywords):
             if (not isinstance(self._keywords[key], list)):
                 if (self._keywords[key].count(",") > 0):
                     self._keywords[key] = self._keywords[key].replace(' ','').split(',')
@@ -628,7 +628,7 @@ class fatboyDataUnit:
             self._header[key] = oldheader[key]
 
         ##Look at _keywords that are lists and find which applies if any
-        for key in self._keywords:
+        for key in list(self._keywords):
             if (isinstance(self._keywords[key], list)):
                 for value in self._keywords[key]:
                     if (value in self._header):
@@ -637,7 +637,7 @@ class fatboyDataUnit:
                         break
         ##Loop over again and find any keywords that are not found at all
         #set them to first value
-        for key in self._keywords:
+        for key in list(self._keywords):
             if (isinstance(self._keywords[key], list)):
                 self._keywords[key] = self._keywords[key][0]
 
@@ -1065,7 +1065,7 @@ class fatboyDataUnit:
     #Used for memory management purposes to save tagged data to disk and free from memory
     def writeAndForgetTaggedData(self):
         #Check properties dict for arrays of tagged data
-        for key in self._properties:
+        for key in list(self._properties):
             if (isinstance(self._properties[key], ndarray)):
                 #Keep smaller arrays in memory, only need to free up memory from large arrays
                 if (self._properties[key].size > 512*512 and self._properties[key].dtype != bool):
