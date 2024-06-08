@@ -928,7 +928,7 @@ class slitletAlignProcess(fatboyProcess):
                         os.unlink(safile)
                     #Write to disk
                     if (not os.access(safile, os.F_OK)):
-                        fdu.getSlitmask().writeTo(safile)
+                        fdu.getSlitmask(ignoreShape=True).writeTo(safile)
             #Now update data and header for FDU
             (data, header, expmap, pixmap) = drihizzle_method(fdu, None, None, inmask=inMask, kernel="turbo", dropsize=1, xtrans=xout_data, inunits="counts", outunits="counts", log=self._log, mode=gpu_drihizzle.MODE_FDU)
             fdu.tagDataAs("exposure_map", data=expmap)
@@ -1025,7 +1025,7 @@ class slitletAlignProcess(fatboyProcess):
                         os.unlink(safile)
                     #Write to disk
                     if (not os.access(safile, os.F_OK)):
-                        fdu.getSlitmask().writeTo(safile)
+                        fdu.getSlitmask(ignoreShape=True).writeTo(safile)
             #Now update data and header for FDU
             (data, header, expmap, pixmap) = drihizzle_method(fdu, None, None, inmask=inMask, kernel="turbo", dropsize=1, ytrans=xout_data, inunits="counts", outunits="counts", log=self._log, mode=gpu_drihizzle.MODE_FDU)
             fdu.tagDataAs("exposure_map", data=expmap)

@@ -5272,7 +5272,7 @@ def gpu_arraymedian(input, axis="both", lthreshold=None, hthreshold=None, nlow=0
         input = input.astype(float32) #Cast for example uint16 as float32
     t = time.time()
     n = input.size
-    if (n < 2**16):
+    if (n < 2**16 or not hasCuda):
         kernel = fatboyclib.median
         kernel2d = fatboyclib.median2d
         kernel3d = fatboyclib.median3d

@@ -1,7 +1,8 @@
 #!/usr/bin/python -u
 # setup.py
 # build command : python setup.py build build_ext --inplace
-from numpy.distutils.core import setup, Extension
+#from numpy.distutils.core import setup, Extension
+from setuptools import setup, find_packages, Extension
 import os, numpy
 
 name = 'fatboyclib'
