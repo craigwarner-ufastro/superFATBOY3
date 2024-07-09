@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<queries>
+<!-- Change dataset dir to point to your data.
+        For imaing data there is no need to set the datatype keyword in the dataset tag.
+
+        This is set up to have calibs in subdirectories, e.g. dark, flat, etc 
+-->
+  <dataset dir="/path/to/data/">
+
+    <object type="auto" subdir="object" name="obname" suffix="20240509-EMIR">
+      <index start="2270993" stop="2270994"/>
+    </object>
+
+    <calib type="dark" subdir="dark" name="EmirDark" suffix="20240509-EMIR-EmirDark">
+      <index start="2269572" stop="2269582"/>
+    </calib>
+
+<!--
+	For sky flats use lines simliar to below
+-->
+    <calib type="flat" subdir="flat" name="EmirFlat" suffix="20240509-EMIR-EmirSkyFlat">
+      <index start="2271004" stop="2271008"/>
+    </calib>
+
+<!--
+	For dome flats use lines similar to below
+	Use only one <calib> tag if lamp on, use both if lamp on-lamp off
+    <calib type="flat" subdir="flat" name="EmirFlatOn" suffix="20240509-EMIR-EmirDomeFlatOn">
+      <index start="2271004" stop="2271008"/>
+      <property name="flat_type" value="lamp_on"/>
+    </calib>
+
+    <calib type="flat" subdir="flat" name="EmirFlatOff" suffix="20240509-EMIR-EmirDomeFlatOff">
+      <index start="2271014" stop="2271018"/>
+      <property name="flat_type" value="lamp_off"/>
+    </calib>
+
+-->
+
+<!--
+	For offsource skies use lines similar to below
+    <calib type="sky" subdir="sky" name="EmirSky" suffix="20240509-EMIR-EmirOffsourceSky">
+      <index start="2261002" stop="2261008"/>
+    </calib>
+-->
+
+  </dataset>
+</queries>
+
+<processes>
+<!-- For any process, you can set the options write_ouput and write_calib_output to yes or no -->
+<!-- Uncomment and fill in coefficients to apply a linearity correction
+  <process name="linearity">
+    <option name="linearity_coeffs" value="1.00425 -1.01413e-6 4.18096e-11"/>
+  </process>
+-->
+
+  <process name="darkSubtract">
+    <option name="prompt_for_missing_dark" value="no"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="flatDivide">
+<!-- You may want to change flat_method to sky, dome_on, or dome_on-off, or twilight -->
+    <option name="flat_method" value="sky"/>
+  </process>
+
+
+<!--
+	You may want to change clipping_high and clipping_low.
+	When clipping_method is set to values, it will look at the
+	normalized master flat field and mark as bad pixels that fall
+	outside of the given range.  The other option for method is
+	sigma.
+-->
+  <process name="badPixelMask">
+    <option name="clipping_method" value="values"/>
+    <option name="clipping_high" value="2.0"/>
+    <option name="clipping_low" value="0.5"/>
+  </process>
+
+  <process name="skySubtract">
+<!-- Valid sky_subtract_method values are remove_objects, rough, offsource, offsource_extended, offsource_neb, offsource_rough
+	Generally use remove_objects for onsource skies and offsource for offsource ones unless
+	you are dealing with an extended object or nebulosity in your images -->
+    <option name="sky_subtract_method" value="remove_objects"/>
+    <option name="use_sky_files" value="all"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="cosmicRays">
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="alignStack">
+<!-- align_method can be xregister, xregister_constrained, xregister_sep, xregister_sep_constrained, xregister_guesses, sep_centroid, sep_centroid_constrained, manual -->
+    <option name="align_method" value="xregister"/>
+<!-- Other options include align box sizes (-1 = use full dimension) and centers (-1 = use actual image center in dimension)
+    <option name="align_box_size_x" value="-1">
+    <option name="align_box_size_y" value="-1">
+    <option name="align_box_center_x" value="-1">
+    <option name="align_box_center_y" value="-1">
+    Used with _constrained options
+    <option name="align_constrain_boxsize" value="256"/>
+-->
+    <option name="keep_indiv_images" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+</processes>
+
+<parameters>
+<!-- set your outputdir -->
+  <param name="outputdir" value="/path/to/outputdir"/>
+  <param name="overwite_files" value="yes"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="clean_up" value="no"/>
+  <param name="prefix_delimiter" value="none"/>
+<!-- you may increase or decrease memory image limit based on how much
+    memory your machine has but 60 should be good for most machines -->
+  <param name="memory_image_limit" value="60"/>
+  <param name="rotpa_keyword" value="INSTRPA"/>
+<!-- set gpumode = no if your machine does not have an nVidia GPU with CUDA -->
+  <param name="gpumode" value="yes"/>
+<!-- FITS keywords should be auto-detected if standard, but you can specify below
+	if needed
+  <param name="filter_keyword" value="FILTER"/>
+  <param name="object_keyword" value="OBJECT"/>
+  <param name="exptime_keyword" value="EXP_TIME"/>
+  <param name="obstype_keyword" value="OBS_TYPE"/>
+  <param name="ra_keyword" value="RA"/>
+  <param name="dec_keyword" value="DEC"/>
+  <param name="ut_keyword" value="UTC"/>
+  <param name="date_keyword" value="DATE-OBS"/>
+-->
+
+<!-- RA and DEC keywords show offsets in arcsec rather than actual coordinates -->
+  <param name="relative_offset_arcsec" value="yes"/>
+  <param name="verbosity" value="normal"/>
+</parameters>
+</fatboy>
