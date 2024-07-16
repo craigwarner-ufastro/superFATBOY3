@@ -56,8 +56,7 @@
   </process>
 -->
 
-  <process name="darkSubtract">
-    <option name="prompt_for_missing_dark" value="no"/>
+  <process name="emirBiasSubtract">
     <option name="write_output" value="yes"/>
   </process>
 
