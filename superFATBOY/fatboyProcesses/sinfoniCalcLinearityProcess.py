@@ -1,8 +1,8 @@
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY.fatboyLibs import *
-from scipy import polyfit
 from numpy import *
+import numpy as np
 import os, time
 
 class sinfoniCalcLinearityProcess(fatboyProcess):
@@ -70,7 +70,7 @@ class sinfoniCalcLinearityProcess(fatboyProcess):
         yout = slp*exptimes #mean slope * exptime is expected counts
         # "A parabolic fit of the product of DIT (i) × mean, as a function of med_dit(i), is performed."
         # => fit_order = 2 is default
-        coeffs = polyfit(counts, yout, fit_order)[::-1] #polyfit reverses coeffs - we want 0th order first
+        coeffs = np.polyfit(counts, yout, fit_order)[::-1] #polyfit reverses coeffs - we want 0th order first
         coeffs = coeffs[1:] #throw away constant term
         print("sinfoniCalcLinearityProcess::calcLinearityCoeffs> Fit coefficients "+formatList(coeffs))
         return coeffs

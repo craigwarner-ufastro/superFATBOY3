@@ -72,4 +72,7 @@ def getProcessDict():
     processDict['sinfoniRegisterStack'] = sinfoniRegisterStackProcess.sinfoniRegisterStackProcess
     processDict['sinfoniRemoveBadLines'] = sinfoniBadLineRemovalProcess.sinfoniBadLineRemovalProcess
 
+    #EMIR specific
+    processDict['emirBiasSubtract'] = emirBiasSubtractProcess.emirBiasSubtractProcess
+
     return processDict

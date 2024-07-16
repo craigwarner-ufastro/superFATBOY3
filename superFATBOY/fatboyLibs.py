@@ -27,6 +27,7 @@ from superFATBOY.fatboyLog import *
 from superFATBOY.gpu_arraymedian import *
 
 from numpy import *
+import numpy as np
 import scipy
 from scipy.optimize import leastsq
 try:
@@ -2023,8 +2024,8 @@ def fit1d(input, outfile=None, axis="X", order=3, lsigma=None, hsigma=None, nite
             n = b.sum()
             fit = zeros(nx)
             while (iter < niter and n != nold and n > 100):
-                coeffs = scipy.polyfit(xs[b], input[j,b], order)
-                fit = scipy.polyval(coeffs, xs)
+                coeffs = np.polyfit(xs[b], input[j,b], order)
+                fit = np.polyval(coeffs, xs)
                 resid = input[j,:]-fit
                 m = resid[b].sum()*(1./n)
                 sd = sqrt(add.reduce(resid[b]*resid[b])*(1./(n-1))-m*n*(1./(n-1)))
