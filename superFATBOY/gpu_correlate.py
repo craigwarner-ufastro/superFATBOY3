@@ -15,7 +15,7 @@ try:
     try:
         cp_ndarray = cupy.ndarray #new location
     except Exception as ex:
-        cp_ndarray = cupy.core.ndarray #old location
+        cp_ndarray = cp_ndarray #old location
 except Exception as ex:
     try:
         import pycuda.gpuarray as gpuarray
@@ -31,7 +31,7 @@ if (mode == 0):
         ## IMPORTANT - first need to syncrhonize context to this thread ##
         with cupy.cuda.Device(0):
             cupy.cuda.Device().synchronize()
-            if (isinstance(x, cupy.core.core.ndarray)):
+            if (isinstance(x, cp_ndarray)):
                 cx = x
             else:
                 cx = cupy.array(x)
@@ -46,7 +46,7 @@ if (mode == 0):
         ## IMPORTANT - first need to syncrhonize context to this thread ##
         with cupy.cuda.Device(0):
             cupy.cuda.Device().synchronize()
-            if (isinstance(fftx, cupy.core.core.ndarray)):
+            if (isinstance(fftx, cp_ndarray)):
                 cfftx = fftx
             else:
                 cfftx = cupy.array(fftx)
@@ -61,7 +61,7 @@ if (mode == 0):
         ## IMPORTANT - first need to syncrhonize context to this thread ##
         with cupy.cuda.Device(0):
             cupy.cuda.Device().synchronize()
-            if (isinstance(fftx, cupy.core.core.ndarray)):
+            if (isinstance(fftx, cp_ndarray)):
                 cfftx = fftx
             else:
                 cfftx = cupy.array(fftx)
