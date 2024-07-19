@@ -12,6 +12,10 @@ import numpy.fft
 mode = 0 # cupy = 0, pyfft = 1, error = -1
 try:
     import cupy
+    try:
+        cp_ndarray = cupy.ndarray #new location
+    except Exception as ex:
+        cp_ndarray = cupy.core.ndarray #old location
 except Exception as ex:
     try:
         import pycuda.gpuarray as gpuarray

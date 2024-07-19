@@ -33,7 +33,7 @@ class emirBiasSubtractProcess(fatboyProcess):
         data -= mean 
         #Note that there are also 4 columns on each side which could be used to correct for variations in that direction. Omitting until it proves necessary.
         #Finally, we should strip off all of these dark rows and columns
-        data = data[4:-4,4:-4]
+        data = np.ascontiguousarray(data[4:-4,4:-4])
 
         return data 
     #end emirBiasSubtract

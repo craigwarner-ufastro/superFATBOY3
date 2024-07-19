@@ -1,8 +1,8 @@
 #print "__init__ main"
 #from fatboyDatabase import fatboyDatabase
-__version = "2.1.6"
+__version = "2.1.7"
 __version__ = __version
-__build = "7/16/24"
+__build = "7/19/24"
 __build__ = __build
 __threaded = False
 __gpuenabled = True
