@@ -1040,7 +1040,7 @@ class fatboyDatabase:
         nx = 64
         if (self.getParam('memory_image_limit') is not None):
             while(self.getParam('memory_image_limit') < nx*2):
-                nx /= 2
+                nx //= 2
         gpu_imcombine.nx = nx
         imcombine.nx = nx
         #set defaultKernel in gpu_arraymedian if a median_kernel is given
@@ -1386,6 +1386,8 @@ class fatboyDatabase:
         self._params.setdefault('ra_keyword',['RAOFFSET', 'RA', 'TELRA'])
         self._params.setdefault('relative_offset_arcsec','no')
         self._params.setdefault('ut_keyword',['UT', 'UTC', 'NOCUTC'])
+        self._params.setdefault('pixscale_keyword', ['PIXSCALE'])
+        self._params.setdefault('rotpa_keyword', ['ROT_PA', 'ROTPA', 'INSTPA'])
 
         #Rejection criteria
         self._params.setdefault('ignore_after_bad_read','no')

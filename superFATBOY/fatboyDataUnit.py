@@ -622,6 +622,8 @@ class fatboyDataUnit:
             self._keywords.setdefault('ra_keyword',['RAOFFSET', 'RA', 'TELRA'])
             self._keywords.setdefault('relative_offset_arcsec','no')
             self._keywords.setdefault('ut_keyword',['UT', 'UTC', 'NOCUTC'])
+            self._keywords.setdefault('pixscale_keyword', ['PIXSCALE'])
+            self._keywords.setdefault('rotpa_keyword', ['ROT_PA', 'ROTPA', 'INSTPA'])
 
         #Update values in oldheader
         for key in oldheader:
