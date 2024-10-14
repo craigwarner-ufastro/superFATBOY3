@@ -74,11 +74,15 @@
     <option name="n_segments" value="2"/>
     <option name="padding" value="2"/>
     <option name="write_output" value="yes"/>
-    <option name="slitlet_autodetect_x" value="1800"/>
+    <option name="slitlet_autodetect_x" value="1600"/>
     <option name="slitlet_autodetect_nslits" value="13"/>
     <option name="write_calib_output" value="yes"/>
-    <option name="fit_order" value="4"/>
+    <option name="fit_order" value="3"/>
     <option name="trace_slitlets_individually" value="yes"/>
+    <option name="slitlet_trace_boxsize" value="51"/>
+    <option name="boundary" value="100"/>
+    <option name="cut1d_max_threshold" value="1.5"/>
+    <option name="edge_extend_to_chip" value="yes"/>
   </process>
 
 <!-- cosmicRaysSpec is commented out when using simulated data so is
