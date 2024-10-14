@@ -421,8 +421,14 @@ class findSlitletProcess(fatboyProcess):
         self._optioninfo.setdefault('autodetect_peak_local_max', 'For fiber data such as MEGARA,\nuse peak local max to find fiber locations')
         self._options.setdefault('background_boxcar_width', 25)
         self._optioninfo.setdefault('background_boxcar_width', 'Width in pixels of the boxcar used to subtract off background level\nin 1-d cut.  Should be just under 2 x slit width.')
+        self._options.setdefault('boundary', 10)
+        self._optioninfo.setdefault('boundary', 'Width in pixels of a boundary to not attempt to fit at the edges of each segment.  Should be 100 for MIRADAS.')
+        self._options.setdefault('cut1d_max_threshold', 2)
+        self._optioninfo.setdefault('cut1d_max_threshold', 'Reject a trace datapoint if 1d cut max < this factor * quartile of cut.')
+        self._options.setdefault('edge_extend_to_chip', 'no')
+        self._optioninfo.setdefault('edge_extend_to_chip', 'If set to yes, and one edge of a slitlet is traced out, the other edge\nif it runs into the chip boundary will not be clipped.')
         self._options.setdefault('edge_threshold', 15)
-        self._optioninfo.setdefault('edge_threshold', 'Do not attempt to trace out slitlets within this many pixesl of edges')
+        self._optioninfo.setdefault('edge_threshold', 'Do not attempt to trace out slitlets within this many pixels of edges')
         self._options.setdefault('fiber_width', '5')
         self._optioninfo.setdefault('fiber_width', 'Width of fibers, used with peak local max')
         self._options.setdefault('fit_order', '2')
@@ -430,6 +436,10 @@ class findSlitletProcess(fatboyProcess):
         self._options.setdefault('invert_before_correlating', 'no')
         self._optioninfo.setdefault('invert_before_correlating', 'Invert flat field to turn gap trough into a peak for cross correlations')
 
+        self._options.setdefault('max_residual_error', '2.0')
+        self._optioninfo.setdefault('max_residual_error', 'Maximum sigma of residuals to fit to be rejected as an invalid fit, default 1.0')
+        self._options.setdefault('min_coverage_fraction', '30')
+        self._optioninfo.setdefault('min_coverage_fraction', 'Minimum percentage of a slitlet to trace out to be valid for a fit, default 30%')
         self._options.setdefault('n_segments', '1')
         self._optioninfo.setdefault('n_segments', 'Number of piecewise functions to fit.  Should be 2 for MIRADAS, 1 for most other cases.')
         self._options.setdefault('order_step_size', '5')
@@ -497,6 +507,13 @@ class findSlitletProcess(fatboyProcess):
         edge_thresh = int(self.getOption("edge_threshold", fdu.getTag()))
         n_segments = int(self.getOption("n_segments", fdu.getTag()))
         step = int(self.getOption('order_step_size', fdu.getTag()))
+        bndry = int(self.getOption('boundary', fdu.getTag()))
+        minCovFrac = float(self.getOption("min_coverage_fraction", fdu.getTag()))
+        cut1d_max_threshold = float(self.getOption("cut1d_max_threshold", fdu.getTag()))
+        maxResidualError = float(self.getOption("max_residual_error", fdu.getTag()))
+        do_edge_extend = False
+        if (self.getOption("edge_extend_to_chip", fdu.getTag()).lower() == "yes"):
+            do_edge_extend = True
 
         #Check that region file exists
         if (regFile is None or not os.access(regFile, os.F_OK)):
@@ -615,6 +632,7 @@ class findSlitletProcess(fatboyProcess):
             os.mkdir(outdir+"/findSlitlets",0o755)
         statsfile = outdir+"/findSlitlets/stats_"+masterFlat._id+".txt"
         f = open(statsfile,'w')
+        is_error = False
         #Loop over each slitlet and trace out top and bottom of slitlet
         t = time.time()
         for slitidx in range(nslits):
@@ -635,7 +653,6 @@ class findSlitletProcess(fatboyProcess):
 
             if (n_segments > 0):
                 #Create xs piecewise if multiple segments
-                bndry = 10
                 xs = list(range(xinit,xstride*(xinit//xstride+1)-bndry, step))+list(range(xinit-step, xstride*(xinit//xstride)+bndry, -1*step))
                 first_seg = xinit//xstride
                 #Piece together in consecutively higher then consecutively lower segments
@@ -699,7 +716,6 @@ class findSlitletProcess(fatboyProcess):
                         mcor = where(ccor == max(ccor))[0]
                         seg_shifts.append(len(ccor)//2-mcor[0])
 
-
                 #Setup lists and arrays for within each loop
                 #xcoords and ycoords contain lists of fit (x,y) points
                 xcoords = []
@@ -724,10 +740,20 @@ class findSlitletProcess(fatboyProcess):
                         lastYs = [syval]
                         lastXs = [xinit]
                     elif (currSeg != lastSeg):
-                        lastIdx = where(abs(array(xcoords)-xs[j]) == min(abs(array(xcoords)-xs[j])))[0][0]
-                        currY = ycoords[lastIdx]+seg_shifts[currSeg]
-                        lastYs = [ycoords[lastIdx]+seg_shifts[currSeg]]
-                        lastXs = [xcoords[lastIdx]]
+                        if (len(xcoords) == 0):
+                            currY = syval
+                            lastYs = [syval]
+                            lastXs = [xinit]
+                        else:
+                            if (len(xcoords) == 0):
+                                currY = syval + seg_shifts[currSeg]
+                                lastYs = [syval + seg_shifts[currSeg]]
+                                lastXs = [xinit]
+                            else:
+                                lastIdx = where(abs(array(xcoords)-xs[j]) == min(abs(array(xcoords)-xs[j])))[0][0]
+                                currY = ycoords[lastIdx]+seg_shifts[currSeg]
+                                lastYs = [ycoords[lastIdx]+seg_shifts[currSeg]]
+                                lastXs = [xcoords[lastIdx]]
                     if (currY < edge_thresh):
                         #This slitlet is nearing the edge of the chip.  Don't try to fit anymore values.
                         #Use values that have been fit already to trace it out
@@ -760,9 +786,14 @@ class findSlitletProcess(fatboyProcess):
                         #Flux in cut1 is less than 5% of that in islit reference cut
                         continue
                     q1 = gpu_arraymedian(cut1d, nhigh=len(cut1d)//2) #quartile
-                    if (cut1d.max()/q1 < 3):
+                    cmax = cut1d.max()
+                    if (cmax < 0):
                         f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t7\n')
-                        #Flux in cut1 is less than 5% of that in islit reference cut
+                        #Peak flux in cut1d negative - should be caught by #6 but just in case
+                        continue
+                    if ((do_subtract_bkg and cmax/q1 < 3) or abs(cmax/q1) < cut1d_max_threshold):
+                        f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t7\n')
+                        #Peak flux in cut1d < 3*quartile
                         continue
                     #Cross correlate cut1d with islit
                     #Use numpy correlate since 1d cut -- not enough pixels to benefit from GPU
@@ -985,12 +1016,23 @@ class findSlitletProcess(fatboyProcess):
                     seg_xcoords = seg_xcoords[b]
                     seg_ycoords = seg_ycoords[b]
 
+                    #Check coverage fraction
+                    covfrac = len(seg_ycoords)*100.0/(len(xs)//n_segments)
                     if (n_segments > 1):
-                        print("\tSegment "+str(seg)+": rejecting outliers (phase 3). Sigma = "+formatNum(yresid.std())+". Using "+str(len(seg_ycoords))+" datapoints to fit slitlets.")
-                        self._log.writeLog(__name__, "Segment "+str(seg)+": rejecting outliers (phase 3). Sigma = "+formatNum(yresid.std())+". Using "+str(len(seg_ycoords))+" datapoints to fit slitlets.", printCaller=False, tabLevel=1)
+                        print("\tSegment "+str(seg)+": rejecting outliers (phase 3). Sigma = "+formatNum(yresid.std())+". Using "+str(len(seg_ycoords))+" datapoints to fit slitlets (Cov. Frac: "+formatNum(covfrac)+")")
+                        self._log.writeLog(__name__, "Segment "+str(seg)+": rejecting outliers (phase 3). Sigma = "+formatNum(yresid.std())+". Using "+str(len(seg_ycoords))+" datapoints to fit slitlets (Cov. Frac: "+formatNum(covfrac)+")", printCaller=False, tabLevel=1)
                     else:
-                        print("\trejecting outliers (phase 3). Sigma = "+formatNum(yresid.std())+". Using "+str(len(seg_ycoords))+" datapoints to fit slitlets.")
-                        self._log.writeLog(__name__, "rejecting outliers (phase 3). Sigma = "+formatNum(yresid.std())+". Using "+str(len(seg_ycoords))+" datapoints to fit slitlets.", printCaller=False, tabLevel=1)
+                        print("\trejecting outliers (phase 3). Sigma = "+formatNum(yresid.std())+". Using "+str(len(seg_ycoords))+" datapoints to fit slitlets (Cov. Frac: "+formatNum(covfrac)+")")
+                        self._log.writeLog(__name__, "rejecting outliers (phase 3). Sigma = "+formatNum(yresid.std())+". Using "+str(len(seg_ycoords))+" datapoints to fit slitlets (Cov. Frac: "+formatNum(covfrac)+")", printCaller=False, tabLevel=1)
+                    if (covfrac < minCovFrac):
+                        print("findSlitletProcess::traceOrders> Coverage fraction of "+formatNum(covfrac)+"% is below minimnum threshold for Order "+str(slitidx)+" for "+fdu.getFullId()+"! Discarding Image!")
+                        self._log.writeLog(__name__, "Coverage fraction of "+formatNum(covfrac)+"% is below minimnum threshold. for Order "+str(slitidx)+" for "+fdu.getFullId()+"! Discarding Image!", type=fatboyLog.ERROR)
+                        is_error = True
+                    if (yresid.std() > maxResidualError):
+                        print("findSlitletProcess::traceOrders> Sigma of "+formatNum(yresid.std()) + " is greater than max residual error of "+str(maxResidualError)+" for Order "+str(slitidx)+" for "+fdu.getFullId()+"! Discarding Image!")
+                        self._log.writeLog(__name__, "Sigma of "+formatNum(yresid.std()) + " is greater than max residual error of "+str(maxResidualError)+" for Order "+str(slitidx)+" for "+fdu.getFullId()+"! Discarding Image!", type=fatboyLog.ERROR)
+                        is_error = True
+
                     #Use previous guess
                     p = lsq[0].astype(float64)
                     #p = zeros(seg_order+1, float64)
@@ -1035,6 +1077,11 @@ class findSlitletProcess(fatboyProcess):
             #Update slitmask
             ylo = sylo[slitidx]-z1[0][int(slitx[slitidx])]-1-padding
             yhi = syhi[slitidx]-z1[1][int(slitx[slitidx])]+padding
+            if (do_edge_extend):
+                if (ylo <= edge_thresh):
+                    ylo = 0
+                if (yhi >= ysize-edge_thresh):
+                    yhi = ysize-1
             yloMask[slitidx,:] = ylo+z1[0]
             yhiMask[slitidx,:] = yhi+z1[1]
             if (not self._fdb.getGPUMode()):
@@ -1050,6 +1097,13 @@ class findSlitletProcess(fatboyProcess):
         #end for slitidx
         #print time.time()-t
         f.close()
+        #Check for errors AFTER writing QA data
+        if (is_error):
+            print("findSlitletProcess::traceOrders> ERROR: Could not trace orders for "+fdu.getFullId()+"! Discarding Image!")
+            self._log.writeLog(__name__, "Could not trace orders for "+fdu.getFullId()+"! Discarding Image!", type=fatboyLog.ERROR)
+            #disable this FDU
+            fdu.disable()
+            return calibs
 
         #GPU mode - create slitmask at once
         if (self._fdb.getGPUMode()):
