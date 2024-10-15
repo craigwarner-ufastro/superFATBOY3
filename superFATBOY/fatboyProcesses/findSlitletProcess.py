@@ -741,19 +741,14 @@ class findSlitletProcess(fatboyProcess):
                         lastXs = [xinit]
                     elif (currSeg != lastSeg):
                         if (len(xcoords) == 0):
-                            currY = syval
-                            lastYs = [syval]
+                            currY = syval + seg_shifts[currSeg]
+                            lastYs = [syval + seg_shifts[currSeg]]
                             lastXs = [xinit]
                         else:
-                            if (len(xcoords) == 0):
-                                currY = syval + seg_shifts[currSeg]
-                                lastYs = [syval + seg_shifts[currSeg]]
-                                lastXs = [xinit]
-                            else:
-                                lastIdx = where(abs(array(xcoords)-xs[j]) == min(abs(array(xcoords)-xs[j])))[0][0]
-                                currY = ycoords[lastIdx]+seg_shifts[currSeg]
-                                lastYs = [ycoords[lastIdx]+seg_shifts[currSeg]]
-                                lastXs = [xcoords[lastIdx]]
+                            lastIdx = where(abs(array(xcoords)-xs[j]) == min(abs(array(xcoords)-xs[j])))[0][0]
+                            currY = ycoords[lastIdx]+seg_shifts[currSeg]
+                            lastYs = [ycoords[lastIdx]+seg_shifts[currSeg]]
+                            lastXs = [xcoords[lastIdx]]
                     if (currY < edge_thresh):
                         #This slitlet is nearing the edge of the chip.  Don't try to fit anymore values.
                         #Use values that have been fit already to trace it out
