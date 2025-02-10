@@ -1616,6 +1616,9 @@ class rectifyProcess(fatboyProcess):
                     #Initial guess is f(x_in, y_in) = x_in
                     p[1] = 1
                     try:
+                        print ("P",p)
+                        print (len(slitxin), len(slityin), len(slityout), fit_order, terms)
+                        print ("SLITIDX", slitidx+1, seg)
                         lsq = leastsq(surfaceResiduals, p, args=(slitxin, slityin, slityout, fit_order))
                     except Exception as ex:
                         print("rectifyProcess::calculateMOSContinuaTrans> ERROR performing least squares fit: "+str(ex)+"! Discarding Image "+fdu.getFullId()+"!")

@@ -1056,6 +1056,8 @@ class findSlitletProcess(fatboyProcess):
                     for i in range(len(xcoords)):
                         yval = int(ycoords[i]+.5)
                         xval = int(xcoords[i]+.5)
+                        if (yval == 0 or yval > qaData.shape[0]-2):
+                            continue
                         for yi in range(yval-1,yval+2):
                             for xi in range(xval-1,xval+2):
                                 dist = sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
@@ -1096,6 +1098,18 @@ class findSlitletProcess(fatboyProcess):
         if (is_error):
             print("findSlitletProcess::traceOrders> ERROR: Could not trace orders for "+fdu.getFullId()+"! Discarding Image!")
             self._log.writeLog(__name__, "Could not trace orders for "+fdu.getFullId()+"! Discarding Image!", type=fatboyLog.ERROR)
+            qafile = outdir+"/findSlitlets/qa_"+masterFlat.getFullId()
+            #Write out qa file
+            if (not os.access(qafile, os.F_OK)):
+                #TODO - GPU for qa data?
+                #Generate qa data
+                #if (self._fdb.getGPUMode()):
+                #  #Use GPU
+                #  flatData = generateQAData(flatData, xcoords, ycoords, sylo, syhi, horizontal = (fdu.dispersion == fdu.DISPERSION_HORIZONTAL))
+                masterFlat.tagDataAs("slitqa", qaData)
+                masterFlat.writeTo(qafile, tag="slitqa")
+                masterFlat.removeProperty("slitqa")
+                del qaData
             #disable this FDU
             fdu.disable()
             return calibs

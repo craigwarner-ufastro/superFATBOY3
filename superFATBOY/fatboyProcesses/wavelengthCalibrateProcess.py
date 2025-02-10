@@ -2276,6 +2276,10 @@ class wavelengthCalibrateProcess(fatboyProcess):
                     mcor = lsq[0][1]
                     #Centroided position in dummyFlux, dummyWave arrays
                     currDummy = blref+xoffGuess-mcor+searchbox
+                    if (currDummy > len(dummyWave)-3 or currDummy < 2):
+                        #Flag and continue
+                        obsFlag[blref-1:blref+2] = 0
+                        continue
                     #Centroid line for subpixel accuracy
                     #Square data to ensure bright line dominates fit
                     refCut = resid[blref-10:blref+11]**2
@@ -2703,7 +2707,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
                 fitParams[j].append(lsq[0])
                 #Append qa params - slitlet, segment, norig, n lines used in fit, sigma
                 #Format as string
-                qaParams.append(str(j+1)+"\t"+str(seg+1)+"\t"+str(norig)+"\t"+str(len(reflines))+"\t"+formatNum(residLines.std()))
+                qaParams.append(str(j+1)+"\t"+str(seg+1)+"\t"+str(norig)+"\t"+str(len(reflines))+"\t"+formatNum(residLines.std())+"\t"+formatNum(minLambdaList[-1], 0)+"\t"+formatNum(maxLambdaList[-1],0)+"\t"+formatList(lsq[0]))
 
         #Update header
         fdu.setProperty("wcHeader", wcHeader)
@@ -2726,7 +2730,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
         #Output qa file with stats about each slitlet/segment
         qafile = outdir+"/wavelengthCalibrated/qa_"+skyFDU._id+".dat"
         f = open(qafile,'w')
-        f.write("Slitlet\tSegment\tn lines\tn used\tsigma\n")
+        f.write("Slitlet\tSegment\tn lines\tn used\tsigma\tmin\tmax\tfit\n")
         for i in range(len(qaParams)):
             f.write(qaParams[i]+"\n")
         f.close()

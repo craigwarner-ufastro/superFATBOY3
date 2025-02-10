@@ -23,7 +23,7 @@ class emirBiasSubtractProcess(fatboyProcess):
     #end execute
 
     def emirBiasSubtract(self, fdu):
-        data = fdu.getData()
+        data = fdu.getData().astype(np.float32)
         #Computes a 1D array of sigma clipped mean and median values from the top 4 rows of the image
         #Can also do the same with the bottom 4 rows, but the values are not consistent and advice from GTC was to use the top
         #Can test to see which works best, but start with top
