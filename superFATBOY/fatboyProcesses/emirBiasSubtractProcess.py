@@ -30,7 +30,7 @@ class emirBiasSubtractProcess(fatboyProcess):
 
         mean,median,std=sigma_clipped_stats(data[0:3,:],mask=None,mask_value=None,sigma=3.0,maxiters=3,cenfunc='median',stdfunc='std',axis=0,grow=False)
         #Subtracting off the mean for now. Minimal difference to median from what I can see
-        data = data-mean 
+        data -= mean 
         #Note that there are also 4 columns on each side which could be used to correct for variations in that direction. Omitting until it proves necessary.
         #Finally, we should strip off all of these dark rows and columns
         data = np.ascontiguousarray(data[4:-4,4:-4])
