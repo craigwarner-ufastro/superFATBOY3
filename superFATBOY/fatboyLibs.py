@@ -4008,6 +4008,24 @@ def readRegionFileXML(regfile, horizontal=True, log=None):
     return (sylo, syhi, slitx, slitw)
 #end readRegionFileXML
 
+#Use a sigma clipping algorithm to remove outliers from a 1d array
+def removeOutliersSigmaClip(origData, sig, iter):
+    n = 0
+    oldstddev = 0
+    data = origData.copy()
+    while (n < iter and len(data) > 0):
+        mean = data.mean()
+        stddev = data.std()
+        if (stddev == oldstddev):
+            break
+        lo = mean-sig*stddev
+        hi = mean+sig*stddev
+        oldstddev = stddev
+        data = data[logical_and(data > lo, data < hi)]
+        n+=1
+    return data 
+#end removeOutliersSigmaClip
+
 def removeEmpty(s):
     while(s.count('') > 0):
         s.remove('')

@@ -7,6 +7,7 @@ from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY import gpu_imcombine, imcombine
 from superFATBOY import gpu_xregister, xregister
 from superFATBOY import gpu_drihizzle, drihizzle
+from superFATBOY import tri_register
 
 class alignStackProcess(fatboyProcess):
     _modeTags = ["imaging", "circe"]
@@ -61,6 +62,7 @@ class alignStackProcess(fatboyProcess):
             xregister_method = xregister.xregister
             if (self.getOption('xregister_pad_align_box_cpu', fdu.getTag()).lower() == "yes"):
                 xregister.doPad = True
+        triregister_method = tri_register.tri_register
 
         #xregister, xregister_constrained, xregister_sep, xregister_sep_constrained, xregister_guesses, manual
         if (alignMethod == "xregister"):
@@ -85,6 +87,30 @@ class alignStackProcess(fatboyProcess):
             #Use RA, Dec, pixscale for initial guess and generate dummy image using sep
             #First cross correlate dummy images from sep, then perform sigma clipping of differences between centroids for objects
             shifts = xregister_method(frameList, xcenter=xcenter, ycenter=ycenter, xboxsize=xboxsize, yboxsize=yboxsize, constrain_boxsize=constrain_box, refframe=refframe, log=self._log, median_filter2d=doMedianFilter, doMaskNegatives=False, doSmoothCorrelation=doSmoothCorrelation, doFit2dGaussian=doFit2dGaussian, sepDetectThresh=sepDetectThresh, sepfwhm=sepfwhm, method=xregister.METHOD_SEP_CENTROID_CONSTRAINED)
+        elif (alignMethod == "triangles"):
+            triangles = self.getOption("triangles", fdu.getTag()).lower()
+            trimethod = tri_register.METHOD_DELAUNAY
+            if (triangles == "all"):
+                trimethod = tri_register.METHOD_ALL
+            triangles_atol = float(self.getOption('triangles_atol', fdu.getTag()))
+            triangles_rtol = float(self.getOption('triangles_rtol', fdu.getTag()))
+            max_stars = None
+            if (self.getOption('triangles_max_stars', fdu.getTag()) is not None):
+                max_stars = int(self.getOption('triangles_max_stars', fdu.getTag()))
+            debug_plots = False
+            if (self.getOption('triangles_debug_plots', fdu.getTag()).lower() == "yes"):
+                debug_plots = True
+            triangles_min_angle = float(self.getOption('triangles_min_angle', fdu.getTag()))
+            triangles_max_angle = float(self.getOption('triangles_max_angle', fdu.getTag()))
+            triangles_sigma = float(self.getOption('triangles_sigma', fdu.getTag()))
+            triangles_use_sigma_clipping = False
+            if (self.getOption('triangles_use_sigma_clipping', fdu.getTag()).lower() == 'yes'):
+                triangles_use_sigma_clipping = True
+
+            outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
+            if (not os.access(outdir+"/alignedStacked", os.F_OK)):
+                os.mkdir(outdir+"/alignedStacked",0o755)
+            shifts = triregister_method(frameList, xcenter=xcenter, ycenter=ycenter, xboxsize=xboxsize, yboxsize=yboxsize, refframe=refframe, log=self._log, sepDetectThresh=sepDetectThresh, method=trimethod, min_angle=triangles_min_angle, max_angle=triangles_max_angle, max_stars=max_stars, doplots=debug_plots, plotdir=outdir+"/alignedStacked/", atol=triangles_atol, rtol=triangles_rtol, sigma_clipping=triangles_use_sigma_clipping, sig_to_clip=triangles_sigma)
         elif (alignMethod == "manual"):
             if (not os.access(shiftsFile, os.F_OK)):
                 print("alignStackProcess::alignFrames> ERROR: align_shifts_file "+shiftsFile+" not found! Alignment and stacking not done!")
@@ -214,7 +240,7 @@ class alignStackProcess(fatboyProcess):
         self._optioninfo.setdefault('align_box_center_y', 'center of alignment box; -1 = use y-center')
         self._options.setdefault('align_constrain_boxsize', '256')
         self._options.setdefault('align_method', 'xregister') #xregister, xregister_constrained, xregister_sep, xregister_sep_constrained, xregister_guesses, sep_centroid, sep_centroid_constrained, manual
-        self._optioninfo.setdefault('align_method', 'xregister | xregister_constrained | xregister_sep |\nxregister_sep_constrained | xregister_guesses |\nsep_centroid | sep_centroid_constrained | manual')
+        self._optioninfo.setdefault('align_method', 'xregister | xregister_constrained | xregister_sep |\nxregister_sep_constrained | xregister_guesses |\nsep_centroid | sep_centroid_constrained | triangles | manual')
         self._options.setdefault('align_refframe', '0') #number, identifier.index
         self._optioninfo.setdefault('align_refframe', 'number or identifier.index')
         self._options.setdefault('align_shifts_file', None) #shifts for manual or xregister_guesses
@@ -233,6 +259,23 @@ class alignStackProcess(fatboyProcess):
         self._options.setdefault('stack_nhigh', '3')
         self._options.setdefault('stack_nlow', '3')
         self._options.setdefault('stack_reject_type', 'sigclip')
+        self._options.setdefault('triangles', 'delaunay') #delaunay tringles only or all triangles within angle limits
+        self._optioninfo.setdefault('triangles', 'delaunay | all')
+        self._options.setdefault('triangles_atol', '2.0') #maximum absolute tolerance in pixels for matching triangles
+        self._optioninfo.setdefault('triangles_atol', 'maximum absolute tolerance in pixels for matching triangles')
+        self._options.setdefault('triangles_debug_plots', 'yes')
+        self._options.setdefault('triangles_max_angle', '110')
+        self._optioninfo.setdefault('triangles_max_angle', 'max angle for any triangle to have')
+        self._options.setdefault('triangles_max_stars', None)
+        self._optioninfo.setdefault('triangles_max_stars', 'if not None, max stars to compute triangles from, sorted by flux')
+        self._options.setdefault('triangles_min_angle', '30')
+        self._optioninfo.setdefault('triangles_min_angle', 'min angle for any triangle to have')
+        self._options.setdefault('triangles_rtol', '0.025') #maximum relative tolerance in pixels for matching triangles
+        self._optioninfo.setdefault('triangles_rtol', 'maximum relative tolerance in pixels for matching triangles')
+        self._options.setdefault('triangles_sigma', '3')
+        self._optioninfo.setdefault('triangles_sigma', 'Sigma to use for sigma clipping') 
+        self._options.setdefault('triangles_use_sigma_clipping', 'no')
+        self._optioninfo.setdefault('triangles_use_sigma_clipping', 'Use sigma clipping on shifts from fit triangles')
         self._options.setdefault('use_only_selected_indices', None)
         self._optioninfo.setdefault('use_only_selected_indices', 'If not None, this can be a list of indices or ASCII\nfile listing indices of frames to align/stack.\nOthers will be ignored.')
         self._options.setdefault('xregister_fit_2d_gaussian', 'no') #fit a 2-d gaussian instead of two 1-d gaussians
