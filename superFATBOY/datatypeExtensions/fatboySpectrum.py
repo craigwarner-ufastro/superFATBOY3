@@ -57,7 +57,7 @@ class fatboySpectrum(fatboyDataUnit):
 
     ## Adds spectrum specific keywords
     def addKeywords(self):
-        self._keywords.setdefault('grism_keyword', 'GRISM')
+        self._keywords.setdefault('grism_keyword', ['GRISM', 'GRATING', 'GRATNAME'])
         self._keywords.setdefault('object_keyword', 'OBJECT')
         self._keywords.setdefault('pixscale_keyword', 'PIXSCALE')
         self._keywords.setdefault('readnoise_keyword', ['RDNOIS', 'RDNOIS_1'])
@@ -206,7 +206,9 @@ class fatboySpectrum(fatboyDataUnit):
             if (self._log is not None):
                 self._log.writeLog(__name__, "Unable to find keyword "+str(self._keywords['gain_keyword'])+" in "+self.filename+"!", type=fatboyLog.WARNING)
         try:
-            self.grism = self.getHeaderValue('grism_keyword').strip()
+            self.grism = self.getHeaderValue('grism_keyword')
+            if self.grism is not None:
+                self.grism = self.grism.strip()
         except Exception:
             print("fatboySpectrum::initialize> Warning: Unable to find keyword "+str(self._keywords['grism_keyword'])+" in "+self.filename+"!")
             if (self._log is not None):
@@ -267,6 +269,9 @@ class fatboySpectrum(fatboyDataUnit):
                     self._log.writeLog(__name__, "Unable to find keyword "+str(self._keywords['ra_keyword'])+" in "+self.filename+"!", type=fatboyLog.WARNING)
 
         #MEF should be set in readHeader now.
+        if (self._mef is None):
+            #readHeader failed - could be 1d data
+            self._mef = -1
         if (self._mef < 0):
             #Header failed, now use data
             temp = pyfits.open(self.filename)
@@ -288,7 +293,7 @@ class fatboySpectrum(fatboyDataUnit):
                         else:
                             #shape = (y, x) = (NAXIS2, NAXIS1)
                             self._shape = (self._header['NAXIS2'], self._header['NAXIS1'])
-                if (shape is None):
+                if (self._shape is None):
                     #Not found in header, now use data
                     temp = pyfits.open(self.filename)
                     self._shape = temp[self._mef].data.shape
