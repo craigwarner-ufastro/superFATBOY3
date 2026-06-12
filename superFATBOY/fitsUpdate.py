@@ -1,6 +1,6 @@
 #!/usr/bin/python -u
 from superFATBOY.fatboyLibs import *
-from numpy import *
+import numpy as np
 import sys, glob
 
 if (len(sys.argv) == 1 or sys.argv[1] == '-h' or sys.argv[1] == '-help'):

@@ -1,6 +1,6 @@
 #!/usr/bin/python -u
 from superFATBOY.fatboyLibs import *
-from numpy import *
+import numpy as np
 import os, sys, glob
 
 def space(x):
