@@ -1,6 +1,6 @@
 ## @package superFATBOY.datatypeExtensions
 from superFATBOY.datatypeExtensions.fatboySpectrum import *
-from numpy import *
+import numpy as np
 
 class megaraSpectrum(fatboySpectrum):
     _name = "megaraSpectrum"
