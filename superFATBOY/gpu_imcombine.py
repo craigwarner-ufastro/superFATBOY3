@@ -4,15 +4,10 @@ try:
     if (not superFATBOY.gpuEnabled()):
         hasCuda = False
     else:
-        import pycuda.driver as drv
-        import pycuda.tools
-        if (not superFATBOY.threaded()):
-            #If not threaded mode, import autoinit.  Otherwise assume context exists.
-            #Code will crash if in threaded mode and context does not exist.
-            import pycuda.autoinit
-        from pycuda.compiler import SourceModule
+        import cupy as cp
+        # We might not need autoinit, CuPy handles it
 except Exception:
-    print("gpu_imcombine> WARNING: PyCUDA not installed!")
+    print("gpu_imcombine> WARNING: CuPy not installed!")
     hasCuda = False
     superFATBOY.setGPUEnabled(False)
 
@@ -29,7 +24,7 @@ except Exception:
 from .gpu_arraymedian import gpu_arraymedian
 from .fatboyDataUnit import *
 import sys
-from numpy import *
+import numpy as np
 
 blocks = 2048*4
 block_size = 512
@@ -44,61 +39,55 @@ MODE_FDU_DIFF_PAIRING = 5 #for CIRCE data twilight flats
 def get_mod():
     mod = None
     if (hasCuda and superFATBOY.gpuEnabled()):
-        mod = SourceModule("""
+        mod = cp.RawModule(code=r"""
+        extern "C" {
         __global__ void multArrVector_float(float *data, float *factor, int stride)
         {
           const int i = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
-          //const int i = blockDim.x*blockIdx.x + threadIdx.x;
           data[i] *= factor[i%stride];
         }
 
         __global__ void multArrVector_int(int *data, int *factor, int stride)
         {
           const int i = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
-          //const int i = blockDim.x*blockIdx.x + threadIdx.x;
           data[i] *= factor[i%stride];
         }
 
         __global__ void multArrVector_double(double *data, double *factor, int stride)
         {
           const int i = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
-          //const int i = blockDim.x*blockIdx.x + threadIdx.x;
           data[i] *= factor[i%stride];
         }
 
         __global__ void multArrVector_long(long *data, long *factor, int stride)
         {
           const int i = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
-          //const int i = blockDim.x*blockIdx.x + threadIdx.x;
           data[i] *= factor[i%stride];
         }
 
         __global__ void subArrVector_float(float *data, float *factor, int stride)
         {
           const int i = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
-          //const int i = blockDim.x*blockIdx.x + threadIdx.x;
           data[i] -= factor[i%stride];
         }
 
         __global__ void subArrVector_int(int *data, int *factor, int stride)
         {
           const int i = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
-          //const int i = blockDim.x*blockIdx.x + threadIdx.x;
           data[i] -= factor[i%stride];
         }
 
         __global__ void subArrVector_double(double *data, double *factor, int stride)
         {
           const int i = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
-          //const int i = blockDim.x*blockIdx.x + threadIdx.x;
           data[i] -= factor[i%stride];
         }
 
         __global__ void subArrVector_long(long *data, long *factor, int stride)
         {
           const int i = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
-          //const int i = blockDim.x*blockIdx.x + threadIdx.x;
           data[i] -= factor[i%stride];
+        }
         }
        """)
     return mod
@@ -204,14 +193,14 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
     origsz = data.shape
     csize = origsz[0]//chunks
     totcols = origsz[0]
-    out = empty(origsz, outtype)
+    out = cp.empty(origsz, outtype)
     if (expmask is not None):
-        exp = empty(origsz, outtype)
+        exp = cp.empty(origsz, outtype)
         exptimes = []
-    w = ones(nframes, outtype)
-    zpts = zeros(nframes, outtype)
-    scl = ones(nframes, outtype)
-    inp = empty((csize, origsz[1], nframes), outtype)
+    w = cp.ones(nframes, outtype)
+    zpts = cp.zeros(nframes, outtype)
+    scl = cp.ones(nframes, outtype)
+    inp = cp.empty((csize, origsz[1], nframes), outtype)
     mm = []
     del data
 
@@ -513,8 +502,6 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
         tt = time.time()
         if (j == 0):
             sys.stdout.write("\tUsing "+str(chunks)+" chunks: ")
-        sys.stdout.write(str(j)+" ")
-        sys.stdout.flush()
         #Actual combining: median and mean, 4 rejection types = 8 cases
         if (method == 'median'):
             sz = inp.shape
@@ -527,19 +514,17 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             if (zero != 'none'):
                 fac = (zpts-zpts[0])
                 subArrVector = mod.get_function("subArrVector_float")
-                subArrVector(drv.InOut(inp), drv.In(fac), int32(nfint), grid=(blocks,blocky), block=(block_size,1,1))
+                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
             if (scale != 'none' or weight != 'none'):
-                fac = ones(nfint, outtype)
+                fac = cp.ones(nfint, outtype)
                 if (scale != 'none'):
                     fac *= (scl[0]/scl)
                 if (weight != 'none'):
                     fac *= (w/w[0])
                 multArrVector = mod.get_function("multArrVector_float")
-                multArrVector(drv.InOut(inp), drv.In(fac), int32(nfint), grid=(blocks,blocky), block=(block_size,1,1))
+                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
 
             if (_verbosity == fatboyLog.VERBOSE):
-                print("Scaling: ", time.time()-tt,"; Total: ",time.time()-t)
-            tt = time.time()
 
             if (reject == 'none'):
                 if (dothresh):
@@ -590,15 +575,15 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             if (zero != 'none'):
                 fac = (zpts-zpts[0])
                 subArrVector = mod.get_function("subArrVector_float")
-                subArrVector(drv.InOut(inp), drv.In(fac), int32(nfint), grid=(blocks,blocky), block=(block_size,1,1))
+                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
             if (scale != 'none' or weight != 'none'):
-                fac = ones(nfint, outtype)
+                fac = cp.ones(nfint, outtype)
                 if (scale != 'none'):
                     fac *= (scl[0]/scl)
                 if (weight != 'none'):
                     fac *= (w/w[0])
                 multArrVector = mod.get_function("multArrVector_float")
-                multArrVector(drv.InOut(inp), drv.In(fac), int32(nfint), grid=(blocks,blocky), block=(block_size,1,1))
+                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
             if (_verbosity == fatboyLog.VERBOSE):
                 print("Scaling: ", time.time()-tt,"; Total: ",time.time()-t)
             tt = time.time()
@@ -696,15 +681,15 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             if (zero != 'none'):
                 fac = (zpts-zpts[0])
                 subArrVector = mod.get_function("subArrVector_float")
-                subArrVector(drv.InOut(inp), drv.In(fac), int32(nfint), grid=(blocks,blocky), block=(block_size,1,1))
+                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
             if (scale != 'none' or weight != 'none'):
-                fac = ones(nfint, outtype)
+                fac = cp.ones(nfint, outtype)
                 if (scale != 'none'):
                     fac *= (scl[0]/scl)
                 if (weight != 'none'):
                     fac *= (w/w[0])
                 multArrVector = mod.get_function("multArrVector_float")
-                multArrVector(drv.InOut(inp), drv.In(fac), int32(nfint), grid=(blocks,blocky), block=(block_size,1,1))
+                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
 
             if (_verbosity == fatboyLog.VERBOSE):
                 print("Scaling: ", time.time()-tt,"; Total: ",time.time()-t)
