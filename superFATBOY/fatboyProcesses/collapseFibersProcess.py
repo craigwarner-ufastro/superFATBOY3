@@ -2,7 +2,7 @@ from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
-from numpy import *
+import numpy as np
 import os, time
 
 class collapseFibersProcess(fatboyProcess):
@@ -55,7 +55,7 @@ class collapseFibersProcess(fatboyProcess):
                     #output file already exists and overwrite = no.  Update data from disk and set "collapsed" = True
                     calibs['slitmask'].setProperty("collapsed", True)
                     #Update nslits property
-                    nslits = calibs['slitmask'].getData().max()
+                    nslits = np.max(calibs['slitmask'].getData())
                     calibs['slitmask'].setProperty("nslits", nslits)
                     #Update regions
                     if (calibs['slitmask'].hasProperty("regions")):
@@ -216,7 +216,7 @@ class collapseFibersProcess(fatboyProcess):
             if (fdu.hasProperty("noisemap")):
                 #Square data, collapse, take sqare root
                 nmData = fdu.getData(tag="noisemap")**2
-                fdu.tagDataAs("noisemap", data=sqrt(self.collapseData(fdu, nmData, collapse_method)))
+                fdu.tagDataAs("noisemap", data=np.sqrt(self.collapseData(fdu, nmData, collapse_method)))
             #Look for "cleanSky" frame to collapse
             if ('cleanSky' in calibs and not calibs['cleanSky'].hasProperty("collapsed")):
                 cleanSky = calibs['cleanSky']
@@ -261,36 +261,36 @@ class collapseFibersProcess(fatboyProcess):
                 xsize = fdu.getShape()[0]
                 ysize = fdu.getShape()[1]
             if (not calibs['slitmask'].hasProperty("nslits")):
-                calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData().max())
+                calibs['slitmask'].setProperty("nslits", np.max(calibs['slitmask'].getData()))
             nslits = calibs['slitmask'].getProperty("nslits")
             #Use helper method to all ylo, yhi for each slit in each frame
             (ylos, yhis, slitx, slitw) = findRegions(calibs['slitmask'].getData(), nslits, calibs['slitmask'], gpu=self._fdb.getGPUMode(), log=self._log)
 
             #Create new output arrays
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                data = zeros((nslits, xsize), float32)
+                data = np.zeros((nslits, xsize), np.float32)
                 if (fdu.hasProperty("cleanFrame")):
-                    cleanData = zeros((nslits, xsize), float32)
+                    cleanData = np.zeros((nslits, xsize), np.float32)
                 if (fdu.hasProperty("noisemap")):
-                    nmData = zeros((nslits, xsize), float32)
+                    nmData = np.zeros((nslits, xsize), np.float32)
                 if ('cleanSky' in calibs and not calibs['cleanSky'].hasProperty("collapsed")):
-                    skyData = zeros((nslits, xsize), float32)
+                    skyData = np.zeros((nslits, xsize), np.float32)
                 if ('masterLamp' in calibs and not calibs['masterLamp'].hasProperty("collapsed")):
-                    lampData = zeros((nslits, xsize), float32)
+                    lampData = np.zeros((nslits, xsize), np.float32)
                 if ('slitmask' in calibs and not calibs['slitmask'].hasProperty("collapsed")):
-                    slitData = zeros((nslits, xsize), int32)
+                    slitData = np.zeros((nslits, xsize), np.int32)
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                data = zeros((xsize, nslits), float32)
+                data = np.zeros((xsize, nslits), np.float32)
                 if (fdu.hasProperty("cleanFrame")):
-                    cleanData = zeros((xsize, nslits), float32)
+                    cleanData = np.zeros((xsize, nslits), np.float32)
                 if (fdu.hasProperty("noisemap")):
-                    nmData = zeros((xsize, nslits), float32)
+                    nmData = np.zeros((xsize, nslits), np.float32)
                 if ('cleanSky' in calibs and not calibs['cleanSky'].hasProperty("collapsed")):
-                    skyData = zeros((xsize, nslits), float32)
+                    skyData = np.zeros((xsize, nslits), np.float32)
                 if ('masterLamp' in calibs and not calibs['masterLamp'].hasProperty("collapsed")):
-                    lampData = zeros((xsize, nslits), float32)
+                    lampData = np.zeros((xsize, nslits), np.float32)
                 if ('slitmask' in calibs and not calibs['slitmask'].hasProperty("collapsed")):
-                    slitData = zeros((xsize, nslits), int32)
+                    slitData = np.zeros((xsize, nslits), np.int32)
 
             #Loop over slitlets
             for slitidx in range(nslits):
@@ -308,7 +308,7 @@ class collapseFibersProcess(fatboyProcess):
                     if (fdu.hasProperty("noisemap")):
                         #Square data, collapse, take sqare root
                         slit = (fdu.getData(tag="noisemap")[ylo:yhi+1,:]*currMask)**2
-                        nmData[slitidx,:] = sqrt(self.collapseData(fdu, slit, collapse_method))
+                        nmData[slitidx,:] = np.sqrt(self.collapseData(fdu, slit, collapse_method))
                     if ('cleanSky' in calibs and not calibs['cleanSky'].hasProperty("collapsed")):
                         slit = calibs['cleanSky'].getData()[ylo:yhi+1,:]*currMask
                         skyData[slitidx,:] = self.collapseData(fdu, slit, collapse_method)
@@ -328,7 +328,7 @@ class collapseFibersProcess(fatboyProcess):
                     if (fdu.hasProperty("noisemap")):
                         #Square data, collapse, take sqare root
                         slit = (fdu.getData(tag="noisemap")[:,ylo:yhi+1]*currMask)**2
-                        nmData[:,slitidx] = sqrt(self.collapseData(fdu, slit, collapse_method))
+                        nmData[:,slitidx] = np.sqrt(self.collapseData(fdu, slit, collapse_method))
                     if ('cleanSky' in calibs and not calibs['cleanSky'].hasProperty("collapsed")):
                         slit = calibs['cleanSky'].getData()[:,ylo:yhi+1]*currMask
                         skyData[:,slitidx] = self.collapseData(fdu, slit, collapse_method)

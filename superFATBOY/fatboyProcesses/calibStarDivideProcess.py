@@ -5,7 +5,7 @@ from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
 
 from superFATBOY import gpu_drihizzle, drihizzle
-from numpy import *
+import numpy as np
 from scipy.optimize import leastsq
 
 block_size = 512
@@ -148,13 +148,13 @@ class calibStarDivideProcess(fatboyProcess):
             os.mkdir(outdir+"/calibStarDivided",0o755)
 
         #Shape will now be the same regardless of orientation
-        rssdata = zeros((nspec, xsize), dtype=float32)
+        rssdata = np.zeros((nspec, xsize), dtype=np.float32)
         if (fdu.hasProperty("cleanFrame")):
-            rssclean = zeros((nspec, xsize), dtype=float32)
+            rssclean = np.zeros((nspec, xsize), dtype=np.float32)
         if (fdu.hasProperty("resampled")):
             resampxsize = fdu.getData(tag="resampled").shape[1]
             resampcsxsize = calibs['standard'].getData(tag="resampled").shape[1]
-            rssresamp = zeros((nspec, resampxsize), dtype=float32)
+            rssresamp = np.zeros((nspec, resampxsize), dtype=np.float32)
 
         doIndivSlitlets = False
         #Use new helper methods
@@ -169,7 +169,7 @@ class calibStarDivideProcess(fatboyProcess):
         else:
             print("calibStarDivideProcess::calibStarDivide> Warning: Can not find header keyword PORDER in "+fdu.getFullId()+".  Wavlength solution will not be used to resample before dividing!")
             self._log.writeLog(__name__, "Can not find header keyword PORDER in "+fdu.getFullId()+".  Wavlength solution will not be used to resample before dividing!", type=fatboyLog.WARNING)
-            wave = arange(xsize, dtype=float32)
+            wave = np.arange(xsize, dtype=np.float32)
             doWavelength = False
 
         #set up FITS table
@@ -180,8 +180,8 @@ class calibStarDivideProcess(fatboyProcess):
                 columns.append(pyfits.Column(name='Wavelength', format='D', array=wave))
 
         #Calculate discrete wavelength array for calib star
-        xs = arange(csxsize, dtype=float32)
-        cswave = zeros(csxsize, dtype=float32)
+        xs = np.arange(csxsize, dtype=np.float32)
+        cswave = np.zeros(csxsize, dtype=np.float32)
         if (doWavelength and hasWavelengthSolution(calibs['standard'])):
             cswave = getWavelengthSolution(calibs['standard'], 0, csxsize)
             if (fdu.hasProperty("resampled")):
@@ -259,17 +259,17 @@ class calibStarDivideProcess(fatboyProcess):
         calibData = calib.getData()
         if (tag is not None):
             calibData = calib.getData(tag=tag)
-        xlo = max(cswave.min(), wave.min())
-        xhi = min(cswave.max(), wave.max())
+        xlo = np.max([cswave.min(), wave.min()])
+        xhi = np.min([cswave.max(), wave.max()])
         #Only include wavelengths were spectrum has data
-        b = where((wave >= xlo)*(wave <= xhi))[0]
+        b = np.where((wave >= xlo)*(wave <= xhi))[0]
         #Resample calibration star at these wavelengths
         ystar = []
-        valid = ones(len(b), bool)
+        valid = np.ones(len(b), bool)
         for i in range(len(b)):
             #Find calib star datapoint closest in wavelength to this
             #datapoint in spectrum
-            ref = where(abs(cswave-wave[b][i]) == min(abs(cswave-wave[b][i])))[0][0]
+            ref = np.where(np.abs(cswave-wave[b][i]) == np.min(np.abs(cswave-wave[b][i])))[0][0]
             if (cswave[ref] == wave[b][i]):
                 #Special case, exact same wavelength
                 ystar.append(calibData[0, ref])
@@ -289,10 +289,10 @@ class calibStarDivideProcess(fatboyProcess):
                 self._log.writeLog(__name__, "wavelength "+str(wave[b][i])+" out of range for standard star "+calib.getFullId()+".  Ignoring.", fatboyLog.WARNING)
                 valid[i] = False
                 continue
-            w1 = abs(cswave[ref]-wave[b][i])
-            w2 = abs(cswave[ref2]-wave[b][i])
+            w1 = np.abs(cswave[ref]-wave[b][i])
+            w2 = np.abs(cswave[ref2]-wave[b][i])
             ystar.append((w2*calibData[0, ref]+w1*calibData[0, ref2])/(w1+w2))
-        ystar = array(ystar,dtype=float32)
+        ystar = np.array(ystar,dtype=np.float32)
         #Normalize to 1
         ystar /= gpu_arraymedian(ystar, nonzero=True)
         b = b[valid] #update b to throw out any indices not used
