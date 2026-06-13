@@ -2,7 +2,7 @@ from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
-from numpy import *
+import numpy as np
 import os, time
 
 class megaraIdentifyFibersProcess(fatboyProcess):
