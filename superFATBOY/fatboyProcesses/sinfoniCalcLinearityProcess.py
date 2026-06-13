@@ -1,9 +1,9 @@
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY.fatboyLibs import *
-from numpy import *
 import numpy as np
-import os, time
+import os
+import time
 
 class sinfoniCalcLinearityProcess(fatboyProcess):
     _modeTags = ["sinfoni"]
@@ -64,9 +64,9 @@ class sinfoniCalcLinearityProcess(fatboyProcess):
                 exptimes.append(float(lin_frames[j].exptime))
                 counts.append(lin_frames[j].getMedian())
 
-        exptimes = array(exptimes, dtype=float32)
-        counts = array(counts, dtype=float32)
-        slp = (counts/exptimes).mean() #Find mean slope
+        exptimes = np.array(exptimes, dtype=np.float32)
+        counts = np.array(counts, dtype=np.float32)
+        slp = np.mean(counts/exptimes) #Find mean slope
         yout = slp*exptimes #mean slope * exptime is expected counts
         # "A parabolic fit of the product of DIT (i) × mean, as a function of med_dit(i), is performed."
         # => fit_order = 2 is default

@@ -1,8 +1,9 @@
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY.fatboyLibs import *
-from numpy import *
-import os, time
+import numpy as np
+import os
+import time
 
 class sinfoniIdentifySlitletsProcess(fatboyProcess):
     _modeTags = ["sinfoni"]
@@ -44,29 +45,29 @@ class sinfoniIdentifySlitletsProcess(fatboyProcess):
             #Update regions!
             if (slitmask.hasProperty("regions") and not slitmask.hasProperty("SlitletsIdentified")):
                 (ylos, yhis, slitx, slitw) = slitmask.getProperty("regions")
-                slitnums = array([9, 8, 10, 7, 11, 6, 12, 5, 13, 4, 14, 3, 15, 2, 16, 1, 32, 17, 31, 18, 30, 19, 29, 20, 28, 21, 27, 22, 26, 23, 25, 24])
+                slitnums = np.array([9, 8, 10, 7, 11, 6, 12, 5, 13, 4, 14, 3, 15, 2, 16, 1, 32, 17, 31, 18, 30, 19, 29, 20, 28, 21, 27, 22, 26, 23, 25, 24])
                 slitorder = self.getOption("slitorder", fdu.getTag())
                 if (slitorder is not None):
                     if (os.access(slitorder, os.F_OK)):
                         slitnums = readFileIntoList(slitorder)
                         for j in range(len(slitnums)):
-                            slitnums = int(slitnums)
-                        slitnums = array(slitnums)
+                            slitnums[j] = int(slitnums[j])
+                        slitnums = np.array(slitnums)
                     elif (slitorder.find(",") != -1):
                         slitorder = slitorder.split(",")
                         try:
                             for j in range(len(slitorder)):
                                 slitorder[j] = int(slitorder[j].strip())
-                            slitnums = array(slitorder)
+                            slitnums = np.array(slitorder)
                         except Exception as ex:
                             print("sinfoniIdentifySlitletsProcess::execute> Warning: Misformatted option slitordre: "+self.getOption("slitorder", fdu.getTag()))
                             self._log.writeLog(__name__, "Misformatted option slitorder: "+self.getOption("slitorder", fdu.getTag()), type=fatboyLog.WARNING)
                             return True
                 b = slitnums.argsort()
-                ylos = array(ylos)[b]
-                yhis = array(yhis)[b]
-                slitx = array(slitx)[b]
-                slitw = array(slitw)[b]
+                ylos = np.array(ylos)[b]
+                yhis = np.array(yhis)[b]
+                slitx = np.array(slitx)[b]
+                slitw = np.array(slitw)[b]
                 slitmask.setProperty("regions", (ylos, yhis, slitx, slitw))
                 calibs['slitmask'].setProperty("regions", (ylos, yhis, slitx, slitw))
             slitmask.setProperty("SlitletsIdentified", True)
@@ -77,15 +78,6 @@ class sinfoniIdentifySlitletsProcess(fatboyProcess):
 
         if (slitmask.hasHeaderValue("SLITS_ID")):
             slitmask.setProperty("SlitletsIdentified", True)
-
-#    if (slitmask.hasProperty("SlitletsIdentified")):
-#      #Update regions and SlitletsIdentified in other slitmasks
-#      if (fdu.hasProperty("slitmask")):
-#       fdu.getProperty("slitmask").setProperty("regions", slitmask.getProperty("regions"))
-#        fdu.getProperty("slitmask").setProperty("SlitletsIdentified", True)
-#      if (fdu.hasProperty("resampled_slitmask")):
-#        fdu.getProperty("resampled_slitmask").setProperty("regions", slitmask.getProperty("regions"))
-#        fdu.getProperty("resampled_slitmask").setProperty("SlitletsIdentified", True)
             return True
 
         success = self.identifySlitlets(fdu, calibs)
@@ -118,7 +110,6 @@ class sinfoniIdentifySlitletsProcess(fatboyProcess):
         skyShape = None
         if (not 'cleanSky' in calibs):
             #Check for an already created clean sky frame frame matching specmode/filter/grism/ident
-            #cleanSky = self._fdb.getMasterCalib(ident = "cleanSky_"+fdu._id, filter=fdu.filter, obstype="master_clean_sky", properties=properties, headerVals=headerVals, tag=fdu.getTag())
             cleanSky = self._fdb.getMasterCalib(ident = "cleanSky_ds_"+fdu._id, filter=fdu.filter, section=fdu.section, obstype="master_clean_sky", properties=properties, headerVals=headerVals, tag=fdu.getTag())
             if (cleanSky is not None):
                 #add to calibs for rectification below
@@ -169,20 +160,20 @@ class sinfoniIdentifySlitletsProcess(fatboyProcess):
 
     def identifySlitlets(self, fdu, calibs):
         #default slit order
-        slitnums = array([9, 8, 10, 7, 11, 6, 12, 5, 13, 4, 14, 3, 15, 2, 16, 1, 32, 17, 31, 18, 30, 19, 29, 20, 28, 21, 27, 22, 26, 23, 25, 24])
+        slitnums = np.array([9, 8, 10, 7, 11, 6, 12, 5, 13, 4, 14, 3, 15, 2, 16, 1, 32, 17, 31, 18, 30, 19, 29, 20, 28, 21, 27, 22, 26, 23, 25, 24])
         slitorder = self.getOption("slitorder", fdu.getTag())
         if (slitorder is not None):
             if (os.access(slitorder, os.F_OK)):
                 slitnums = readFileIntoList(slitorder)
                 for j in range(len(slitnums)):
-                    slitnums = int(slitnums)
-                slitnums = array(slitnums)
+                    slitnums[j] = int(slitnums[j])
+                slitnums = np.array(slitnums)
             elif (slitorder.find(",") != -1):
                 slitorder = slitorder.split(",")
                 try:
                     for j in range(len(slitorder)):
                         slitorder[j] = int(slitorder[j].strip())
-                    slitnums = array(slitorder)
+                    slitnums = np.array(slitorder)
                 except Exception as ex:
                     print("sinfoniIdentifySlitletsProcess::identifySlitlets> Warning: Misformatted option slitordre: "+self.getOption("slitorder", fdu.getTag()))
                     self._log.writeLog(__name__, "Misformatted option slitorder: "+self.getOption("slitorder", fdu.getTag()), type=fatboyLog.WARNING)
@@ -192,7 +183,7 @@ class sinfoniIdentifySlitletsProcess(fatboyProcess):
         slitmask = fdu.getSlitmask()
         data = slitmask.getData()
         #create a new slitmask of zeros
-        newmask = zeros(data.shape, data.dtype)
+        newmask = np.zeros(data.shape, dtype=data.dtype)
         doCalib = False
         doResampFDU = False
         #Main slitmask is FDU.  Need to update calib slitmask for lamp/sky
@@ -202,13 +193,13 @@ class sinfoniIdentifySlitletsProcess(fatboyProcess):
         if (slitmask.getShape() != calibs['slitmask'].getShape()):
             doCalib = True
             calibData = calibs['slitmask'].getData()
-            newCalibData = zeros(calibData.shape, calibData.dtype)
+            newCalibData = np.zeros(calibData.shape, dtype=calibData.dtype)
 
         if (not fdu.hasProperty("is_resampled") and fdu.hasProperty("resampled")):
             doResampFDU = True
             resamp_slitmask = fdu.getSlitmask(tagname="resampled_slitmask", shape=fdu.getProperty("resampled").shape)
             fduResampData = resamp_slitmask.getData()
-            newResampFDUData = zeros(fduResampData.shape, fduResampData.dtype)
+            newResampFDUData = np.zeros(fduResampData.shape, dtype=fduResampData.dtype)
 
         #populate with new slitnums array
         for j in range(len(slitnums)):
@@ -242,14 +233,14 @@ class sinfoniIdentifySlitletsProcess(fatboyProcess):
         #Update regions!
         if (slitmask.hasProperty("regions")):
             (ylos, yhis, slitx, slitw) = slitmask.getProperty("regions")
-            b = slitnums.argsort()
-            ylos = array(ylos)[b]
-            yhis = array(yhis)[b]
-            slitx = array(slitx)[b]
-            slitw = array(slitw)[b]
+            b = np.argsort(slitnums)
+            ylos = np.array(ylos)[b]
+            yhis = np.array(yhis)[b]
+            slitx = np.array(slitx)[b]
+            slitw = np.array(slitw)[b]
         else:
             #Use helper method to all ylo, yhi for each slit in each frame
-            nslits = slitmask.getData().max()
+            nslits = np.max(slitmask.getData())
             slitmask.setProperty("nslits", nslits)
             (ylos, yhis, slitx, slitw) = findRegions(slitmask.getData(), nslits, fdu, gpu=self._fdb.getGPUMode(), log=self._log)
         slitmask.setProperty("regions", (ylos, yhis, slitx, slitw))
