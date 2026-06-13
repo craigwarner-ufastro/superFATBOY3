@@ -25,28 +25,17 @@ def threaded():
     return __threaded
 
 def createGPUContext():
-    global __ctx
-    import os
-    import pycuda.driver as drv
-    drv.init()
-    devnum = 0
-    if ('CUDA_DEVICE' in os.environ):
-        devnum = int(os.environ['CUDA_DEVICE'])
-    dev = drv.Device(devnum)
-    __ctx = dev.make_context()
+    # CuPy manages GPU contexts automatically.
+    pass
 
 def hasGPUContext():
-    global __ctx
-    if (ctx is None):
-        return False
+    # CuPy manages GPU contexts automatically.
     return True
 
 def setGPUContext(ctx):
-    global __ctx
-    __ctx = ctx
+    # CuPy manages GPU contexts automatically.
+    pass
 
 def popGPUContext():
-    global __ctx
-    if (__ctx is not None):
-        __ctx.pop()
-    __ctx = None
+    # CuPy manages GPU contexts automatically.
+    pass
