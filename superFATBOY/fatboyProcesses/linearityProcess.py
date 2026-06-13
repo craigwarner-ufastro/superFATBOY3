@@ -15,7 +15,7 @@ try:
 except Exception:
     print("linearityProcess> Warning: PyCUDA not installed")
     hasCuda = False
-from numpy import *
+import numpy as np
 import os, time
 
 block_size = 512
@@ -105,8 +105,8 @@ class linearityProcess(fatboyProcess):
     #end execute
 
     def linearity_cpu(self, data, coeffs):
-        data = float32(data)
-        output = zeros(shape(data), float32)
+        data = np.float32(data)
+        output = np.zeros(np.shape(data), np.float32)
         n = 0
         t = time.time()
         for j in coeffs:
@@ -123,16 +123,16 @@ class linearityProcess(fatboyProcess):
         if (data.size % block_size != 0):
             blocks += 1
         gpu_linearity = self.get_linearity_mod().get_function("gpu_linearity_float")
-        if (data.dtype == int32):
+        if (data.dtype == np.int32):
             gpu_linearity = self.get_linearity_mod().get_function("gpu_linearity_int")
         else:
             #Cast data
-            data = data.astype(float32)
-        coeffs = array(coeffs).astype(float32)
+            data = data.astype(np.float32)
+        coeffs = np.array(coeffs).astype(np.float32)
         ncoeffs = coeffs.size
-        output = empty(data.shape, float32)
+        output = np.empty(data.shape, np.float32)
 
-        gpu_linearity(drv.Out(output), drv.In(data), drv.In(coeffs), int32(ncoeffs), int32(data.size), grid=(blocks,1), block=(block_size,1,1))
+        gpu_linearity(drv.Out(output), drv.In(data), drv.In(coeffs), np.int32(ncoeffs), np.int32(data.size), grid=(blocks,1), block=(block_size,1,1))
         if (self._fdb._verbosity == fatboyLog.VERBOSE):
             print("GPU linearize: ",time.time()-t)
 
