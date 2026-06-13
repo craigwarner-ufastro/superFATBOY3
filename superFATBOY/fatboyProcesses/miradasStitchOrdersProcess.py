@@ -1,8 +1,9 @@
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
-from numpy import *
-import os, time
+import numpy as np
+import os
+import time
 
 class miradasStitchOrdersProcess(fatboyProcess):
     """For SOL and SOS modes, we will now stitch together the individual orders to produce one spectrum.
@@ -26,10 +27,10 @@ class miradasStitchOrdersProcess(fatboyProcess):
 
         if ('slitletList' in calibs):
             nslits = max(calibs['slitletList'])
-            islits = array(calibs['slitletList']).astype(int32)
+            islits = np.array(calibs['slitletList']).astype(np.int32)
         else:
             #Start with slitlet 1
-            islits = arange(nslits, dtype=int32)+1
+            islits = np.arange(nslits, dtype=np.int32)+1
 
         #Get noisemap
         doNM = True
@@ -62,7 +63,7 @@ class miradasStitchOrdersProcess(fatboyProcess):
                 maxWave = max(maxWave, wave.max())
 
         scale = (maxWave-minWave)/(rows*xsize)
-        outwave = arange(rows*xsize, dtype=float32)*scale+minWave
+        outwave = np.arange(rows*xsize, dtype=np.float32)*scale+minWave
 
         #Create new header dict
         soHeader = dict()
@@ -72,7 +73,7 @@ class miradasStitchOrdersProcess(fatboyProcess):
         ##Output size should be 1d with ~xsize * nslits
         ##Need flat field as calib for NORMALxx values
 
-        weights = ones(nslits, dtype=float32)
+        weights = np.ones(nslits, dtype=np.float32)
         if (weight_mode == "normalize_flux" or weight_mode == "flux_weighting"):
             if ('masterFlat' in calibs):
                 if (calibs['masterFlat'].hasHeaderValue('NORMAL01')):
@@ -90,30 +91,30 @@ class miradasStitchOrdersProcess(fatboyProcess):
         self._log.writeLog(__name__, "Combining "+str(nslits)+" orders with method "+str(weight_mode)+" and weights: "+str(weights))
 
         #setup numerator and denominator arrays
-        num = zeros(nslits*xsize, dtype=float32)
-        den = zeros(nslits*xsize, dtype=float32)
+        num = np.zeros(nslits*xsize, dtype=np.float32)
+        den = np.zeros(nslits*xsize, dtype=np.float32)
         if (fdu.hasProperty("cleanFrame")):
-            cleanNum = zeros(nslits*xsize, dtype=float32)
-            cleanDen = zeros(nslits*xsize, dtype=float32)
+            cleanNum = np.zeros(nslits*xsize, dtype=np.float32)
+            cleanDen = np.zeros(nslits*xsize, dtype=np.float32)
         if (doNM):
-            nmNum = zeros(nslits*xsize, dtype=float32)
-            nmDen = zeros(nslits*xsize, dtype=float32)
+            nmNum = np.zeros(nslits*xsize, dtype=np.float32)
+            nmDen = np.zeros(nslits*xsize, dtype=np.float32)
 
         #Loop over slitlets and combine them
         for j in range(nslits):
             wave = getWavelengthSolution(fdu, j, xsize)
             ##Need to resample, use numpy.interp
-            currSlice = interp(outwave, wave, combined_slices[j])
+            currSlice = np.interp(outwave, wave, combined_slices[j])
             if (fdu.hasProperty("cleanFrame")):
-                currCleanSlice = interp(outwave, wave, clean_slices[j])
+                currCleanSlice = np.interp(outwave, wave, clean_slices[j])
             if (doNM):
-                currNMslice = interp(outwave, wave, nm_slices[j])
+                currNMslice = np.interp(outwave, wave, nm_slices[j])
                 #Handle areas where noisemap is 0
                 b = (currNMslice == 0)
                 currNMslice[b] = 1
                 if (weight_mode == "none"):
                     currNum = currSlice
-                    currDen = ones(currSlice.shape)
+                    currDen = np.ones(currSlice.shape)
                 else:
                     currNum = weights[j]*currSlice/currNMslice**2
                     currDen = weights[j]/currNMslice**2
@@ -124,7 +125,7 @@ class miradasStitchOrdersProcess(fatboyProcess):
                 if (fdu.hasProperty("cleanFrame")):
                     if (weight_mode == "none"):
                         currNum = currCleanSlice
-                        currDen = ones(currCleanSlice.shape)
+                        currDen = np.ones(currSlice.shape)
                     else:
                         currNum = weights[j]*currCleanSlice/currNMslice**2
                         currDen = weights[j]/currNMslice**2
@@ -149,7 +150,7 @@ class miradasStitchOrdersProcess(fatboyProcess):
         stitched_orders = num/den
         stitched_orders[b] = 0
         if (doNM):
-            stitched_nm = sqrt(nmNum/nmDen) #sqrt of sum of squares
+            stitched_nm = np.sqrt(nmNum/nmDen) #sqrt of sum of squares
         if (fdu.hasProperty("cleanFrame")):
             b = (cleanDen == 0)
             cleanDen[b] = 1
@@ -224,16 +225,16 @@ class miradasStitchOrdersProcess(fatboyProcess):
         slitletList = self.getCalib("slitlet_list", fdu.getTag())
         if (slitletList is not None):
             #passed from XML with <calib> tag.
-            if (isinstance(slitletList, list) or isinstance(slitletList, ndarray)):
+            if (isinstance(slitletList, list) or isinstance(slitletList, np.ndarray)):
                 #Passed as list or array
                 print("miradasStitchOrdersProcess::getCalibs> Using slitlet list: "+str(slitletList))
                 self._log.writeLog(__name__, "Using slitlet list: "+str(slitletList))
-                calibs['slitletList'] = array(slitletList)
+                calibs['slitletList'] = np.array(slitletList)
             elif (os.access(slitletList, os.F_OK)):
                 #Passed as a filename
                 print("miradasStitchOrdersProcess::getCalibs> Using slitlet indices from "+slitletList+"...")
                 self._log.writeLog(__name__, "Using slitlet indices from "+slitletList+"...")
-                calibs['slitletList'] = loadtxt(slitletList)
+                calibs['slitletList'] = np.loadtxt(slitletList)
             else:
                 print("miradasStitchOrdersProcess::getCalibs> Warning: Could not find slitlet_list "+str(slitletList)+"...")
                 self._log.writeLog(__name__, "Could not find slitlet_list "+str(slitletList)+"...")
@@ -283,7 +284,7 @@ class miradasStitchOrdersProcess(fatboyProcess):
         #make directory if necessary
         outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
         if (not os.access(outdir+"/stitchedOrders", os.F_OK)):
-            os.mkdir(outdir+"/stitchedOrders",0o755)
+            os.mkdir(outdir+"/stitchedOrders", 0o755)
         #Create output filename
         sofile = outdir+"/stitchedOrders/so_"+fdu.getFullId()
         #Check to see if it exists
