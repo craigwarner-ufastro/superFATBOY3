@@ -1,22 +1,18 @@
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLog import fatboyLog
+import cupy as cp
+import numpy as np
+import os
+import time
+
 hasCuda = True
 try:
     import superFATBOY
     if (not superFATBOY.gpuEnabled()):
         hasCuda = False
-    else:
-        import pycuda.driver as drv
-        if (not superFATBOY.threaded()):
-            #If not threaded mode, import autoinit.  Otherwise assume context exists.
-            #Code will crash if in threaded mode and context does not exist.
-            import pycuda.autoinit
-        from pycuda.compiler import SourceModule
 except Exception:
-    print("linearityProcess> Warning: PyCUDA not installed")
+    print("linearityProcess> Warning: CuPy not installed")
     hasCuda = False
-import numpy as np
-import os, time
 
 block_size = 512
 
@@ -26,29 +22,32 @@ class linearityProcess(fatboyProcess):
     def get_linearity_mod(self):
         linearity_mod = None
         if (hasCuda):
-            linearity_mod = SourceModule("""
-          __global__ void gpu_linearity_int(float *output, int *input, float *coeffs, int ncoeffs, int size) {
-            const int i = blockDim.x*blockIdx.x + threadIdx.x;
-            if (i >= size) return;
-            int n = 1;
-            output[i] = input[i]*coeffs[0];
-            for (int j = 1; j < ncoeffs; j++) {
-              n++;
-              output[i] += coeffs[j] * pow((float)input[i], n);
-            }
-          }
+            code = r"""
+              extern "C" {
+              __global__ void gpu_linearity_int(float *output, int *input, float *coeffs, int ncoeffs, int size) {
+                const int i = blockDim.x*blockIdx.x + threadIdx.x;
+                if (i >= size) return;
+                int n = 1;
+                output[i] = input[i]*coeffs[0];
+                for (int j = 1; j < ncoeffs; j++) {
+                  n++;
+                  output[i] += coeffs[j] * pow((float)input[i], n);
+                }
+              }
 
-          __global__ void gpu_linearity_float(float *output, float *input, float *coeffs, int ncoeffs, int size) {
-            const int i = blockDim.x*blockIdx.x + threadIdx.x;
-            if (i >= size) return;
-            int n = 1;
-            output[i] = input[i]*coeffs[0];
-            for (int j = 1; j < ncoeffs; j++) {
-              n++;
-              output[i] += coeffs[j] * pow(input[i], n);
-            }
-          }
-        """)
+              __global__ void gpu_linearity_float(float *output, float *input, float *coeffs, int ncoeffs, int size) {
+                const int i = blockDim.x*blockIdx.x + threadIdx.x;
+                if (i >= size) return;
+                int n = 1;
+                output[i] = input[i]*coeffs[0];
+                for (int j = 1; j < ncoeffs; j++) {
+                  n++;
+                  output[i] += coeffs[j] * pow(input[i], n);
+                }
+              }
+              }
+            """
+            linearity_mod = cp.RawModule(code=code)
         return linearity_mod
     #end get_linearity_mod
 
@@ -122,21 +121,25 @@ class linearityProcess(fatboyProcess):
         blocks = data.size//block_size
         if (data.size % block_size != 0):
             blocks += 1
-        gpu_linearity = self.get_linearity_mod().get_function("gpu_linearity_float")
+        
+        gpu_mod = self.get_linearity_mod()
         if (data.dtype == np.int32):
-            gpu_linearity = self.get_linearity_mod().get_function("gpu_linearity_int")
+            gpu_linearity = gpu_mod.get_function("gpu_linearity_int")
+            data_gpu = cp.array(data)
         else:
             #Cast data
-            data = data.astype(np.float32)
-        coeffs = np.array(coeffs).astype(np.float32)
-        ncoeffs = coeffs.size
-        output = np.empty(data.shape, np.float32)
+            gpu_linearity = gpu_mod.get_function("gpu_linearity_float")
+            data_gpu = cp.array(data.astype(np.float32))
+            
+        coeffs_gpu = cp.array(coeffs).astype(np.float32)
+        ncoeffs = coeffs_gpu.size
+        output_gpu = cp.empty(data.shape, np.float32)
 
-        gpu_linearity(drv.Out(output), drv.In(data), drv.In(coeffs), np.int32(ncoeffs), np.int32(data.size), grid=(blocks,1), block=(block_size,1,1))
+        gpu_linearity((blocks, 1, 1), (block_size, 1, 1), (output_gpu, data_gpu, coeffs_gpu, np.int32(ncoeffs), np.int32(data.size)))
         if (self._fdb._verbosity == fatboyLog.VERBOSE):
             print("GPU linearize: ",time.time()-t)
 
-        return output
+        return cp.asnumpy(output_gpu)
     #end linearity_gpu
 
     ## Special algorithm to process CIRCE data
@@ -184,16 +187,14 @@ class linearityProcess(fatboyProcess):
         fdu._header.add_history('linearized with 1/26/18 CIRCE algorithm and coeffs '+str(coeffs))
     #end performCirceLinearity
 
-    linearity = linearity_gpu
-
-    ## OVERRRIDE set default options here
+    ## OVERRIDE set default options here
     def setDefaultOptions(self):
         self._options.setdefault('divide_by_coadds', 'no')
         self._options.setdefault('do_linearity', 'yes')
         self._options.setdefault('linearity_coeffs', '1')
     #end setDefaultOptions
 
-    ## OVERRRIDE write output here
+    ## OVERRIDE write output here
     def writeOutput(self, fdu):
         #make directory if necessary
         outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
