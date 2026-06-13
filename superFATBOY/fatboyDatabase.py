@@ -3,6 +3,7 @@
 #
 
 import superFATBOY
+import numpy as np
 from .fatboyDataUnit import *
 from .fatboyLibs import *
 from .fatboyProcess import *
@@ -14,6 +15,12 @@ from . import gpu_imcombine, imcombine, gpu_arraymedian
 from .datatypeExtensions import *
 from .datatypeExtensions.fatboySpectrum import fatboySpectrum
 from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
+
+try:
+    import cupy as cp
+    hasCuda = True
+except ImportError:
+    hasCuda = False
 
 ## Documentation for fatboyDatabase
 #
@@ -1091,8 +1098,8 @@ class fatboyDatabase:
         self._log.writeLog(__name__, "superFATBOY v"+self._version, printCaller=False)
         self._log.writeLog(__name__, "build date: "+self._build, printCaller=False)
         if (hasCuda and not superFATBOY.threaded()):
-            print("Using CUDA_DEVICE "+pycuda.autoinit.device.name())
-            self._log.writeLog(__name__, "Using CUDA_DEVICE "+pycuda.autoinit.device.name(), printCaller=False)
+            print("Using CUDA device.")
+            self._log.writeLog(__name__, "Using CUDA device.", printCaller=False)
     #end initializeLog
 
     ## XML Parser
@@ -1273,11 +1280,9 @@ class fatboyDatabase:
             for fdu in self.getFDUs(): #use getFDUs to ignore disabled fdus
                 fdu.setGPUMode(self._gpumode) #update gpu mode of all files
         if (self._gpumode):
-            try:
-                import pycuda.driver as drv
-            except Exception:
-                print("fatboyDatabase::preprocessAll> ERROR: GPU mode set to ON but PyCUDA not installed!  Exiting!")
-                self._log.writeLog(__name__, "GPU mode set to ON but PyCUDA not installed!  Exiting!", type=fatboyLog.ERROR)
+            if not hasCuda:
+                print("fatboyDatabase::preprocessAll> ERROR: GPU mode set to ON but CuPy not installed!  Exiting!")
+                self._log.writeLog(__name__, "GPU mode set to ON but CuPy not installed!  Exiting!", type=fatboyLog.ERROR)
                 sys.exit(-1)
         self.checkFiles() #Check for existence of files
         self.setMEF() #Set the proper MEF extensions
