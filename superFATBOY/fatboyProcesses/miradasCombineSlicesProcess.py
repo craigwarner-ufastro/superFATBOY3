@@ -1,8 +1,9 @@
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
-from numpy import *
-import os, time
+import numpy as np
+import os
+import time
 
 class miradasCombineSlicesProcess(fatboyProcess):
     """As part of this, we will want to correct for relative slice illumination by collapsing each of the
@@ -23,12 +24,12 @@ class miradasCombineSlicesProcess(fatboyProcess):
         xsize = fdu.getShape()[1]
         if (slices_per_slitlet > 0):
             nslits = rows//slices_per_slitlet
-            islits = arange(rows, dtype=int32)//slices_per_slitlet+1
+            islits = np.arange(rows, dtype=np.int32)//slices_per_slitlet+1
         else:
             #Option not set, next check for slitlet_list
             if ('slitletList' in calibs):
                 nslits = max(calibs['slitletList'])
-                islits = array(calibs['slitletList']).astype(int32)
+                islits = np.array(calibs['slitletList']).astype(np.int32)
             else:
                 #Check header info for SPEC_xx and find max slitlet
                 key = "SPEC_"
@@ -51,10 +52,10 @@ class miradasCombineSlicesProcess(fatboyProcess):
                             islits.append(int(value.split()[1].replace(':','')))
                         else:
                             islits.append(0) #Should not happen, missing a header keyword
-                    islits = array(islits).astype(int32)
+                    islits = np.array(islits).astype(np.int32)
                 else:
                     nslits = rows//3
-                    islits = arange(rows, dtype=int32)//3+1
+                    islits = np.arange(rows, dtype=np.int32)//3+1
                     print("miradasCombineSlicesProcess::combineSlices> Warning: could not find SPEC_nn keywords in header and no slitlet_list or slices_per_slitlet given.  Assuming 3 slices per slitlet...")
                     self._log.writeLog(__name__, "could not find SPEC_nn keywords in header and no slitlet_list or slices_per_slitlet given.  Assuming 3 slices per slitlet...", type=fatboyLog.WARNING)
         #Get noisemap
@@ -80,11 +81,11 @@ class miradasCombineSlicesProcess(fatboyProcess):
         #Create new header dict
         csHeader = dict()
 
-        combined_slices = zeros((nslits, xsize), dtype=float32)
+        combined_slices = np.zeros((nslits, xsize), dtype=np.float32)
         if (fdu.hasProperty("cleanFrame")):
-            combined_clean = zeros((nslits, xsize), dtype=float32)
+            combined_clean = np.zeros((nslits, xsize), dtype=np.float32)
         if (fdu.hasProperty("noisemap")):
-            combined_nm = zeros((nslits, xsize), dtype=float32)
+            combined_nm = np.zeros((nslits, xsize), dtype=np.float32)
 
         #Loop over slitlets and combine them
         for j in range(nslits):
@@ -112,7 +113,7 @@ class miradasCombineSlicesProcess(fatboyProcess):
             elif (weight_mode == "flux_weighting"):
                 weights = fluxTotals / fluxTotals[0]
             else:
-                weights = ones(fluxTotals.size)
+                weights = np.ones(fluxTotals.size)
             if (fdu.hasProperty("cleanFrame")):
                 fluxTotals = cleanSlices.sum(1)
                 cleanWeights = fluxTotals[0] / fluxTotals
@@ -120,14 +121,14 @@ class miradasCombineSlicesProcess(fatboyProcess):
             self._log.writeLog(__name__, "Slit "+str(j+1)+": combining "+str(nslices)+" slices with method "+str(weight_mode)+" and weights: "+str(weights))
 
             #setup numerator and denominator arrays
-            num = zeros(xsize, dtype=float32)
-            den = zeros(xsize, dtype=float32)
+            num = np.zeros(xsize, dtype=np.float32)
+            den = np.zeros(xsize, dtype=np.float32)
             if (fdu.hasProperty("cleanFrame")):
-                cleanNum = zeros(xsize, dtype=float32)
-                cleanDen = zeros(xsize, dtype=float32)
+                cleanNum = np.zeros(xsize, dtype=np.float32)
+                cleanDen = np.zeros(xsize, dtype=np.float32)
             if (doNM):
-                nmNum = zeros(xsize, dtype=float32)
-                nmDen = zeros(xsize, dtype=float32)
+                nmNum = np.zeros(xsize, dtype=np.float32)
+                nmDen = np.zeros(xsize, dtype=np.float32)
             for i in range(nslices):
                 if (doNM):
                     #Handle areas where noisemap is 0
@@ -135,7 +136,7 @@ class miradasCombineSlicesProcess(fatboyProcess):
                     nmSlices[i][b] = 1
                     if (weight_mode == "none"):
                         currNum = slices[i]
-                        currDen = ones(slices[i].shape)
+                        currDen = np.ones(slices[i].shape)
                     else:
                         currNum = weights[i]*slices[i]/nmSlices[i]**2
                         currDen = weights[i]/nmSlices[i]**2
@@ -146,7 +147,7 @@ class miradasCombineSlicesProcess(fatboyProcess):
                     if (fdu.hasProperty("cleanFrame")):
                         if (weight_mode == "none"):
                             currNum = cleanSlices[i]
-                            currDen = ones(slices[i].shape)
+                            currDen = np.ones(slices[i].shape)
                         else:
                             currNum = cleanWeights[i]*cleanSlices[i]/nmSlices[i]**2
                             currDen = cleanWeights[i]/nmSlices[i]**2
@@ -171,7 +172,7 @@ class miradasCombineSlicesProcess(fatboyProcess):
             combined_slices[j] = num/den
             combined_slices[j][b] = 0
             if (doNM):
-                combined_nm[j] = sqrt(nmNum/nmDen) #sqrt of sum of squares
+                combined_nm[j] = np.sqrt(nmNum/nmDen) #sqrt of sum of squares
             if (fdu.hasProperty("cleanFrame")):
                 b = (cleanDen == 0)
                 cleanDen[b] = 1
@@ -236,16 +237,16 @@ class miradasCombineSlicesProcess(fatboyProcess):
         slitletList = self.getCalib("slitlet_list", fdu.getTag())
         if (slitletList is not None):
             #passed from XML with <calib> tag.
-            if (isinstance(slitletList, list) or isinstance(slitletList, ndarray)):
+            if (isinstance(slitletList, list) or isinstance(slitletList, np.ndarray)):
                 #Passed as list or array
                 print("miradasCombineSlicesProcess::getCalibs> Using slitlet list: "+str(slitletList))
                 self._log.writeLog(__name__, "Using slitlet list: "+str(slitletList))
-                calibs['slitletList'] = array(slitletList)
+                calibs['slitletList'] = np.array(slitletList)
             elif (os.access(slitletList, os.F_OK)):
                 #Passed as a filename
                 print("miradasCombineSlicesProcess::getCalibs> Using slitlet indices from "+slitletList+"...")
                 self._log.writeLog(__name__, "Using slitlet indices from "+slitletList+"...")
-                calibs['slitletList'] = loadtxt(slitletList)
+                calibs['slitletList'] = np.loadtxt(slitletList)
             else:
                 print("miradasCombineSlicesProcess::getCalibs> Warning: Could not find slitlet_list "+str(slitletList)+"...")
                 self._log.writeLog(__name__, "Could not find slitlet_list "+str(slitletList)+"...")
@@ -267,7 +268,7 @@ class miradasCombineSlicesProcess(fatboyProcess):
         #make directory if necessary
         outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
         if (not os.access(outdir+"/combinedSlices", os.F_OK)):
-            os.mkdir(outdir+"/combinedSlices",0o755)
+            os.mkdir(outdir+"/combinedSlices", 0o755)
         #Create output filename
         csfile = outdir+"/combinedSlices/cs_"+fdu.getFullId()
         #Check to see if it exists
