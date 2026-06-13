@@ -1,8 +1,9 @@
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY.fatboyLibs import *
-from numpy import *
-import os, time
+import numpy as np
+import os
+import time
 
 block_size = 512
 
@@ -38,9 +39,9 @@ class noisemapProcess(fatboyProcess):
 
     def noisemap_cpu(self, data, gain):
         t = time.time()
-        nm = sqrt(abs(data/gain))
+        nm = np.sqrt(np.abs(data/gain))
         if (self._fdb._verbosity == fatboyLog.VERBOSE):
-            print("CPU noisemap: ",time.time()-t)
+            print("CPU noisemap: ", time.time()-t)
         return nm
     #end noisemap_cpu
 
@@ -51,7 +52,7 @@ class noisemapProcess(fatboyProcess):
         #make directory if necessary
         outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
         if (not os.access(outdir+"/noisemaps", os.F_OK)):
-            os.mkdir(outdir+"/noisemaps",0o755)
+            os.mkdir(outdir+"/noisemaps", 0o755)
         #Create output filename
         nmfile = outdir+"/noisemaps/NM_"+fdu.getFullId()
         #Check to see if it exists
