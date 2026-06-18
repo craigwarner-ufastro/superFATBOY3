@@ -1,3 +1,4 @@
+import numpy as np
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
@@ -27,9 +28,9 @@ class miradasCollapseSpaxelsProcess(fatboyProcess):
                     plt.plot(data.sum(0))
                     plt.plot(data.sum(1))
                 if (centroid_method == "fit_2d_gaussian"):
-                    p = zeros(5, float32)
+                    p = np.zeros(5, np.float32)
                     p[0] = data.max()
-                    b = where(data == p[0])
+                    b = np.where(data == p[0])
                     if (fdu.hasProperty("xcen_guess_"+str(j))):
                         p[1] = fdu.getProperty("xcen_guess_"+str(j))
                     else:
@@ -51,11 +52,11 @@ class miradasCollapseSpaxelsProcess(fatboyProcess):
                 else:
                     #use_derivatives
                     #need to pad data if either dimension < 9
-                    padx = max(9-data.shape[1], 0)//2
-                    pady = max(9-data.shape[0], 0)//2
-                    padded = zeros((data.shape[0]+pady*2, data.shape[1]+padx*2), dtype=float32)
+                    padx = max(9-data.shape[1],  0)//2
+                    pady = max(9-data.shape[0],  0)//2
+                    padded = np.zeros((data.shape[0]+pady*2, data.shape[1]+padx*2), dtype=np.float32)
                     padded[pady:padded.shape[0]-pady, padx:padded.shape[1]-padx] = data
-                    b = where(padded == padded.max())
+                    b = np.where(padded == padded.max())
                     mx = b[1][0]
                     my = b[0][0]
                     (fwhm, sig, fwhm1ds, bg) = fwhm2d(padded)
@@ -101,7 +102,7 @@ class miradasCollapseSpaxelsProcess(fatboyProcess):
             fdu.setProperty("nslits", nslits)
 
         if (doAllSlitlets):
-            slitlets = arange(1, nslits+1)
+            slitlets = np.arange(1, nslits+1)
         else:
             slitlets = [slitlet_number]
 
@@ -132,21 +133,21 @@ class miradasCollapseSpaxelsProcess(fatboyProcess):
         #Loop over slitlets (could be one pass or nslits passes)
         for islit in slitlets:
             #Take 1-d cut of arclamp in each slitlet
-            #b = where(calibs['slitmask'].getData() == islit)
+            #b = np.where(calibs['slitmask'].getData() == islit)
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                b = where(calibs['slitmask'].getData()[:,box_lo:box_hi] == islit)
-                ylo = min(b[0])
-                yhi = max(b[0])
+                b = np.where(calibs['slitmask'].getData()[:,box_lo:box_hi] == islit)
+                ylo = np.min(b[0])
+                yhi = np.max(b[0])
                 lamp1d = (calibs[lampkey].getData()[ylo:yhi,box_lo:box_hi]*(calibs['slitmask'].getData()[ylo:yhi,box_lo:box_hi] == islit)).sum(1)
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                b = where(calibs['slitmask'].getData()[box_lo:box_hi,:] == islit)
-                ylo = min(b[1])
-                yhi = max(b[1])
+                b = np.where(calibs['slitmask'].getData()[box_lo:box_hi,:] == islit)
+                ylo = np.min(b[1])
+                yhi = np.max(b[1])
                 lamp1d = (calibs[lampkey].getData()[box_lo:box_hi,ylo:yhi]*(calibs['slitmask'].getData()[box_lo:box_hi,ylo:yhi] == islit)).sum(0)
             #Median filter 1-d cut and invert so that "gaps" between slices turn into peaks
             z = medianfilterCPU(lamp1d)
             #Correct for values on the edges of the slitlet which will now be very negative
-            b = where(z > 0)
+            b = np.where(z > 0)
             max_edge = len(z)//(nslices*2)+1
             left_edge = b[0][0]
             if (left_edge > max_edge):
@@ -166,8 +167,8 @@ class miradasCollapseSpaxelsProcess(fatboyProcess):
                 zx = len(z)//2-offset//2
             z = -1*z[zx-offset:zx+offset+1]
 
-            slo = where(z == max(z[:offset]))[0][0]
-            shi = where(z == max(z[offset:]))[0][0]
+            slo = np.where(z == np.max(z[:offset]))[0][0]
+            shi = np.where(z == np.max(z[offset:]))[0][0]
             #Try fitting Gaussians to "peaks"
             lsq_lo = fitGaussian(z[:offset])
             lsq_hi = fitGaussian(z[offset:])
@@ -182,8 +183,8 @@ class miradasCollapseSpaxelsProcess(fatboyProcess):
             if (abs(fit_slo-slo) <= 1 and abs(fit_shi-shi) <= 1):
                 #Use fits
                 if (findSliceWidth):
-                    slice_width = int(ceil(fit_shi - fit_slo))
-                yinit = ylo+zx-offset+int(round(fit_slo))
+                    slice_width = int(np.ceil(fit_shi - fit_slo))
+                yinit = ylo+zx-offset+int(np.round(fit_slo))
             else:
                 if (findSliceWidth):
                     slice_width = shi - slo
@@ -201,7 +202,7 @@ class miradasCollapseSpaxelsProcess(fatboyProcess):
 
             #Always compute integer shifts first in case non integer fails
             #Concat string below
-            image2d = zeros((nslices, slice_width), float32)
+            image2d = np.zeros((nslices, slice_width), np.float32)
             for j in range(nslices):
                 image2d[j,:] = data1d[yinit+j*slice_width:yinit+(j+1)*slice_width]
                 ys.append(yinit+j*slice_width)
@@ -220,7 +221,7 @@ class miradasCollapseSpaxelsProcess(fatboyProcess):
                     s += ', '
                 s += formatNum(ys[j])
 
-            max_width = max(max_width, image2d.shape[1])
+            max_width = max(max_width,  image2d.shape[1])
             #Print info to screen and log
             s += ']'
             print("miradasCollapseSpaxelsProcess::collapseSpaxels> "+s)
@@ -241,7 +242,7 @@ class miradasCollapseSpaxelsProcess(fatboyProcess):
             for islit in slitlets:
                 data = fdu.getData(tag="image_slice_"+str(islit))
                 if (data.shape[1] < max_width):
-                    image2d = zeros((data.shape[0], max_width), float32)
+                    image2d = np.zeros((data.shape[0], max_width), np.float32)
                     image2d[:,:data.shape[1]] = data
                     fdu.tagDataAs("image_slice_"+str(islit), image2d)
     #end collapseSpaxels
@@ -256,18 +257,18 @@ class miradasCollapseSpaxelsProcess(fatboyProcess):
         ys = []
         cen = 0
         #Use all slices to come up with initial guess
-        oned = zeros(slice_width, float32)
+        oned = np.zeros(slice_width, np.float32)
         for j in range(nslices):
             oned += clean1d[yinit+j*slice_width:yinit+(j+1)*slice_width]
         if (not hasCleanFrame):
-            b = where(oned == oned.max())[0][0]
+            b = np.where(oned == oned.max())[0][0]
             if (b <= 2 or b >= len(oned)-3):
                 #Set edges to min value (not zero in case negative)
                 oned[:3] = oned.min()
                 oned[-3:] = oned.min()
-        p = zeros(4, float32)
+        p = np.zeros(4, np.float32)
         p[0] = oned.max()
-        p[1] = where(oned == oned.max())[0][0]
+        p[1] = np.where(oned == oned.max())[0][0]
         p[2] = 2.0
         p[3] = arraymedian(oned)
         maskNeg = False
@@ -285,7 +286,7 @@ class miradasCollapseSpaxelsProcess(fatboyProcess):
             images.append(data1d[yinit+j*slice_width:yinit+(j+1)*slice_width])
             clean_images.append(clean1d[yinit+j*slice_width:yinit+(j+1)*slice_width])
             if (not hasCleanFrame):
-                b = where(clean_images[j] == clean_images[j].max())[0][0]
+                b = np.where(clean_images[j] == clean_images[j].max())[0][0]
                 if (b <= 2 or b >= len(oned)-3):
                     #Blank out edges with min value not 0 in case all values are negative
                     clean_images[j][:3] = clean_images[j].min()

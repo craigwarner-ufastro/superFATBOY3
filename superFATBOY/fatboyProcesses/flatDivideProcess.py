@@ -1,3 +1,8 @@
+try:
+    import cupy as cp
+except ImportError:
+    cp = None
+import numpy as np
 from superFATBOY.fatboyCalib import fatboyCalib
 from superFATBOY.fatboyDataUnit import fatboyDataUnit
 from superFATBOY.fatboyLibs import *
@@ -313,9 +318,9 @@ class flatDivideProcess(fatboyProcess):
             else:
                 fatboy_mod = get_fatboy_mod()
             divArrays = fatboy_mod.get_function("divideArrays_float")
-            divArrays(drv.InOut(image), drv.In(flat), int32(image.size), grid=(blocks,1), block=(block_size,1,1))
+            divArrays((blocks,1), (block_size,1,1), (cp.asarray(image), cp.asarray(flat), np.int32(image.size)))
         else:
-            #find points where flat is zero and set them to 1 to avoid divideByZeroException
+            #find points np.where flat is zero and set them to 1 to avoid divideByZeroException
             flatzeros = flat == 0
             flat[flatzeros] = 1
             image /= flat

@@ -1,3 +1,4 @@
+import numpy as np
 from superFATBOY.fatboyCalib import fatboyCalib
 from superFATBOY.fatboyDataUnit import fatboyDataUnit
 from superFATBOY.fatboyImage import fatboyImage
@@ -145,7 +146,7 @@ class alignStackProcess(fatboyProcess):
         frameList = calibs['frameList']
 
         if (self.getOption('use_only_selected_indices', fdu.getTag()) is not None):
-            #Check for special case where fdu is not in frameList
+            #Check for special case np.where fdu is not in frameList
             if (not fdu in frameList):
                 #Use new first frame as current FDU!
                 fdu = frameList[0]
@@ -315,9 +316,9 @@ class alignStackProcess(fatboyProcess):
                 os.mkdir(imgdir)
             xshifts = shifts[0]
             yshifts = shifts[1]
-            xshift0 = -1*int(max(xshifts)+min(xshifts))//2
-            yshift0 = -1*int(max(yshifts)+min(yshifts))//2
-            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("int32")
+            xshift0 = -1*int(np.max(xshifts)+np.min(xshifts))//2
+            yshift0 = -1*int(np.max(yshifts)+np.min(yshifts))//2
+            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("np.int32")
             for i in range(len(frameList)):
                 xshifts[i]+=xshift0
                 yshifts[i]+=yshift0
@@ -327,7 +328,7 @@ class alignStackProcess(fatboyProcess):
             (data, header, expmap, pixmap) = drihizzle_method(frameList, None, None, inmask=goodPixelMask, weight='exptime', kernel=kernel, dropsize=dropsize, geomDist=geomFile, xsh=xshifts, ysh=yshifts, inunits=inunits, outunits='cps', keepImages=keepImages, imgdir=imgdir, log=self._log, mode=gpu_drihizzle.MODE_FDU)
             fdu.updateData(data)
             fdu.updateHeader(header)
-            #Update bad pixel mask to be true where pixmap == 0
+            #Update bad pixel mask to be true np.where pixmap == 0
             badPixelMask = fatboyCalib(self._pname, fatboyDataUnit.FDU_TYPE_BAD_PIXEL_MASK, fdu, data=(pixmap == 0), tagname="badPixelMasks/BPM-"+str(fdu.filter)+"-"+str(fdu._id), log=self._log)
             fdu.applyBadPixelMask(badPixelMask)
             #fdu.getBadPixelMask().updateData(pixmap == 0)
@@ -353,18 +354,18 @@ class alignStackProcess(fatboyProcess):
             #imcombine frames and take mean
             (data, imexpmap, imheader) = imcombine_method(frameList, outfile=None, expmask='return_expmask', method="mean", reject=stack_reject_type, nlow=stack_nlow, nhigh=stack_nhigh, lsigma=stack_lsigma, hsigma=stack_hsigma, lthreshold=-1e+6, mef=frameList[0]._mef, log=self._log, returnHeader=True, mode=gpu_imcombine.MODE_FDU_TAG, dataTag="drihizzled")
             expmap = imcombine_method(frameList, outfile=None, method="sum", mef=frameList[0]._mef, log=self._log, mode=gpu_imcombine.MODE_FDU_TAG, dataTag="exposure_map")
-            expdiff = zeros(expmap.shape, float32)
+            expdiff = np.zeros(expmap.shape, np.float32)
             for i in range(len(frameList)):
                 fullexp = frameList[i].exptime
                 currExp = frameList[i].getData(tag="exposure_map")
-                #boolean mapping of where exposure map > total exposure time (more than 1 input pixel contributing flux)
+                #boolean mapping of np.where exposure map > total exposure time (more than 1 input pixel contributing flux)
                 b = currExp > fullexp
                 expdiff += b*(currExp-fullexp)
                 #done with dataTags.  Free memory.
                 frameList[i].removeProperty("drihizzled")
                 frameList[i].removeProperty("exposure_map")
             imexpmap += expdiff
-            #Find where sum of expmaps < current total imexpmap
+            #Find np.where sum of expmaps < current total imexpmap
             b = expmap < imexpmap
             imexpmap -= b*(imexpmap-expmap)
             #Free memory
@@ -374,7 +375,7 @@ class alignStackProcess(fatboyProcess):
             fdu.updateData(data)
             fdu.updateHeader(header) #drihizzle keywords
             fdu.updateHeader(imheader) #imcombine keywords
-            #Update bad pixel mask to be true where pixmap == 0
+            #Update bad pixel mask to be true np.where pixmap == 0
             badPixelMask = fatboyCalib(self._pname, fatboyDataUnit.FDU_TYPE_BAD_PIXEL_MASK, fdu, data=(pixmap == 0), tagname="badPixelMasks/BPM-"+str(fdu.filter)+"-"+str(fdu._id), log=self._log)
             fdu.applyBadPixelMask(badPixelMask)
             #fdu.getBadPixelMask().updateData(pixmap == 0)

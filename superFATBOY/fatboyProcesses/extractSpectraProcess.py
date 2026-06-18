@@ -6,6 +6,7 @@ from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
 
 from superFATBOY import gpu_drihizzle, drihizzle
 import numpy as np
+import math
 from scipy.optimize import leastsq
 
 usePlot = True
@@ -78,7 +79,7 @@ class extractSpectraProcess(fatboyProcess):
                 self._log.writeLog(__name__, "Using FITS predefined spectral locations: " + str(specList[0].data))
                 calibs['specList'] = np.array(specList[0].data)
             elif (isinstance(specList, list) or isinstance(specList, np.ndarray)):
-                #Passed as list or array
+                #Passed as list or np.array
                 print("extractSpectraProcess::getCalibs> Using predefined spectral locations: " + str(specList))
                 self._log.writeLog(__name__, "Using predefined spectral locations: " + str(specList))
                 calibs['specList'] = np.array(specList)
@@ -554,8 +555,8 @@ class extractSpectraProcess(fatboyProcess):
                     if (fdu.hasProperty("resampled")):
                         rssresamp[j, :] = gpu_arraymedian(fdu.getData(tag="resampled")[:, ylo:yhi + 1], axis="X", nonzero=True)
             elif (extract_weighting == 'gaussian'):
-                ymin = max(ylo - gaussbox, 0)
-                ymax = min(yhi + gaussbox + 1, ysize)
+                ymin = max(ylo - gaussbox,  0)
+                ymax = min(yhi + gaussbox + 1,  ysize)
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                     slit = fdu.getData()[ymin:ymax, :].copy()
                     if (slitmask is not None):
@@ -603,7 +604,7 @@ class extractSpectraProcess(fatboyProcess):
                 else:
                     lsq[0][0] = np.max(tempCut[ylo - ymin : yhi - ymin + 1])
                     lsq[0][1] = (ylo + yhi) // 2 - ymin
-                    lsq[0][2] = (yhi - ylo) / (4 * np.sqrt(2 * np.log(2)))
+                    lsq[0][2] = (yhi - ylo) / (4 * math.sqrt(2 * math.log(2)))
                     lsq[0][3] = 0
                     print("\tWarning: Spectrum " + str(j + 1) + " (slitlet " + str(islit) + "): Could not properly fit Gaussian.  Using approximation instead: " + str(lsq[0]))
                     self._log.writeLog(__name__, "Spectrum " + str(j + 1) + " (slitlet " + str(islit) + "): Could not properly fit Gaussian.  Using approximation instead: " + str(lsq[0]), type=fatboyLog.WARNING, printCaller=False, tabLevel=1)
@@ -619,7 +620,7 @@ class extractSpectraProcess(fatboyProcess):
                     plt.close()
                 #Calculate Gaussian
                 cen = lsq[0][1] + ymin
-                #Update center to match xs array below
+                #Update center to match xs np.array below
                 lsq[0][1] = cen
                 xs = np.arange(yhi - ylo + 1, dtype=np.float32) + ylo
                 f = gaussFunction(lsq[0], xs)
@@ -768,7 +769,7 @@ class extractSpectraProcess(fatboyProcess):
             #Use GPU for medians
             kernel2d = gpumedian2d
 
-        #Mask negatives and zeros in 2d image before looping over slitlets
+        #Mask negatives and np.zeros in 2d image before looping over slitlets
         #Use cleanFrame if available
         #Use continuum_source if specified
         if ('continuum_source' in calibs):
@@ -881,7 +882,7 @@ class extractSpectraProcess(fatboyProcess):
                     p = np.zeros(4, dtype=np.float64)
                     p[0] = np.max(oned[ylo:yhi])
                     p[1] = ycen - ylo
-                    p[2] = width / (2 * np.sqrt(2 * np.log(2)))
+                    p[2] = width / (2 * math.sqrt(2 * math.log(2)))
                     p[3] = gpu_arraymedian(oned[ylo:yhi])
                     #lsq = leastsq(gaussResiduals, p, args=(np.arange(len(oned[ylo:yhi]), dtype=np.float64), oned[ylo:yhi]))
                     #Use helper method now 8/1/18
@@ -890,7 +891,7 @@ class extractSpectraProcess(fatboyProcess):
                         print("extractSpectraProcess::findSpectra> Warning: Could not fit spectrum in slitlet " + str(j + 1))
                         self._log.writeLog(__name__, "Could not fit spectrum in slitlet " + str(j + 1), type=fatboyLog.WARNING)
                         break
-                    fwhm = abs(lsq[0][2]) * 2 * np.sqrt(2 * np.log(2))
+                    fwhm = abs(lsq[0][2]) * 2 * math.sqrt(2 * math.log(2))
                     xwidth = abs(extract_nsigma * lsq[0][2]) #Width for extract box, default = 3sigma.
                     y[i][0] = int(lsq[0][1] - xwidth + ylo) + ylos[j]
                     y[i][1] = int(lsq[0][1] + xwidth + ylo) + ylos[j]

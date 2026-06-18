@@ -1,3 +1,4 @@
+import numpy as np
 from superFATBOY.fatboyCalib import fatboyCalib
 from superFATBOY.fatboyDataUnit import fatboyDataUnit
 from superFATBOY.fatboyImage import fatboyImage
@@ -66,7 +67,7 @@ class biasSubtractProcess(fatboyProcess):
                 if (self._fdb.getGPUMode()):
                     nm = createNoisemap(masterBias.getData(), ncomb)
                 else:
-                    nm = sqrt(masterBias.getData()/ncomb)
+                    nm = np.sqrt(masterBias.getData()/ncomb)
                 masterBias.tagDataAs("noisemap", nm)
                 masterBias.writeTo(nmfile, tag="noisemap")
 
@@ -109,7 +110,7 @@ class biasSubtractProcess(fatboyProcess):
             self.updateNoisemap(fdu, masterBias)
 
         #make sure both are floating point before subtracting
-        fdu.updateData(float32(fdu.getData())-float32(masterBias.getData()))
+        fdu.updateData(fdu.getData().astype(np.float32)-masterBias.getData().astype(np.float32))
         fdu._header.add_history('Bias subtracted using '+masterBias._id)
         return True
     #end execute
@@ -226,15 +227,15 @@ class biasSubtractProcess(fatboyProcess):
             if (self._fdb.getGPUMode()):
                 nm = createNoisemap(masterBias.getData(), ncomb)
             else:
-                nm = sqrt(masterBias.getData()/ncomb)
+                nm = np.sqrt(masterBias.getData()/ncomb)
             masterBias.tagDataAs("noisemap", nm)
         #Get this FDU's noisemap
         nm = fdu.getData(tag="noisemap")
-        #Propagate noisemaps.  For subtraction, dz = sqrt(dx^2 + dy^2)
+        #Propagate noisemaps.  For subtraction, dz = np.sqrt(dx^2 + dy^2)
         if (self._fdb.getGPUMode()):
             nm = noisemaps_ds_gpu(fdu.getData(tag="noisemap"), masterBias.getData("noisemap"))
         else:
-            nm = sqrt(fdu.getData(tag="noisemap")**2+masterBias.getData("noisemap")**2)
+            nm = np.sqrt(fdu.getData(tag="noisemap")**2+masterBias.getData("noisemap")**2)
         fdu.tagDataAs("noisemap", nm)
     #end updateNoisemap
 

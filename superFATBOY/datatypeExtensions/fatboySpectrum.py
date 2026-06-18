@@ -349,7 +349,9 @@ class fatboySpectrum(fatboyDataUnit):
             trans = False
             if (self.dispersion == fatboySpectrum.DISPERSION_VERTICAL):
                 trans = True
-            medians = gpumedianS(self.getData()*(1-bpm), slitmask.getData(), nslits, nonzero=True, trans=trans)
+            data = cp.asarray(self.getData())
+            bpm = cp.asarray(bpm)
+            medians = gpumedianS(data*(1-bpm), slitmask.getData(), nslits, nonzero=True, trans=trans)
         else:
             #CPU median kernel
             kernel = fatboyclib.median
@@ -443,8 +445,7 @@ class fatboySpectrum(fatboyDataUnit):
             if (not data.dtype.isnative):
                 #Byteswap
                 data = data.byteswap()
-                data = data.newbyteorder('<')
-                data.dtype.newbyteorder('<')
+                data = data.view(data.dtype.newbyteorder('<'))
             self.setSlitmask(data, pname=pname, tagname=tag)
             image.close()
             return
@@ -455,8 +456,7 @@ class fatboySpectrum(fatboyDataUnit):
             if (not data.dtype.isnative):
                 #Byteswap
                 data = data.byteswap()
-                data = data.newbyteorder('<')
-                data.dtype.newbyteorder('<')
+                data = data.view(data.dtype.newbyteorder('<'))
             slitmask = self._fdb.addNewSlitmask(self, data, pname)
             image.close()
             return

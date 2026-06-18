@@ -1,3 +1,4 @@
+import numpy as np
 from .fatboyImage import *
 
 #extends fatboyImage
@@ -20,7 +21,7 @@ class fatboyCalib(fatboyImage):
         self._objectTags = []
         self._processHistory = []
 
-        #Can be created from a filename or data array and mandatory fatboyDataUnit source
+        #Can be created from a filename or data np.array and mandatory fatboyDataUnit source
         if (filename is None and data is None):
             print("fatboyCalib::__init__> ERROR: pname="+pname+"; source="+source.getFullId()+": filename or data must be specified to instantiate fatboyCalib.")
             if (self._log is not None):

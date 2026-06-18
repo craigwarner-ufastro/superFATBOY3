@@ -179,7 +179,7 @@ class calibStarDivideProcess(fatboyProcess):
                 #One single wavelength solution
                 columns.append(pyfits.Column(name='Wavelength', format='D', array=wave))
 
-        #Calculate discrete wavelength array for calib star
+        #Calculate discrete wavelength np.array for calib star
         xs = np.arange(csxsize, dtype=np.float32)
         cswave = np.zeros(csxsize, dtype=np.float32)
         if (doWavelength and hasWavelengthSolution(calibs['standard'])):
@@ -231,7 +231,7 @@ class calibStarDivideProcess(fatboyProcess):
                 if (fdu.hasProperty("resampled")):
                     rssresamp[j, b_resamp[good_resamp]] = (fdu.getData(tag="resampled")[j][b_resamp][good_resamp]/ystar_resamp[good_resamp])
             else:
-                #Simply divide all values where calib star is nonzero
+                #Simply divide all values np.where calib star is nonzero
                 b = calibs['standard'].getData()[0,:] != 0
                 rssdata[j,b] = fdu.getData()[j,b]/calibs['standard'].getData()[0,b]
                 if (fdu.hasProperty("cleanFrame")):
@@ -259,8 +259,8 @@ class calibStarDivideProcess(fatboyProcess):
         calibData = calib.getData()
         if (tag is not None):
             calibData = calib.getData(tag=tag)
-        xlo = np.max([cswave.min(), wave.min()])
-        xhi = np.min([cswave.max(), wave.max()])
+        xlo = max([cswave.min(), wave.min()])
+        xhi = min([cswave.max(), wave.max()])
         #Only include wavelengths were spectrum has data
         b = np.where((wave >= xlo)*(wave <= xhi))[0]
         #Resample calibration star at these wavelengths
@@ -289,8 +289,8 @@ class calibStarDivideProcess(fatboyProcess):
                 self._log.writeLog(__name__, "wavelength "+str(wave[b][i])+" out of range for standard star "+calib.getFullId()+".  Ignoring.", fatboyLog.WARNING)
                 valid[i] = False
                 continue
-            w1 = np.abs(cswave[ref]-wave[b][i])
-            w2 = np.abs(cswave[ref2]-wave[b][i])
+            w1 = abs(cswave[ref]-wave[b][i])
+            w2 = abs(cswave[ref2]-wave[b][i])
             ystar.append((w2*calibData[0, ref]+w1*calibData[0, ref2])/(w1+w2))
         ystar = np.array(ystar,dtype=np.float32)
         #Normalize to 1

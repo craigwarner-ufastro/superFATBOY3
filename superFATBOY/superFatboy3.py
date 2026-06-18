@@ -15,7 +15,10 @@ for j in range(len(sys.argv)):
 
 import superFATBOY
 from superFATBOY.fatboyDatabase import *
-if (len(sys.argv) < 2 or sys.argv.count("-list") != 0):
+if (len(sys.argv) < 2 or sys.argv.count("-list") != 0 or sys.argv.count("-h") != 0 or sys.argv.count("--help") != 0):
+    if (sys.argv.count("-h") != 0 or sys.argv.count("--help") != 0):
+        print("Usage: superFatboy3.py [-h|--help] [-list] [filename.xml]")
+        sys.exit(0)
     #print params, processes, and options, and exit!
     modeTag = None
     if (sys.argv[1] == "-list" and len(sys.argv) > 2):

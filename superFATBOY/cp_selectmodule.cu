@@ -643,7 +643,7 @@ extern "C" {
     k = n/2;
     //if (PyArray_ISBYTESWAPPED(array)) PyArray_Byteswap(array, true);
 
-    if (array->descr->type_num == PyArray_FLOAT) {
+    if (array->descr->type_num == NPY_FLOAT) {
       float* data = (float*)PyArray_DATA(array);
       if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
 	thrust::host_vector<float> h_x(n);
@@ -693,7 +693,7 @@ extern "C" {
 	thrust::host_vector<float> h_x(data, data+n);
 	med = (double)median_min_float(h_x, n, 7, method, k+1);
       }
-    } else if (array->descr->type_num == PyArray_DOUBLE) {
+    } else if (array->descr->type_num == NPY_DOUBLE) {
       double* data = (double*)PyArray_DATA(array);
       if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
         thrust::host_vector<double> h_x(n);
@@ -743,7 +743,7 @@ extern "C" {
         thrust::host_vector<double> h_x(data, data+n);
         med = (double)median_min_double(h_x, n, 7, method, k+1);
       }
-    } else if (array->descr->type_num == PyArray_INT32) {
+    } else if (array->descr->type_num == NPY_INT32) {
       int* data = (int*)PyArray_DATA(array);
       if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
         thrust::host_vector<int> h_x(n);
@@ -793,7 +793,7 @@ extern "C" {
         thrust::host_vector<int> h_x(data, data+n);
         med = (double)median_min_int(h_x, n, 7, method, k+1);
       }
-    } else if (array->descr->type_num == PyArray_INT64) {
+    } else if (array->descr->type_num == NPY_INT64) {
       long* data = (long*)PyArray_DATA(array);
       if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
         thrust::host_vector<long> h_x(n);

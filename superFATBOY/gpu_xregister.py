@@ -15,7 +15,8 @@ except Exception:
     print("skySubtractProcess> Warning: sep not installed")
     hasSep = False
 
-import scipy, os, time
+import scipy, os, time, math
+import numpy as np
 from scipy.optimize import leastsq
 from .fatboyLibs import *
 from .fatboyLog import *
@@ -110,7 +111,7 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
     #Look for constrain guess file
     if (method == METHOD_GUESSES):
         if (isinstance(constrain_guesses, list)):
-            guesses = array(constrain_guesses)
+            guesses = np.array(constrain_guesses)
         elif (isinstance(constrain_guesses, str) and os.access(constrain_guesses, os.F_OK)):
             guesses = loadtxt(constrain_guesses)
         else:
@@ -129,7 +130,7 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
             refData = temp[mef].data
             if (not refData.dtype.isnative):
                 print("gpu_register> Byteswapping "+filelist[refframe])
-                refData = float32(refData)
+                refData = refData.astype(np.float32)
             refName = filelist[refframe]
             if (constrain and method != METHOD_GUESSES):
                 refRA = getRADec(temp[0].header[ra_keyword])*15
@@ -211,7 +212,7 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
         elif (sepmask is not None):
             mask = sepmask
         else:
-            mask = zeros(refData.shape, bool)
+            mask = np.zeros(refData.shape, bool)
         bkg = sep.Background(refData)
         print("\tsep background = "+str(bkg.globalback)+" rms = "+str(bkg.globalrms))
         write_fatboy_log(log, logtype, "sep background = "+str(bkg.globalback)+" rms = "+str(bkg.globalrms), __name__)
@@ -224,10 +225,10 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
         write_fatboy_log(log, logtype, "sep extracted "+str(len(objects))+" objects using thresh = "+str(sepDetectThresh)+"*rms; fwhm = "+str(sepfwhm), __name__)
         if (method == METHOD_SEP_CENTROID or method == METHOD_SEP_CENTROID_CONSTRAINED):
             #Save refobjects for these methods
-            refObjects = array([objects['x'], objects['y']])
+            refObjects = np.array([objects['x'], objects['y']])
         #Create new blank image
-        refData = zeros(refData.shape, float32)
-        p = zeros(5)
+        refData = np.zeros(refData.shape, np.float32)
+        p = np.zeros(5)
         p[0] = halfPeak
         p[4] = bkg.globalback
         for j in range(len(objects['x'])):
@@ -238,12 +239,12 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
                 p[3] = objects['a'][j]
             else:
                 p[3] = float(sepfwhm)
-            xmin = max(int(p[1])-30, 0)
-            xmax = min(int(p[1])+31, refData.shape[1])
-            ymin = max(int(p[2])-30, 0)
-            ymax = min(int(p[2])+31, refData.shape[0])
-            xin = arange((xmax-xmin)*(ymax-ymin)).reshape((ymax-ymin,xmax-xmin)) % (xmax-xmin) + xmin
-            yin = arange((xmax-xmin)*(ymax-ymin)).reshape((ymax-ymin,xmax-xmin)) // (xmax-xmin) + ymin
+            xmin = np.max(int(p[1])-30, 0)
+            xmax = np.min(int(p[1])+31, refData.shape[1])
+            ymin = np.max(int(p[2])-30, 0)
+            ymax = np.min(int(p[2])+31, refData.shape[0])
+            xin = np.arange((xmax-xmin)*(ymax-ymin)).reshape((ymax-ymin,xmax-xmin)) % (xmax-xmin) + xmin
+            yin = np.arange((xmax-xmin)*(ymax-ymin)).reshape((ymax-ymin,xmax-xmin)) // (xmax-xmin) + ymin
             refData[ymin:ymax, xmin:xmax] += gaussFunction2d(p, xin, yin)
 
     #Get rid of negative datapoints
@@ -267,7 +268,7 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
                 currData = temp[mef].data
                 if (not currData.dtype.isnative):
                     print("gpu_register> Byteswapping "+filelist[j])
-                    currData = float32(currData)
+                    currData = currData.astype(np.float32)
                 currName = filelist[j]
                 if (constrain and method != METHOD_GUESSES):
                     currRA = getRADec(temp[0].header[ra_keyword])*15
@@ -307,7 +308,7 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
             if (mode == MODE_FDU):
                 mask=frames[0].getBadPixelMask().getData().astype(bool)
             else:
-                mask = zeros(currData.shape, bool)
+                mask = np.zeros(currData.shape, bool)
             bkg = sep.Background(currData)
             print("\tsep background = "+str(bkg.globalback)+" rms = "+str(bkg.globalrms))
             write_fatboy_log(log, logtype, "sep background = "+str(bkg.globalback)+" rms = "+str(bkg.globalrms), __name__)
@@ -319,8 +320,8 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
             print("\tsep extracted "+str(len(objects))+" objects using thresh = "+str(sepDetectThresh)+"*rms; fwhm = "+str(sepfwhm))
             write_fatboy_log(log, logtype, "sep extracted "+str(len(objects))+" objects using thresh = "+str(sepDetectThresh)+"*rms; fwhm = "+str(sepfwhm), __name__)
             #Create new blank image
-            currData = zeros(currData.shape, float32)
-            p = zeros(5)
+            currData = np.zeros(currData.shape, np.float32)
+            p = np.zeros(5)
             p[0] = halfPeak
             p[4] = bkg.globalback
             for l in range(len(objects['x'])):
@@ -331,12 +332,12 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
                     p[3] = objects['a'][l]
                 else:
                     p[3] = float(sepfwhm)
-                xmin = max(int(p[1])-30, 0)
-                xmax = min(int(p[1])+31, currData.shape[1])
-                ymin = max(int(p[2])-30, 0)
-                ymax = min(int(p[2])+31, currData.shape[0])
-                xin = arange((xmax-xmin)*(ymax-ymin)).reshape((ymax-ymin,xmax-xmin)) % (xmax-xmin) + xmin
-                yin = arange((xmax-xmin)*(ymax-ymin)).reshape((ymax-ymin,xmax-xmin)) // (xmax-xmin) + ymin
+                xmin = np.max(int(p[1])-30, 0)
+                xmax = np.min(int(p[1])+31, currData.shape[1])
+                ymin = np.max(int(p[2])-30, 0)
+                ymax = np.min(int(p[2])+31, currData.shape[0])
+                xin = np.arange((xmax-xmin)*(ymax-ymin)).reshape((ymax-ymin,xmax-xmin)) % (xmax-xmin) + xmin
+                yin = np.arange((xmax-xmin)*(ymax-ymin)).reshape((ymax-ymin,xmax-xmin)) // (xmax-xmin) + ymin
                 currData[ymin:ymax, xmin:xmax] += gaussFunction2d(p, xin, yin)
 
         #Mask negatives
@@ -370,26 +371,26 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
             if (cby1 < 0):
                 yguess -= cby1
                 cby1 = 0
-                cby2 = min(constrain_boxsize, ccor.shape[0])
+                cby2 = np.min(constrain_boxsize, ccor.shape[0])
             if (cbx1 < 0):
                 xguess -= cbx1
                 cbx1 = 0
-                cbx2 = min(constrain_boxsize, ccor.shape[1])
+                cbx2 = np.min(constrain_boxsize, ccor.shape[1])
             if (cby2 > ccor.shape[0]):
                 yguess -= (cby2-ccor.shape[0])
                 cby2 = ccor.shape[0]
-                cby1 = max(0, cby2-constrain_boxsize)
+                cby1 = np.max(0, cby2-constrain_boxsize)
             if (cbx2 > ccor.shape[1]):
                 xguess -= (cbx2-ccor.shape[1])
                 cbx2 = ccor.shape[1]
-                cbx1 = max(0, cbx2-constrain_boxsize)
+                cbx1 = np.max(0, cbx2-constrain_boxsize)
             ccor = ccor[cby1:cby2, cbx1:cbx2].copy()
             ccor = ascontiguousarray(ccor)
             #Use .copy() to make sure data is contiguous for GPU
 
         if (median_filter2d):
             #Median filter resulting matrix
-            boxsize = min(25, min(ccor.shape)//2+1)
+            boxsize = np.min(25, np.min(ccor.shape)//2+1)
             ccor = gpumedianfilter2d(ccor, boxsize=boxsize)
             if (_verbosity == fatboyLog.VERBOSE):
                 print("MedianFilter2d "+str(j)+":",time.time()-tt,"; Total: ",time.time()-t)
@@ -409,15 +410,15 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
 
         if (doFit2dGaussian):
             #fit one 2-d Gaussian
-            p = zeros(5, float64)
+            p = np.zeros(5, np.float64)
             p[0] = ccor.max()
             p[1] = b[1][0]
             p[2] = b[0][0]
             p[3] = 3
             p[4] = 0
             out = ccor.ravel()
-            xin = (arange(out.size) % ccor.shape[1]).astype(float64)
-            yin = (arange(out.size) // ccor.shape[0]).astype(float64)
+            xin = (np.arange(out.size) % ccor.shape[1]).astype(np.float64)
+            yin = (np.arange(out.size) // ccor.shape[0]).astype(np.float64)
             lsq = leastsq(gaussResiduals2d, p, args=(xin, yin, out))
             xshift = lsq[0][1] - (ccor.shape[1]//2-1)
             yshift = lsq[0][2] - (ccor.shape[0]//2-1)
@@ -425,20 +426,20 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
                 print("Fit 2d "+str(j)+": ",time.time()-tt,"; Total: ",time.time()-t)
         else:
             #Fit Gaussians to determine shift with subpixel accuracy
-            p = zeros(4, float64)
+            p = np.zeros(4, np.float64)
             p[0] = ccor.max()
             p[1] = b[1][0]
             p[2] = 3
             p[3] = 0
             y = ccor[b[0][0],:]
-            x = arange(len(y), dtype=float64)
+            x = np.arange(len(y), dtype=np.float64)
             lsq = leastsq(gaussResiduals, p, args=(x, y))
             xshift = lsq[0][1] - (len(x)//2-1)
             if (_verbosity == fatboyLog.VERBOSE):
                 print("Fit Xshift "+str(j)+":",time.time()-tt,"; Total: ",time.time()-t)
             tt = time.time()
 
-            p = zeros(4, float64)
+            p = np.zeros(4, np.float64)
             p[0] = ccor.max()
             p[1] = b[0][0]
             p[2] = 3
@@ -446,8 +447,8 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
             y = ccor[:,b[1][0]]
             if (median_filter2d):
                 #Median filter 1-d cut
-                y = gpumedianfilter(array(y))
-            x = arange(len(y), dtype=float64)
+                y = gpumedianfilter(np.array(y))
+            x = np.arange(len(y), dtype=np.float64)
             lsq = leastsq(gaussResiduals, p, args=(x, y))
             yshift = lsq[0][1] - (len(x)//2-1)
             if (_verbosity == fatboyLog.VERBOSE):
@@ -460,13 +461,13 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
 
         if (method == METHOD_SEP_CENTROID or method == METHOD_SEP_CENTROID_CONSTRAINED):
             #Use xshift, yshift as initial guess and attempt to match up objects found via sep
-            currObjects = array([objects['x'], objects['y']])
+            currObjects = np.array([objects['x'], objects['y']])
             matchRef = []
             matchCurr = []
             for l in range(len(refObjects[0])):
                 for i in range(len(currObjects[0])):
                     #object i in currFrame is within 5 pixels in x and y of object l in refFrame
-                    if (abs(refObjects[0,l]-currObjects[0,i]-xshift) < 5 and abs(refObjects[1,l]-currObjects[1,i]-yshift) < 5):
+                    if (np.abs(refObjects[0,l]-currObjects[0,i]-xshift) < 5 and np.abs(refObjects[1,l]-currObjects[1,i]-yshift) < 5):
                         matchRef.append(l)
                         matchCurr.append(i)
             xdiff = refObjects[0,:][matchRef]-currObjects[0,:][matchCurr]
@@ -479,7 +480,7 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
             while (niter < 5 and nprev != len(xdiff)):
                 nprev = len(xdiff)
                 niter += 1
-                b = (abs(xdiff-xdiff.mean()) < 2*xdiff.std()) * (abs(ydiff-ydiff.mean()) < 2*ydiff.std())
+                b = (np.abs(xdiff-xdiff.mean()) < 2*xdiff.std()) * (np.abs(ydiff-ydiff.mean()) < 2*ydiff.std())
                 xdiff = xdiff[b]
                 ydiff = ydiff[b]
             xshift = xdiff.mean()
@@ -503,7 +504,7 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
 
     #Check for low ccor values
     for j in range(1, len(ccmax)):
-        if (ccmax[j] < 0.3*max(ccmax)):
+        if (ccmax[j] < 0.3*np.max(ccmax)):
             if (mode == MODE_FITS):
                 name = filelist[j]
             elif (mode == MODE_RAW):

@@ -1,6 +1,6 @@
 #!/usr/bin/python -u
-# frames = array of fits filenames or one ASCII file containing a list of
-#       filenames or an array of FDUs
+# frames = np.array of fits filenames or one ASCII file containing a list of
+#       filenames or an np.array of FDUs
 # method = 'median' or 'mean'
 # outfile = filename of output FITS file
 # reject = rejection type if using method = 'mean'
@@ -12,7 +12,7 @@
 from .fatboyDataUnit import *
 from .arraymedian import arraymedian
 import sys
-from numpy import *
+import numpy as np
 from functools import reduce
 
 MODE_FITS = 0
@@ -33,7 +33,7 @@ def space(x):
 
 nx = 64
 
-def imcombine(frames, outfile=None, expmask=None, method='median', reject='none', lsigma=3, hsigma=3, weight='none', lthreshold=None, hthreshold=None, scale='none', zero='none', nlow=0, nhigh=0, mclip='mean', qsfile=None, nonzero=False, even=True, inmask=None, expkey='EXP_TIME', niter=5, log=None, mef=0, outtype=float32, mode=None, returnHeader=False, dataTag=None):
+def imcombine(frames, outfile=None, expmask=None, method='median', reject='none', lsigma=3, hsigma=3, weight='none', lthreshold=None, hthreshold=None, scale='none', zero='none', nlow=0, nhigh=0, mclip='mean', qsfile=None, nonzero=False, even=True, inmask=None, expkey='EXP_TIME', niter=5, log=None, mef=0, outtype=np.float32, mode=None, returnHeader=False, dataTag=None):
     t = time.time()
     _verbosity = fatboyLog.NORMAL
     if (isinstance(frames, str) and os.access(frames, os.F_OK)):
@@ -61,7 +61,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
         mode = MODE_FITS
         if (isinstance(frames[0], str)):
             mode = MODE_FITS
-        elif (isinstance(frames[0], ndarray)):
+        elif (isinstance(frames[0], np.ndarray)):
             mode = MODE_RAW
         elif (isinstance(frames[0], fatboyDataUnit)):
             mode = MODE_FDU
@@ -115,14 +115,14 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
     origsz = data.shape
     csize = origsz[0]//chunks
     totcols = origsz[0]
-    out = empty(origsz, outtype)
+    out = np.empty(origsz, outtype)
     if (expmask is not None):
-        exp = empty(origsz, outtype)
+        exp = np.empty(origsz, outtype)
         exptimes = []
-    w = ones(nframes, outtype)
-    zpts = zeros(nframes, outtype)
-    scl = ones(nframes, outtype)
-    inp = zeros((nframes,csize,origsz[1]), outtype)
+    w = np.ones(nframes, outtype)
+    zpts = np.zeros(nframes, outtype)
+    scl = np.ones(nframes, outtype)
+    inp = np.zeros((nframes,csize,origsz[1]), outtype)
     mm = []
 
     #input mask
@@ -135,7 +135,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
         nonzero = True
     elif (isinstance(inmask, fatboyDataUnit)):
         inmask = inmask.getData()
-    elif (not isinstance(inmask, ndarray)):
+    elif (not isinstance(inmask, np.ndarray)):
         inmask = None
     else:
         nonzero = True
@@ -205,7 +205,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
         if (j == chunks-1 and chunks*csize != totcols):
             endpos = totcols
             startpos = j*csize
-            inp = empty((nframes, endpos-j*csize, origsz[1]), outtype)
+            inp = np.empty((nframes, endpos-j*csize, origsz[1]), outtype)
             csize = endpos-startpos
         else:
             endpos = (j+1)*csize
@@ -263,7 +263,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                     b = None
                     #Check quick start file
                     if (hasqs and qsstring is not None):
-                        bqs = where(qskeys == qsstring)[0]
+                        bqs = np.where(qskeys == qsstring)[0]
                         if (len(bqs) != 0):
                             immean = qsvals[bqs[0]]
                             useqs = True
@@ -279,7 +279,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                         else:
                             data = frames[l]
                         if (lthreshold is not None and hthreshold is not None):
-                            b = logical_and(data >= lthreshold, data <= hthreshold)
+                            b = np.logical_and(data >= lthreshold, data <= hthreshold)
                             if (nonzero):
                                 b *= data != 0
                             nb = b.sum()
@@ -339,7 +339,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                         qsstring = frames[l].getName()+' sigma '+str(lthreshold)+' '+str(hthreshold)+' '+str(nonzero)
                     #Check quick start file
                     if (hasqs and qsstring is not None):
-                        bqs = where(qskeys == qsstring)[0]
+                        bqs = np.where(qskeys == qsstring)[0]
                         if (len(bqs) != 0):
                             imstd = qsvals[bqs[0]]
                             useqs = True
@@ -356,32 +356,32 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                             data = frames[l]
                         if (lthreshold is not None and hthreshold is not None):
                             if (b is None):
-                                b = logical_and(data >= lthreshold, data <= hthreshold)
+                                b = np.logical_and(data >= lthreshold, data <= hthreshold)
                                 if (nonzero):
                                     b *= data != 0
                                 nb = b.sum()
-                            imstd = sqrt((data*data*b+0.).sum()*1./(nb-1)-immean*immean*nb/(nb-1))
+                            imstd = np.sqrt((data*data*b+0.).sum()*1./(nb-1)-immean*immean*nb/(nb-1))
                         elif (lthreshold is not None):
                             if (b is None):
                                 b = data >= lthreshold
                                 if (nonzero):
                                     b *= data != 0
                                 nb = b.sum()
-                            imstd = sqrt((data*data*b+0.).sum()*1./(nb-1)-immean*immean*nb/(nb-1))
+                            imstd = np.sqrt((data*data*b+0.).sum()*1./(nb-1)-immean*immean*nb/(nb-1))
                         elif (hthreshold is not None):
                             if (b is None):
                                 b = data <= hthreshold
                                 if (nonzero):
                                     b *= data != 0
                                 nb = b.sum()
-                            imstd = sqrt((data*data*b+0.).sum()*1./(nb-1)-immean*immean*nb/(nb-1))
+                            imstd = np.sqrt((data*data*b+0.).sum()*1./(nb-1)-immean*immean*nb/(nb-1))
                         elif (nonzero):
                             if (b is None):
                                 b = data != 0
                                 nb = b.sum()
-                            imstd = sqrt((data*data*b+0.).sum()*1./(nb-1)-immean*immean*nb/(nb-1))
+                            imstd = np.sqrt((data*data*b+0.).sum()*1./(nb-1)-immean*immean*nb/(nb-1))
                         else:
-                            imstd = sqrt((data*data+0.).sum()/(imsize-1)-immean*immean*imsize/(imsize-1))
+                            imstd = np.sqrt((data*data+0.).sum()/(imsize-1)-immean*immean*imsize/(imsize-1))
                         if (qsstring is not None):
                             qslist.append(qsstring+': '+str(imstd))
 
@@ -474,7 +474,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             nfiles = float(sz[0])
             nfint = int(nfiles)
             if (lthreshold is not None and hthreshold is not None):
-                b = logical_and(inp <= hthreshold, inp >= lthreshold)
+                b = np.logical_and(inp <= hthreshold, inp >= lthreshold)
                 dothresh = True
             elif (lthreshold is not None):
                 b = inp >= lthreshold
@@ -518,81 +518,81 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                 if (dothresh):
                     if (nonzero):
                         b *= inp != 0
-                    tmask = reduce(add,b,0)
+                    tmask = reduce(np.add,b,0)
                     tmask[tmask == 0] = 1
                     inp *= b
                     if (mclip == 'median'):
                         avg = arraymedian(inp,axis="Y",nonzero=True)
                     else:
-                        avg = reduce(add,inp)*(1./tmask)
+                        avg = reduce(np.add,inp)*(1./tmask)
                     #nm1 = n-1
                     nm1 = tmask-1
                     nm1[nm1 == 0] = 1
-                    sd = sqrt(reduce(add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1)
+                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1)
                     lower = avg-lsigma*sd
                     upper = avg+hsigma*sd
                     out[startpos:endpos,:] = arraymedian(inp,axis="Y", lthreshold=lower, hthreshold=upper, nonzero=True)
                     if (expmask is not None):
-                        b *= logical_and(inp <= upper, inp >= lower)
+                        b *= np.logical_and(inp <= upper, inp >= lower)
                         for l in range(nfint):
                             exp[startpos:endpos,:] += b[l,:,:]*exptimes[l]
                 else:
                     if (mclip == 'median'):
                         avg = arraymedian(inp,axis="Y")
                     else:
-                        avg = reduce(add,inp)*(1./nfiles)
-                    sd = sqrt(reduce(add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1))
+                        avg = reduce(np.add,inp)*(1./nfiles)
+                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1))
                     lower = avg-lsigma*sd
                     upper = avg+hsigma*sd
                     out[startpos:endpos,:] = arraymedian(inp,axis="Y", lthreshold=lower, hthreshold=upper)
                     if (expmask is not None):
-                        b = logical_and(inp <= upper, inp >= lower)
+                        b = np.logical_and(inp <= upper, inp >= lower)
                         for l in range(nfint):
                             exp[startpos:endpos,:] += b[l,:,:]*exptimes[l]
             elif (reject == 'sigclip'):
                 if (not dothresh):
-                    avg = reduce(add,inp)*(1./nfiles)
-                    sd = sqrt(reduce(add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1))
+                    avg = reduce(np.add,inp)*(1./nfiles)
+                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1))
                     if (mclip == 'median'):
                         avg = arraymedian(inp,axis="Y")
-                    keep = logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
-                    n = reduce(add, keep, 0)
+                    keep = np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
+                    n = reduce(np.add, keep, 0)
                     inp*=keep
                     #nm1 = n-1 for sd purposes
                     nm1 = n-1
                     n[n==0]=1
                     nm1[nm1 < 1] = 1
-                    nold = zeros((sz[1],sz[2]))+nfiles
+                    nold = np.zeros((sz[1],sz[2]))+nfiles
                     c = 1
                     while ((n != nold).max() == 1 and c < niter):
                         b = n != nold
                         if ((b+0).sum() < .2*b.size):
                             inpb = inp[:,b]
                             nb = n[b]
-                            nm1b = maximum(nb-1,1)
-                            avgb = reduce(add,inpb)*(1./nb)
+                            nm1b = np.maximum(nb-1,1)
+                            avgb = reduce(np.add,inpb)*(1./nb)
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sdb = sqrt(reduce(add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6)
+                            sdb = np.sqrt(reduce(np.add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6)
                             if (mclip == 'median'):
                                 avgb = arraymedian(inpb,axis="Y",nonzero=True)
-                            keepb = logical_and(inpb >= -lsigma*sdb+avgb, inpb <= sdb*hsigma+avgb)
+                            keepb = np.logical_and(inpb >= -lsigma*sdb+avgb, inpb <= sdb*hsigma+avgb)
                             inp[:,b]*=keepb
-                            n[b] = reduce(add, keepb,0)
+                            n[b] = reduce(np.add, keepb,0)
                             nm1 = n-1
                             n[n==0]=1
                             nm1[nm1 < 1] = 1
                             c+=1
                         else:
-                            avg = reduce(add,inp)/n
+                            avg = reduce(np.add,inp)/n
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sd = sqrt(reduce(add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6)
+                            sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6)
                             if (mclip == 'median'):
                                 avg = arraymedian(inp,axis="Y",nonzero=True)
-                            keep = logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
+                            keep = np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
                             inp*=keep
-                            n = reduce(add, keep,0)
+                            n = reduce(np.add, keep,0)
                             nm1 = n-1
                             n[n==0]=1
                             nm1[nm1 < 1] = 1
@@ -609,53 +609,53 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                     if (nonzero):
                         b *= inp != 0
                     inp*=b
-                    tmask = reduce(add,b,0)
+                    tmask = reduce(np.add,b,0)
                     tmask[tmask == 0] = 1
-                    avg = reduce(add,inp)*(1./tmask)
+                    avg = reduce(np.add,inp)*(1./tmask)
                     #nm1 = n-1
                     nm1 = tmask-1
                     nm1[nm1 == 0] = 1
-                    sd = sqrt(reduce(add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1)
+                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1)
                     if (mclip == 'median'):
                         avg = arraymedian(inp,axis="Y",nonzero=True)
-                    keep = b*logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
-                    n = reduce(add, keep, 0)
+                    keep = b*np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
+                    n = reduce(np.add, keep, 0)
                     inp*=keep
                     #nm1 = n-1 for sd purposes
                     nm1 = n-1
                     n[n==0]=1
                     nm1[nm1 < 1] = 1
-                    nold = zeros((sz[1],sz[2]))+nfiles
+                    nold = np.zeros((sz[1],sz[2]))+nfiles
                     c = 1
                     while ((n != nold).max() == 1 and c < niter):
                         b = n != nold
                         if ((b+0).sum() < .15*b.size):
                             inpb = inp[:,b]
                             nb = n[b]
-                            nm1b = maximum(nb-1,1)
-                            avgb = reduce(add,inpb)*(1./nb)
+                            nm1b = np.maximum(nb-1,1)
+                            avgb = reduce(np.add,inpb)*(1./nb)
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sdb = sqrt(reduce(add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6)
+                            sdb = np.sqrt(reduce(np.add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6)
                             if (mclip == 'median'):
                                 avgb = arraymedian(inpb,axis="Y",nonzero=True)
-                            keepb = keep[:,b]*logical_and(inpb >= -lsigma*sdb+avgb, inpb <= sdb*hsigma+avgb)
+                            keepb = keep[:,b]*np.logical_and(inpb >= -lsigma*sdb+avgb, inpb <= sdb*hsigma+avgb)
                             inp[:,b]*=keepb
-                            n[b] = reduce(add, keepb,0)
+                            n[b] = reduce(np.add, keepb,0)
                             nm1 = n-1
                             n[n==0]=1
                             nm1[nm1 < 1] = 1
                             c+=1
                         else:
-                            avg = reduce(add,inp)/n
+                            avg = reduce(np.add,inp)/n
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sd = sqrt(reduce(add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6)
+                            sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6)
                             if (mclip == 'median'):
                                 avg = arraymedian(inp,axis="Y",nonzero=True)
-                            keep *= logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
+                            keep *= np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
                             inp*=keep
-                            n = reduce(add, keep,0)
+                            n = reduce(np.add, keep,0)
                             nm1 = n-1
                             n[n==0]=1
                             nm1[nm1 < 1] = 1
@@ -673,7 +673,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             nfiles = float(sz[0])
             nfint = int(nfiles)
             if (lthreshold is not None and hthreshold is not None):
-                b = logical_and(inp <= hthreshold, inp >= lthreshold)
+                b = np.logical_and(inp <= hthreshold, inp >= lthreshold)
                 dothresh = True
             elif (lthreshold is not None):
                 b = inp >= lthreshold
@@ -697,20 +697,20 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                     inp[l,:,:]*=(w[l]/w[0])
             #Correct for weighting
             if (weight != 'none'):
-                nfiles/=(reduce(add,w)/(nfiles*w[0]))
+                nfiles/=(reduce(np.add,w)/(nfiles*w[0]))
 
             if (reject == 'none'):
                 if (dothresh):
                     if (nonzero):
                         b *= inp != 0
-                    tmask = reduce(add,b,0)
+                    tmask = reduce(np.add,b,0)
                     tmask[tmask == 0] = 1
-                    out[startpos:endpos,:] = reduce(add,inp*b)*(1./tmask)
+                    out[startpos:endpos,:] = reduce(np.add,inp*b)*(1./tmask)
                     if (expmask is not None):
                         for l in range(nfint):
                             exp[startpos:endpos,:] += b[l,:,:]*exptimes[l]
                 else:
-                    out[startpos:endpos,:] = reduce(add,inp)*(1./nfiles)
+                    out[startpos:endpos,:] = reduce(np.add,inp)*(1./nfiles)
                     if (expmask is not None):
                         exp[startpos:endpos,:] = exptimes.sum()
             elif (reject == 'minmax'):
@@ -720,14 +720,14 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                     dmin = inp.min()
                     inp[b == False] = dmin-2
                     inp.sort(0)
-                    inp = reshape(inp, (nfint, csize*sz[2]))
+                    inp = np.reshape(inp, (nfint, csize*sz[2]))
                     #Calculate keep mask on sorted data
                     b = inp >= dmin-1
                     inp*=b
-                    tmask = reduce(add,b,0)
+                    tmask = reduce(np.add,b,0)
                     nlowmask = ((nlow+0.)/nfiles*tmask).astype("int8")
                     nhighmask = ((nhigh+0.)/nfiles*tmask).astype("int8")
-                    i = arange(csize*sz[2])
+                    i = np.arange(csize*sz[2])
                     #tmask = number of valid points
                     #zero out adjusted nlow points
                     while (nlowmask.max() > 0):
@@ -744,24 +744,24 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                         nhighmask -= 1*b
                         tmask -= 1*b
                     tmask[tmask == 0] = 1
-                    inp = reshape(inp, (nfint, csize, sz[2]))
-                    tmask = reshape(tmask, (csize,sz[2]))
-                    out[startpos:endpos,:] = reduce(add,inp)*(1./tmask)
+                    inp = np.reshape(inp, (nfint, csize, sz[2]))
+                    tmask = np.reshape(tmask, (csize,sz[2]))
+                    out[startpos:endpos,:] = reduce(np.add,inp)*(1./tmask)
                 else:
                     inp.sort(0)
                     npts = nfint-nlow-nhigh
-                    out[startpos:endpos,:] = reduce(add,inp[nlow:nfint-nhigh,:,:])*(1./npts)
+                    out[startpos:endpos,:] = reduce(np.add,inp[nlow:nfint-nhigh,:,:])*(1./npts)
             elif (reject == 'sigma'):
                 if (not dothresh):
-                    avg = reduce(add,inp)*(1./nfiles)
-                    sd = sqrt(reduce(add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1))
+                    avg = reduce(np.add,inp)*(1./nfiles)
+                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1))
                     if (mclip == 'median'):
                         avg = arraymedian(inp,axis="Y")
-                    b = logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
+                    b = np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
                     inp*=b
-                    n = reduce(add,b,0)
+                    n = reduce(np.add,b,0)
                     n[n==0] = 1
-                    out[startpos:endpos,:] = reduce(add,inp)*(1./n)
+                    out[startpos:endpos,:] = reduce(np.add,inp)*(1./n)
                     if (expmask is not None):
                         for l in range(nfint):
                             exp[startpos:endpos,:] += b[l,:,:]*exptimes[l]
@@ -769,18 +769,18 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                     if (nonzero):
                         b *= inp != 0
                     inp*=b
-                    tmask = reduce(add,b,0)
+                    tmask = reduce(np.add,b,0)
                     tmask[tmask == 0] = 1
-                    avg = reduce(add,inp)*(1./tmask)
+                    avg = reduce(np.add,inp)*(1./tmask)
                     #nm1 = n-1
                     nm1 = tmask-1
                     nm1[nm1 == 0] = 1
-                    sd = sqrt(reduce(add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1)
+                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1)
                     if (mclip == 'median'):
                         avg = arraymedian(inp,axis="Y",nonzero=True)
-                    b *= logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
-                    tempsum = reduce(add, inp*b)
-                    n = reduce(add,b,0)
+                    b *= np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
+                    tempsum = reduce(np.add, inp*b)
+                    n = reduce(np.add,b,0)
                     n[n==0] = 1
                     out[startpos:endpos,:] = tempsum*(1./n)
                     if (expmask is not None):
@@ -788,53 +788,53 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                             exp[startpos:endpos,:] += b[l,:,:]*exptimes[l]
             elif (reject == 'sigclip'):
                 if (not dothresh):
-                    avg = reduce(add,inp)*(1./nfiles)
-                    sd = sqrt(reduce(add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1))
+                    avg = reduce(np.add,inp)*(1./nfiles)
+                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1))
                     if (mclip == 'median'):
                         avg = arraymedian(inp,axis="Y")
-                    keep = logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
-                    n = reduce(add, keep, 0)
+                    keep = np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
+                    n = reduce(np.add, keep, 0)
                     inp*=keep
                     #nm1 = n-1 for sd purposes
                     nm1 = n-1
                     n[n==0]=1
                     nm1[nm1 < 1] = 1
-                    nold = zeros((sz[1],sz[2]))+nfiles
+                    nold = np.zeros((sz[1],sz[2]))+nfiles
                     c = 1
                     while ((n != nold).max() == 1 and c < niter):
                         b = n != nold
                         if ((b+0).sum() < .2*b.size):
                             inpb = inp[:,b]
                             nb = n[b]
-                            nm1b = maximum(nb-1,1)
-                            avgb = reduce(add,inpb)*(1./nb)
+                            nm1b = np.maximum(nb-1,1)
+                            avgb = reduce(np.add,inpb)*(1./nb)
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sdb = sqrt(reduce(add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6)
+                            sdb = np.sqrt(reduce(np.add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6)
                             if (mclip == 'median'):
                                 avgb = arraymedian(inpb,axis="Y",nonzero=True)
-                            keepb = logical_and(inpb >= -lsigma*sdb+avgb, inpb <= sdb*hsigma+avgb)
+                            keepb = np.logical_and(inpb >= -lsigma*sdb+avgb, inpb <= sdb*hsigma+avgb)
                             inp[:,b]*=keepb
-                            n[b] = reduce(add, keepb,0)
+                            n[b] = reduce(np.add, keepb,0)
                             nm1 = n-1
                             n[n==0]=1
                             nm1[nm1 < 1] = 1
                             c+=1
                         else:
-                            avg = reduce(add,inp)/n
+                            avg = reduce(np.add,inp)/n
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sd = sqrt(reduce(add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6)
+                            sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6)
                             if (mclip == 'median'):
                                 avg = arraymedian(inp,axis="Y",nonzero=True)
-                            keep = logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
+                            keep = np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
                             inp*=keep
-                            n = reduce(add, keep,0)
+                            n = reduce(np.add, keep,0)
                             nm1 = n-1
                             n[n==0]=1
                             nm1[nm1 < 1] = 1
                             c+=1
-                    out[startpos:endpos,:] = reduce(add,inp)*(1./n)
+                    out[startpos:endpos,:] = reduce(np.add,inp)*(1./n)
                     if (expmask is not None):
                         for l in range(nfint):
                             exp[startpos:endpos,:] += keep[l,:,:]*exptimes[l]
@@ -843,58 +843,58 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                     if (nonzero):
                         b *= inp != 0
                     inp*=b
-                    tmask = reduce(add,b,0)
+                    tmask = reduce(np.add,b,0)
                     tmask[tmask == 0] = 1
-                    avg = reduce(add,inp)*(1./tmask)
+                    avg = reduce(np.add,inp)*(1./tmask)
                     #nm1 = n-1
                     nm1 = tmask-1
                     nm1[nm1 == 0] = 1
-                    sd = sqrt(reduce(add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1)
+                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1)
                     if (mclip == 'median'):
                         avg = arraymedian(inp,axis="Y",nonzero=True)
-                    keep = b*logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
-                    n = reduce(add, keep, 0)
+                    keep = b*np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
+                    n = reduce(np.add, keep, 0)
                     inp*=keep
                     #nm1 = n-1 for sd purposes
                     nm1 = n-1
                     n[n==0]=1
                     nm1[nm1 < 1] = 1
-                    nold = zeros((sz[1],sz[2]))+nfiles
+                    nold = np.zeros((sz[1],sz[2]))+nfiles
                     c = 1
                     while ((n != nold).max() == 1 and c < niter):
                         b = n != nold
                         if ((b+0).sum() < .15*b.size):
                             inpb = inp[:,b]
                             nb = n[b]
-                            nm1b = maximum(nb-1,1)
-                            avgb = reduce(add,inpb)*(1./nb)
+                            nm1b = np.maximum(nb-1,1)
+                            avgb = reduce(np.add,inpb)*(1./nb)
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sdb = sqrt(reduce(add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6)
+                            sdb = np.sqrt(reduce(np.add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6)
                             if (mclip == 'median'):
                                 avgb = arraymedian(inpb,axis="Y",nonzero=True)
-                            keepb = keep[:,b]*logical_and(inpb >= -lsigma*sdb+avgb, inpb <= sdb*hsigma+avgb)
+                            keepb = keep[:,b]*np.logical_and(inpb >= -lsigma*sdb+avgb, inpb <= sdb*hsigma+avgb)
                             inp[:,b]*=keepb
-                            n[b] = reduce(add, keepb,0)
+                            n[b] = reduce(np.add, keepb,0)
                             nm1 = n-1
                             n[n==0]=1
                             nm1[nm1 < 1] = 1
                             c+=1
                         else:
-                            avg = reduce(add,inp)/n
+                            avg = reduce(np.add,inp)/n
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sd = sqrt(reduce(add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6)
+                            sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6)
                             if (mclip == 'median'):
                                 avg = arraymedian(inp,axis="Y",nonzero=True)
-                            keep *= logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
+                            keep *= np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
                             inp*=keep
-                            n = reduce(add, keep,0)
+                            n = reduce(np.add, keep,0)
                             nm1 = n-1
                             n[n==0]=1
                             nm1[nm1 < 1] = 1
                             c+=1
-                    out[startpos:endpos,:] = reduce(add,inp)*(1./n)
+                    out[startpos:endpos,:] = reduce(np.add,inp)*(1./n)
                     if (expmask is not None):
                         for l in range(nfint):
                             exp[startpos:endpos,:] += keep[l,:,:]*exptimes[l]
@@ -904,7 +904,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             nfiles = float(sz[2])
             nfint = int(nfiles)
             if (lthreshold is not None and hthreshold is not None):
-                b = logical_and(inp <= hthreshold, inp >= lthreshold)
+                b = np.logical_and(inp <= hthreshold, inp >= lthreshold)
                 dothresh = True
             elif (lthreshold is not None):
                 b = inp >= lthreshold
@@ -928,18 +928,18 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                     inp[l,:,:]*=(w[l]/w[0])
             #Correct for weighting
             if (weight != 'none'):
-                nfiles/=(reduce(add,w)/(nfiles*w[0]))
+                nfiles/=(reduce(np.add,w)/(nfiles*w[0]))
 
             if (reject == 'none'):
                 if (dothresh):
                     if (nonzero):
                         b *= inp != 0
-                    out[startpos:endpos,:] = reduce(add,inp*b)
+                    out[startpos:endpos,:] = reduce(np.add,inp*b)
                     if (expmask is not None):
                         for l in range(nfint):
                             exp[startpos:endpos,:] += b[l,:,:]*exptimes[l]
                 else:
-                    out[startpos:endpos,:] = reduce(add,inp)
+                    out[startpos:endpos,:] = reduce(np.add,inp)
                     if (expmask is not None):
                         exp[startpos:endpos,:] = exptimes.sum()
         #endif
@@ -1001,7 +1001,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             hdulist = pyfits.open(frames[0])
         elif (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG or mode == MODE_FDU_DIFF_PAIRING):
             header = frames[0]._header
-        write_fits_file(expfile, exp, dtype="float32", header=header, headerExt=newHeader, fitsobj=hdulist, mef=mef, log=log)
+        write_fits_file(expfile, exp, dtype="np.float32", header=header, headerExt=newHeader, fitsobj=hdulist, mef=mef, log=log)
         del exp
     if (_verbosity == fatboyLog.VERBOSE):
         print("Write data: ",time.time()-tt,"; Total: ",time.time()-t)

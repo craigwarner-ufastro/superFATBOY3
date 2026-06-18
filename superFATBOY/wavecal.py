@@ -5,7 +5,8 @@ from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
 from superFATBOY.datatypeExtensions.fatboySpectrum import fatboySpectrum
 from superFATBOY import gpu_drihizzle, drihizzle
-from numpy import *
+import numpy as np
+import math
 from scipy.optimize import leastsq
 import inspect
 
@@ -64,15 +65,15 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
 
         #11/6/19 new criteria 11 - check std of residuals with and without new line
         #If they are >= 5x bigger, reject
-        rl = array(reflines)
-        wl = array(wlines)
+        rl = np.array(reflines)
+        wl = np.array(wlines)
         nlines = len(rl)
         if (nlines < 8):
             fit_order = 1
         else:
             fit_order = 2
         #Fit polynomial of order fit_order to lines
-        p = zeros(fit_order+1, dtype=float32)
+        p = np.zeros(fit_order+1, dtype=np.float32)
         p[1] = scale
         try:
             lsq = leastsq(polyResiduals, p, args=(rl, wl, fit_order))
@@ -85,8 +86,8 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         sd_old = residLines.std()
 
         #Append new lines
-        rl = append(reflines, currLine)
-        wl = append(wlines, currWave)
+        rl = np.append(reflines, currLine)
+        wl = np.append(wlines, currWave)
         try:
             lsq = leastsq(polyResiduals, p, args=(rl, wl, fit_order))
         except Exception as ex:
@@ -133,7 +134,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                 print("FAIL 7 - least squares failed to converge")
             return False
 
-        if (abs(where(ccor == max(ccor))[0][0] - lsq[0][1]) > 2):
+        if (abs(np.where(ccor == ccor.max())[0][0] - lsq[0][1]) > 2):
             #Rejection 8: should be within +/- 2 pixels from guess
             #Blank out line
             obsFlag[blref-3:blref+4] = 0
@@ -146,11 +147,11 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
 
     def checkPrefitRejectionCriteria(self, fdu, blref, resid, reflines, wlines, obsFlag, inloop, refbox, searchbox, nlines, dummyWave, dummyFlux, min_threshold):
         success = True
-        templines = array(reflines)
+        templines = np.array(reflines)
         #Find closest line in pixel space to this one to use for initial guesses
-        refline = where(abs(templines-blref) == min(abs(templines-blref)))[0][0]
+        refline = np.where(np.abs(templines-blref) == np.min(np.abs(templines-blref)))[0][0]
         #Find index of dummyWave closest to actual wavelength of refline
-        refIdx = where(abs(dummyWave-wlines[refline]) == min(abs(dummyWave-wlines[refline])))[0][0]
+        refIdx = np.where(np.abs(dummyWave-wlines[refline]) == np.min(np.abs(dummyWave-wlines[refline])))[0][0]
         #Guess at index offset between oned cut and dummyFlux cut
         xoffGuess = int(refIdx-reflines[refline])
         refCut = resid[blref-refbox:blref+refbox+1]
@@ -174,7 +175,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
 
         #Rejection 2: If there is more than one zeroed out value
         #within +/- 3 pixels of line's center in oned cut
-        if (len(where(refCut[refbox-3:refbox+4] == 0)[0]) > 1):
+        if (len(np.where(refCut[refbox-3:refbox+4] == 0)[0]) > 1):
             obsFlag[blref-1:blref+2] = 0
             if (nlines > 3):
                 inloop+=1
@@ -186,18 +187,18 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
 
         #Rejection 3: If there is not a nonzero value within +/- 3
         #pixels of guess at line's center in dummy cut
-        if (len(where(dummyFlux[blref+xoffGuess-3:blref+xoffGuess+4] != 0)[0]) == 0):
+        if (len(np.where(dummyFlux[blref+xoffGuess-3:blref+xoffGuess+4] != 0)[0]) == 0):
             obsFlag[blref-3:blref+4] = 0
             if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
                 print("FAIL 3 - no nonzero values within 3 pixels of guess in dummy spectrum")
             return (False, inloop, 0)
 
         #Find nonzero points within +/- 2*search box but excluding +/- 5 points from line center
-        leftpts = where(resid[blref-2*searchbox:blref-5] != 0)[0]+blref-2*searchbox
-        rightpts = where(resid[blref+6:blref+2*searchbox+1] != 0)[0]+blref+6
-        sigpts = concatenate((leftpts, rightpts))
+        leftpts = np.where(resid[blref-2*searchbox:blref-5] != 0)[0]+blref-2*searchbox
+        rightpts = np.where(resid[blref+6:blref+2*searchbox+1] != 0)[0]+blref+6
+        sigpts = np.concatenate((leftpts, rightpts))
         #Rejection 4: If there are 3 or less such nonzero points on either the left or right side
-        if (len(where(sigpts < blref)[0]) <= 3 or len(where(sigpts > blref)[0]) <= 3):
+        if (len(np.where(sigpts < blref)[0]) <= 3 or len(np.where(sigpts > blref)[0]) <= 3):
             obsFlag[blref-1:blref+2] = 0
             if (nlines > 3):
                 inloop+=1
@@ -271,13 +272,13 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             for iy in range(ix+1, len(wclines)-1):
                 for iz in range(iy+1, len(wclines)):
                     combs.append([ix, iy, iz])
-        dumPeak = max(dpeak) #Set a default
+        dumPeak = np.max(dpeak) #Set a default
         for c in combs:
             #Match up 3 lines in image with corresponding lines in template
-            curr_wclines = array(wclines)[c]
-            curr_wccentroids = array(wccentroids)[c]
+            curr_wclines = np.array(wclines)[c]
+            curr_wccentroids = np.array(wccentroids)[c]
             #Sort 3 lines by wavelength so no confusion as to < > comparisons with pos/neg values
-            idx = array(c)[curr_wclines.argsort()]
+            idx = np.array(c)[curr_wclines.argsort()]
             curr_wclines.sort()
             curr_wccentroids.sort()
             #Check max_separation
@@ -369,7 +370,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                         for r in range(3):
                             dumCut = dummyFlux[tempLines[r]-100:tempLines[r]+101].copy()
                             refCut = oned[curr_wclines[r]-100:curr_wclines[r]+101].copy()
-                            #Handle edge cases where a brighter line might be in the refCut
+                            #Handle edge cases np.where a brighter line might be in the refCut
                             #That was ignored as a bright line because its near the edge
                             if (curr_wclines[r] < 200):
                                 refCut[:200-curr_wclines[r]] = 0
@@ -377,8 +378,8 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                             elif (len(oned)-curr_wclines[r] < 200):
                                 refCut[len(oned)-curr_wclines[r]:] = 0
                                 dumCut[len(oned)-curr_wclines[r]:] = 0
-                            ccor = correlate(refCut, dumCut, mode='same')
-                            mcor = where(ccor == max(ccor))[0][0]
+                            ccor = np.np.correlate(refCut, dumCut, mode='same')
+                            mcor = np.where(ccor == ccor.max())[0][0]
                             if (mcor < 90 or mcor > 110):
                                 isValid = False
                         if (not isValid):
@@ -389,34 +390,34 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                             continue
                         #cross correlate sections of refCut and dumCut spanning entire range of 3 lines
                         #and 50 pixels beyond each (after subtracting median values of cuts)
-                        dumCut = dummyFlux[min(tempLines)-50:max(tempLines)+51].copy()
+                        dumCut = dummyFlux[np.min(tempLines)-50:np.max(tempLines)+51].copy()
                         dumCut -= gpu_arraymedian(dumCut)
-                        refCut = oned[min(curr_wclines)-50:max(curr_wclines)+51].copy()
+                        refCut = oned[np.min(curr_wclines)-50:np.max(curr_wclines)+51].copy()
                         refCut -= gpu_arraymedian(refCut)
-                        ccor = correlate(refCut, dumCut, mode='same')
-                        mcor = where(ccor == max(ccor))[0][0]
+                        ccor = np.np.correlate(refCut, dumCut, mode='same')
+                        mcor = np.where(ccor == ccor.max())[0][0]
                         #Rejection 5: check max of ccor function.  Must be higher than
                         #previous max and also be within central 10% of search box.
-                        if (max(ccor) > 1.001*maxCor and mcor > len(ccor)//2*0.9 and mcor < len(ccor)//2*1.1):
+                        if (ccor.max() > 1.001*maxCor and mcor > len(ccor)//2*0.9 and mcor < len(ccor)//2*1.1):
                             currLines = tempLines
                             dumPeak = tempPeak
-                            maxCor = max(ccor)
+                            maxCor = ccor.max()
                             if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
                                 print("New Match")
-                                print(l,k,i,dlines[l],dlines[k],dlines[i], max(ccor), where(ccor == max(ccor)), len(refCut), len(dumCut), len(ccor))
+                                print(l,k,i,dlines[l],dlines[k],dlines[i], ccor.max(), np.where(ccor == ccor.max()), len(refCut), len(dumCut), len(ccor))
                                 print("\tWavelengths ", dwave[l], dwave[k], dwave[i])
                         else:
-                            if (max(ccor) > 1.001*maxCor):
+                            if (ccor.max() > 1.001*maxCor):
                                 #Try second highest peak
                                 ccor[mcor-5:mcor+6] = 0
-                                mcor = where(ccor == max(ccor))[0][0]
-                                if (max(ccor) > 1.001*maxCor and mcor > len(ccor)//2*0.9 and mcor < len(ccor)//2*1.1):
+                                mcor = np.where(ccor == ccor.max())[0][0]
+                                if (ccor.max() > 1.001*maxCor and mcor > len(ccor)//2*0.9 and mcor < len(ccor)//2*1.1):
                                     currLines = tempLines
                                     dumPeak = tempPeak
-                                    maxCor = max(ccor)
+                                    maxCor = ccor.max()
                                     if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
                                         print("New Match 2nd pass")
-                                        print(l,k,i,dlines[l],dlines[k],dlines[i], max(ccor), where(ccor == max(ccor)), len(refCut), len(dumCut), len(ccor))
+                                        print(l,k,i,dlines[l],dlines[k],dlines[i], ccor.max(), np.where(ccor == ccor.max()), len(refCut), len(dumCut), len(ccor))
                                         print("\tWavelengths ", dwave[l], dwave[k], dwave[i])
                                 else:
                                     if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
@@ -430,15 +431,15 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                 #Matched 3 brightest lines
                 print("wavelengthCalibrateProcess::match3BrightestLines> Successfully matched with "+str(currLines))
                 return (True, currLines, dumPeak, idx)
-        return (False, currLines, dumPeak, array([0,1,2]))
+        return (False, currLines, dumPeak, np.array([0,1,2]))
     #end match3BrightestLines
 
     #Add gaussians for each line in line list
     def populateDummyFlux(self, masterFlux, masterWave, dummyWave, dummyFlux, scale, gaussWidth, wlines=[]):
         #Set up boolean arrays to find lines that are > 5 pixels out of wavelength regime
-        out_of_regime_low = array(masterWave) < min(dummyWave)-5*scale
-        out_of_regime_high = array(masterWave) > max(dummyWave)+5*scale
-        idx_range = max(50, int(gaussWidth*10)) #index range for creating Gaussians
+        out_of_regime_low = np.array(masterWave) < np.min(dummyWave)-5*scale
+        out_of_regime_high = np.array(masterWave) > np.max(dummyWave)+5*scale
+        idx_range = np.max(50, int(gaussWidth*10)) #index range for creating Gaussians
         for i in range(len(masterFlux)):
             if (masterFlux[i] < 0):
                 continue
@@ -453,7 +454,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                     skip = True
             if (skip):
                 continue
-            p = zeros(4)
+            p = np.zeros(4)
             p[0] = masterFlux[i]
             p[1] = masterWave[i]
             p[2] = gaussWidth*abs(scale)
@@ -462,12 +463,12 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                 if (masterWave[i] < dummyWave.min()):
                     idx = 0
                 else:
-                    idx = where(dummyWave < masterWave[i])[0][0]
+                    idx = np.where(dummyWave < masterWave[i])[0][0]
             else:
                 if (masterWave[i] > dummyWave.max()):
                     idx = dummyWave.size-1
                 else:
-                    idx = where(dummyWave > masterWave[i])[0][0]
+                    idx = np.where(dummyWave > masterWave[i])[0][0]
             #Indices to take a subarray of dummyWave to use to create Gaussian
             #Saves 10x time and Gaussian contributions out of this range are
             #effectively 0
@@ -502,9 +503,9 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             else:
                 masterFlag.append(0)
         #Convert lists to arrays
-        masterWave = array(masterWave)
-        masterFlux = array(masterFlux)
-        masterFlag = array(masterFlag)
+        masterWave = np.array(masterWave)
+        masterFlux = np.array(masterFlux)
+        masterFlag = np.array(masterFlag)
         return (masterWave, masterFlux, masterFlag)
     #endreadLineList
 
@@ -513,28 +514,28 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         if ((npass == 1 or nlines < 8) and not nonlinear):
             #Use linear scale for first pass until range is wide enough / and enough lines to use 2nd order solution
             #Unless nonlinear = True
-            p = zeros(2, dtype=float32)
+            p = np.zeros(2, dtype=np.float32)
             p[0] = wlines[0]-scale*reflines[0]
             p[1] = scale
             try:
-                lsq = leastsq(linResiduals, p, args=(array(reflines), array(wlines)))
+                lsq = leastsq(linResiduals, p, args=(np.array(reflines), np.array(wlines)))
                 scale = lsq[0][1]
                 print("\t\tGuess at wavelength scale (units/pixel): "+formatNum(scale))
             except Exception:
                 #Print error statement back in wavelengthCalibrate when result obtained
                 success = False
             dummySize = int((max_wavelength-min_wavelength)/abs(scale))
-            dummyWave = arange(dummySize, dtype=float32)*scale+min_wavelength
+            dummyWave = np.arange(dummySize, dtype=np.float32)*scale+min_wavelength
             if (scale < 0):
                 #Negative scale, need wavelenghts descending
-                dummyWave = arange(dummySize, dtype=float32)*scale+max_wavelength
+                dummyWave = np.arange(dummySize, dtype=np.float32)*scale+max_wavelength
         elif (not nonlinear):
             #Fit order 2 polynomial to current data
-            p =  zeros(3, dtype=float32)
+            p =  np.zeros(3, dtype=np.float32)
             p[0] = wlines[0]-scale*reflines[0]
             p[1] = scale
             try:
-                lsq = leastsq(polyResiduals, p, args=(array(reflines), array(wlines), len(p)-1))
+                lsq = leastsq(polyResiduals, p, args=(np.array(reflines), np.array(wlines), len(p)-1))
                 scale = lsq[0][1]
                 print("\t\tGuess at 2nd order solution: "+formatList(lsq[0]))
             except Exception:
@@ -545,7 +546,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             dummySize = int(dummySize//2)
             while (min_wavelength+abs(lsq[0][1]*dummySize+lsq[0][2]*dummySize**2) < max_wavelength):
                 dummySize += 1
-            xs = arange(dummySize, dtype=float32)
+            xs = np.arange(dummySize, dtype=np.float32)
             dummyWave = min_wavelength+lsq[0][1]*xs+lsq[0][2]*xs**2
             if (dummyWave[-1] < dummyWave[0]):
                 #Negative scale, need wavelenghts descending
@@ -554,10 +555,10 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             #Found at least min_lines_nonlinear and not first pass
             #Try calculating solution from current data
             dummyOrder = len(coeffs)-1
-            p = array(coeffs, dtype=float32)
+            p = np.array(coeffs, dtype=np.float32)
             p[0] = wlines[0]-scale*reflines[0]
             try:
-                lsq = leastsq(polyResiduals, p, args=(array(reflines), array(wlines), dummyOrder))
+                lsq = leastsq(polyResiduals, p, args=(np.array(reflines), np.array(wlines), dummyOrder))
                 coeffs[1:] = lsq[0][1:]
                 #coeffs = lsq[0]
                 #coeffs[0] = 0
@@ -573,20 +574,20 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                 if (abs(polyFunction(coeffs, dummySize, dummyOrder)) < abs(polyFunction(coeffs, dummySize-10, dummyOrder))):
                     break
                 dummySize += 10
-            xs = arange(dummySize, dtype=float32)
+            xs = np.arange(dummySize, dtype=np.float32)
             dummyWave = min_wavelength+polyFunction(coeffs, xs, dummyOrder)
             if (polyFunction(coeffs, dummySize, dummyOrder) < 0):
                 #Negative scale, need wavelengths descending
                 dummyWave = max_wavelength+polyFunction(coeffs, xs, dummyOrder)
         else:
             dummyOrder = len(coeffs)-1
-            xs = arange(dummySize, dtype=float32)
+            xs = np.arange(dummySize, dtype=np.float32)
             dummyWave = min_wavelength+polyFunction(coeffs, xs, dummyOrder)
             if (polyFunction(coeffs, dummySize, dummyOrder) < 0):
                 #Negative scale, need wavelengths descending
                 dummyWave = max_wavelength+polyFunction(coeffs, xs, dummyOrder)
-        #Create new dummyFlux array.
-        dummyFlux = zeros(dummySize, dtype=float32)
+        #Create new dummyFlux np.array.
+        dummyFlux = np.zeros(dummySize, dtype=np.float32)
         #Coeffs should be updated without returning
         return (success, scale, dummySize, dummyWave, dummyFlux)
     #end refineWavelengthScale
@@ -756,7 +757,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             #Create coeffs list with 0 constant term
             coeffs = [0]
             coeffs.extend(wavelength_scale_guess)
-        fitParams.append([]) #Append new empty list for this order
+        fitParams.append([]) #Append new np.empty list for this order
 
         pass_name = " for order "+str(j+1)+" of "
         #define output specfile, residfile
@@ -793,9 +794,9 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         #Use 2 passes of quartile filter
         badpix = oned == 0 #First find bad pixels
         #Correct for big negative values
-        oned[where(oned < -100)] = 1.e-6
+        oned[np.where(oned < -100)] = 1.e-6
         for i in range(2):
-            tempcut = zeros(len(oned))
+            tempcut = np.zeros(len(oned))
             nh = 25-badpix[:51].sum()//2 #Instead of defaulting to 25 for quartile, use median of bottom half of *nonzero* pixels
             for k in range(25):
                 #tempcut[k] = oned[k] - gpu_arraymedian(oned[:51],nonzero=True,nhigh=25)
@@ -809,7 +810,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             #Set zero values to small positive number to avoid being flagged
             tempcut[tempcut == 0] = 1.e-6
             #Correct for big negative values
-            tempcut[where(tempcut < -100)] = 1.e-6
+            tempcut[np.where(tempcut < -100)] = 1.e-6
             oned = tempcut
         #Set bad pixels back to 0
         oned[badpix] = 0
@@ -817,24 +818,24 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         oned[-10:] = 0
 
 	#Find brightest line in image
-        blref = where(oned == max(oned))[0][0]
-        maxPeak = max(oned)
+        blref = np.where(oned == oned.max())[0][0]
+        maxPeak = oned.max()
         #Fit a Gaussian to find shape.  Square data first to ensure that
         #bright line dominates fit
         refCut = oned[blref-10:blref+11]**2
-        p = zeros(4, dtype=float64)
-        p[0] = max(refCut)
+        p = np.zeros(4, dtype=np.float64)
+        p[0] = refCut.max()
         p[1] = 10
         p[2] = 2
         p[3] = gpu_arraymedian(refCut, nonzero=True)
         try:
-            lsq = leastsq(gaussResiduals, p, args=(arange(len(refCut), dtype=float64), refCut))
+            lsq = leastsq(gaussResiduals, p, args=(np.arange(len(refCut), dtype=np.float64), refCut))
         except Exception as ex:
             print("wavelengthCalibrateProcess::wavelengthCalibrate> WARNING: leastsq fit failed at pixel "+str(blref)+"; Using gaussWidth=1.5.")
             gaussWidth = 1.5
-        #Multiply by sqrt(2) because we fit squared data.  This will
+        #Multiply by np.sqrt(2) because we fit squared data.  This will
         #give us the width of the emission lines.
-        gaussWidth = abs(lsq[0][2]*sqrt(2))
+        gaussWidth = abs(lsq[0][2]*np.sqrt(2))
         if (gaussWidth > 2.5):
             gaussWidth = 1.5
             #If its a broad line for some reason, use 1.5 as default
@@ -849,11 +850,11 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
 
         #Create 1st guess at dummy 1-d cuts
         dummySize = int((max_wavelength-min_wavelength)/abs(scale))
-        dummyFlux = zeros(dummySize, dtype=float32)
-        dummyWave = arange(dummySize, dtype=float32)*scale+min_wavelength
+        dummyFlux = np.zeros(dummySize, dtype=np.float32)
+        dummyWave = np.arange(dummySize, dtype=np.float32)*scale+min_wavelength
         if (scale < 0):
             #Negative scale, need wavelengths descending
-            dummyWave = arange(dummySize, dtype=float32)*scale+max_wavelength
+            dummyWave = np.arange(dummySize, dtype=np.float32)*scale+max_wavelength
 
         dummyOrder = 1
         if (nonlinear):
@@ -863,8 +864,8 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             dummySize = int(dummySize//2)
             while (min_wavelength+abs(polyFunction(coeffs, dummySize, dummyOrder)) < max_wavelength):
                 dummySize += 10
-            dummyFlux = zeros(dummySize, dtype=float32)
-            xs = arange(dummySize, dtype=float32)
+            dummyFlux = np.zeros(dummySize, dtype=np.float32)
+            xs = np.arange(dummySize, dtype=np.float32)
             dummyWave = min_wavelength+polyFunction(coeffs, xs, dummyOrder)
             if (polyFunction(coeffs, dummySize, dummyOrder) < 0):
             #Negative scale, need wavelengths descending
@@ -883,7 +884,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         #Set zero values to small positive number so they're not considered flagged
         dummyFlux[dummyFlux == 0] = 1.e-6
         #Correct for big negative values
-        dummyFlux[where(dummyFlux < -100)] = 1.e-6
+        dummyFlux[np.where(dummyFlux < -100)] = 1.e-6
 
         #Find n_brightest_data (default 3) brightest lines in image, n_brightest_lines (default 14) brightest in template
         wclines = []
@@ -899,7 +900,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         #Use 3 passes to find and fit brightest line in refCut
         #Then zero out 21 pixels centered around line
         for i in range(n_brightest_data):
-            blref = where(refCut == max(refCut))[0][0]
+            blref = np.where(refCut == refCut.max())[0][0]
             if (blref < bl_min or blref >= bl_max % len(refCut)):
                 refCut[blref] = refCut.min()-1
                 continue
@@ -913,61 +914,61 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                 if (not keepLine):
                     #Fit Gaussian and remove line 8/29/19
                     tempCut = refCut[blref-10:blref+11]**2
-                    p = zeros(4, dtype=float64)
-                    p[0] = max(tempCut)
+                    p = np.zeros(4, dtype=np.float64)
+                    p[0] = tempCut.max()
                     p[1] = 10
-                    p[2] = gaussWidth/sqrt(2)
+                    p[2] = gaussWidth/np.sqrt(2)
                     p[3] = gpu_arraymedian(tempCut)
                     try:
-                        lsq = leastsq(gaussResiduals, p, args=(arange(len(tempCut), dtype=float64), tempCut))
+                        lsq = leastsq(gaussResiduals, p, args=(np.arange(len(tempCut), dtype=np.float64), tempCut))
                     except Exception as ex:
                         #Should not happen; use initial guess
                         lsq = [p]
-                    p = zeros(4)
-                    p[0] = sqrt(abs(lsq[0][0]))
+                    p = np.zeros(4)
+                    p[0] = np.sqrt(abs(lsq[0][0]))
                     p[1] = lsq[0][1]+blref-10
-                    p[2] = abs(lsq[0][2]*sqrt(2))
-                    refCut -= gaussFunction(p, arange(len(refCut), dtype=float32))
+                    p[2] = abs(lsq[0][2]*np.sqrt(2))
+                    refCut -= gaussFunction(p, np.arange(len(refCut), dtype=np.float32))
                     refCut[refCut < 0] = 0
                     #refCut[blref-2:blref+3] = 0
-                    blref = where(refCut == max(refCut))[0][0]
+                    blref = np.where(refCut == np.max(refCut))[0][0]
 
             #Centroid line for subpixel accuracy
             #Square data to ensure bright line dominates fit
             tempCut = refCut[blref-10:blref+11]**2
-            p = zeros(4, dtype=float64)
-            p[0] = max(tempCut)
+            p = np.zeros(4, dtype=np.float64)
+            p[0] = tempCut.max()
             p[1] = 10
-            p[2] = gaussWidth/sqrt(2)
+            p[2] = gaussWidth/np.sqrt(2)
             p[3] = gpu_arraymedian(tempCut)
             try:
-                lsq = leastsq(gaussResiduals, p, args=(arange(len(tempCut), dtype=float64), tempCut))
+                lsq = leastsq(gaussResiduals, p, args=(np.arange(len(tempCut), dtype=np.float64), tempCut))
             except Exception as ex:
                 #Error centroiding, continue to next line
-                refCut -= gaussFunction(p, arange(len(refCut), dtype=float32))
+                refCut -= gaussFunction(p, np.arange(len(refCut), dtype=np.float32))
                 refCut[refCut < 0] = 0
                 continue
             mcor = lsq[0][1]
             wccentroids.append(blref+mcor-10) #Actual centroid
             wclines.append(int(blref+mcor-9.5)) #Rounded to nearest pixel
             #Check each component's width rather than the average
-            currWidth = abs(lsq[0][2]*sqrt(2))
+            currWidth = abs(lsq[0][2]*np.sqrt(2))
             if (currWidth > 2.5):
                 currWidth = 1.5
             elif (currWidth > 2):
                 currWidth = 1.75
             lineWidths.append(currWidth)
             #Add line to lineParams
-            p = zeros(4)
-            p[0] = sqrt(abs(lsq[0][0]))
+            p = np.zeros(4)
+            p[0] = np.sqrt(abs(lsq[0][0]))
             p[1] = lsq[0][1]+blref-10
-            p[2] = abs(lsq[0][2]*sqrt(2))
+            p[2] = abs(lsq[0][2]*np.sqrt(2))
             #subtract Gaussian fitted to line rather than zeroing out 21 pixel
             #box 8/29/19.  Also ensure no negative points
-            refCut -= gaussFunction(p, arange(len(refCut), dtype=float32))
+            refCut -= gaussFunction(p, np.arange(len(refCut), dtype=np.float32))
             refCut[refCut < 0] = 0
             p[2] = currWidth
-            linePeaks.append(sqrt(abs(lsq[0][0])))
+            linePeaks.append(math.sqrt(abs(lsq[0][0])))
             #Keep track of Gaussian params for line
             lineParams.append(p)
             #zero out 21 pixel box centered at this line
@@ -984,23 +985,23 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         #Use n_brightest_lines (default 14) passes to find and fit brightest line in dumCut
         #Then zero out 21 pixels centered around line
         for i in range(n_brightest_lines):
-            blref = where(dumCut == max(dumCut))[0][0]
+            blref = np.where(dumCut == dumCut.max())[0][0]
             if (blref < 100 or blref > len(dumCut)-100):
                 dumCut[blref] = dumCut.min()-1
                 continue
             #Centroid line for subpixel accuracy
             #Square data to ensure bright line dominates fit
             tempCut = dumCut[blref-10:blref+11]**2
-            p = zeros(4, dtype=float64)
-            p[0] = max(tempCut)
+            p = np.zeros(4, dtype=np.float64)
+            p[0] = tempCut.max()
             p[1] = 10
-            p[2] = gaussWidth/sqrt(2)
+            p[2] = gaussWidth/np.sqrt(2)
             p[3] = gpu_arraymedian(tempCut)
             try:
-                lsq = leastsq(gaussResiduals, p, args=(arange(len(tempCut), dtype=float64), tempCut))
+                lsq = leastsq(gaussResiduals, p, args=(np.arange(len(tempCut), dtype=np.float64), tempCut))
             except Exception as ex:
                 #Error centroiding, continue to next line
-                dumCut -= gaussFunction(p, arange(len(dumCut), dtype=float32))
+                dumCut -= gaussFunction(p, np.arange(len(dumCut), dtype=np.float32))
                 dumCut[dumCut < 0] = 0
                 continue
             mcor = lsq[0][1]
@@ -1008,19 +1009,19 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             blref = int(blref+mcor-9.5)
             dlines.append(blref)
             #Append flux peak to dpeak list
-            dpeak.append(sqrt(lsq[0][0]))
+            dpeak.append(np.sqrt(lsq[0][0]))
             #Get wavelgnth from masterWave -- dummyWave is now an approximation
             #Find closest wavelength in masterWave
-            dwave.append(masterWave[where(abs(masterWave-dummyWave[blref]) == min(abs(masterWave-dummyWave[blref])))][0])
+            dwave.append(masterWave[np.where(np.abs(masterWave-dummyWave[blref]) == np.min(np.abs(masterWave-dummyWave[blref])))][0])
             #subtract Gaussian fitted to line rather than zeroing out 21 pixel
             #box 1/9/20.  Also ensure no negative points
-            p = zeros(4)
-            p[0] = sqrt(abs(lsq[0][0]))
+            p = np.zeros(4)
+            p[0] = np.sqrt(abs(lsq[0][0]))
             p[1] = lsq[0][1]+blref-10
-            p[2] = abs(lsq[0][2]*sqrt(2))
+            p[2] = abs(lsq[0][2]*math.sqrt(2))
             #subtract Gaussian fitted to line rather than zeroing out 21 pixel
             #box 8/29/19.  Also ensure no negative points
-            dumCut -= gaussFunction(p, arange(len(dumCut), dtype=float32))
+            dumCut -= gaussFunction(p, np.arange(len(dumCut), dtype=np.float32))
             dumCut[dumCut < 0] = 0
             #zero out 21 pixel box centered at this line
             #dumCut[blref-10:blref+11] = 0
@@ -1033,27 +1034,27 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         wlines = []
         if (success):
             #idx is already sorted for wavelength so confusion as to < > comparisons with pos/neg values
-            wclines = array(wclines)[idx]
-            wccentroids = array(wccentroids)[idx]
-            lineParams = array(lineParams)[idx].tolist()
-            sumWidth = array(lineWidths)[idx].sum()
-            sumPeak = array(linePeaks)[idx].sum()
+            wclines = np.array(wclines)[idx]
+            wccentroids = np.array(wccentroids)[idx]
+            lineParams = np.array(lineParams)[idx].tolist()
+            sumWidth = np.array(lineWidths)[idx].sum()
+            sumPeak = np.array(linePeaks)[idx].sum()
         else:
             #Could not match 3 brightest lines
             print("wavelengthCalibrateProcess::wavelengthCalibrate> ERROR: Could not match 3 brightest lines "+pass_name+fdu.getFullId()+"! Skipping order!")
             print("wavelengthCalibrateProcess::wavelengthCalibrate> Check "+specfile+" for data.")
             #Output "spec" file
-            xs = arange(len(oned), dtype=float32)*scale+min_wavelength
+            xs = np.arange(len(oned), dtype=np.float32)*scale+min_wavelength
             if (scale < 0):
                 #Negative scale, need wavelenghts descending
-                xs = arange(len(oned), dtype=float32)*scale+max_wavelength
+                xs = np.arange(len(oned), dtype=np.float32)*scale+max_wavelength
             if (nonlinear):
-                xs = min_wavelength+polyFunction(coeffs, arange(len(oned), dtype=float32), dummyOrder)
+                xs = min_wavelength+polyFunction(coeffs, np.arange(len(oned), dtype=np.float32), dummyOrder)
                 if (polyFunction(coeffs, dummySize, dummyOrder) < 0):
                     #Negative scale, need wavelengths descending
-                    xs = max_wavelength+polyFunction(coeffs, arange(len(oned), dtype=float32), dummyOrder)
+                    xs = max_wavelength+polyFunction(coeffs, np.arange(len(oned), dtype=np.float32), dummyOrder)
 
-            dummyFlux = zeros(len(oned), dtype=float32)
+            dummyFlux = np.zeros(len(oned), dtype=np.float32)
             dummyWave = xs
             dummyFlux = self.populateDummyFlux(masterFlux, masterWave, dummyWave, dummyFlux, scale, gaussWidth)
             #Scale template
@@ -1067,20 +1068,20 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
 
         #oned = one-d cut of image; obsSpec = gaussians of found lines;
         #obsFlag = flagged pixels; resid = used for finding next line
-        obsSpec = zeros(len(oned))
-        resid = zeros(len(oned))
-        obsFlag = ones(len(oned))
-        #Add actual wavelengths of 3 lines to wlines array
+        obsSpec = np.zeros(len(oned))
+        resid = np.zeros(len(oned))
+        obsFlag = np.ones(len(oned))
+        #Add actual wavelengths of 3 lines to wlines np.array
         for i in range(len(currLines)):
             #Get wavelgnth from masterWave -- dummyWave is now an approximation
             #Find closest wavelength in masterWave
-            currWave =  masterWave[where(abs(masterWave-dummyWave[currLines[i]]) == min(abs(masterWave-dummyWave[currLines[i]])))][0]
+            currWave =  masterWave[np.where(np.abs(masterWave-dummyWave[currLines[i]]) == np.min(np.abs(masterWave-dummyWave[currLines[i]])))][0]
             wlines.append(currWave)
-        #Add pixel centroid of 3 lines to reflines array
+        #Add pixel centroid of 3 lines to reflines np.array
         for i in range(len(wclines)):
             reflines.append(wccentroids[i])
             #Add line to obsSpec
-            obsSpec += gaussFunction(lineParams[i], arange(len(obsSpec), dtype=float32))
+            obsSpec += gaussFunction(lineParams[i], np.arange(len(obsSpec), dtype=np.float32))
         #Refine Gaussian width, flux scale by taking average from 3 lines
         gaussWidth = sumWidth/3.
         maxPeak = sumPeak/3.
@@ -1088,11 +1089,11 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         #Refine scale, dummy arrays
         #With 3 datapoints, use linear approximation
         scale = (wlines[2]-wlines[0])/(reflines[2]-reflines[0])
-        p = zeros(2, dtype=float32)
+        p = np.zeros(2, dtype=np.float32)
         p[0] = wlines[0]-scale*reflines[0]
         p[1] = scale
         try:
-            lsq = leastsq(linResiduals, p, args=(array(reflines), array(wlines)))
+            lsq = leastsq(linResiduals, p, args=(np.array(reflines), np.array(wlines)))
             scale = lsq[0][1]
         except Exception as ex:
             print("wavelengthCalibrateProcess::wavelengthCalibrate> Warning: exception "+str(ex)+" while doing least squares fit to linear scale.")
@@ -1107,8 +1108,8 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         oldnlines = 0
         findLines = True
         inloop = 0
-        xlo = int(max(min(reflines)-200, 50))
-        xhi = int(min(max(reflines)+200, len(oned)-51))
+        xlo = int(np.max(np.min(reflines)-200, 50))
+        xhi = int(np.min(np.max(reflines)+200, len(oned)-51))
         #Loop over other lines in +/- 200 px area
 
         while (findLines and inloop < 20):
@@ -1125,37 +1126,37 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                 dummyFlux *= fluxScale
             oldnlines = nlines
 
-            #Set up resid array = residuals of (oned - found lines) * obsFlag
+            #Set up resid np.array = residuals of (oned - found lines) * obsFlag
             resid = (oned-obsSpec)*obsFlag
-            #If peak in resid array is <= 2*min_intensity_pct (default 1%) of peak of brightest line, break out of loop
+            #If peak in resid np.array is <= 2*min_intensity_pct (default 1%) of peak of brightest line, break out of loop
             if (resid[xlo+5:xhi-4].max() <= maxPeak*min_intensity_pct*2):
                 findLines = False
                 break
             #blref = line center of brightest line remaining in resid, rounded to nearest pixel
-            blref = where(resid[xlo:xhi+1] == max(resid[xlo+5:xhi-4]))[0][0]+xlo
+            blref = np.where(resid[xlo:xhi+1] == resid[xlo+5:xhi-4].max())[0][0]+xlo
             #Edge cases - ensure peak of line found
             if (blref-xlo < 10):
-                blref = where(resid[blref-5:blref+1] == max(resid[blref-5:blref+1]))[0][0]+blref-5
+                blref = np.where(resid[blref-5:blref+1] == resid[blref-5:blref+1].max())[0][0]+blref-5
             if (xhi-blref < 10):
-                blref = where(resid[blref:blref+6] == max(resid[blref:blref+6]))[0][0]+blref
+                blref = np.where(resid[blref:blref+6] == resid[blref:blref+6].max())[0][0]+blref
             if (blref-xlo < 30):
                 resid[blref-50:blref-30] = 0
             elif (xhi-blref < 30):
                 resid[blref+30:blref+50] = 0
             refbox = 25
             searchbox = 25
-            templines = array(reflines)
+            templines = np.array(reflines)
             #Find closest line in pixel space to this one to use for initial guesses
-            refline = where(abs(templines-blref) == min(abs(templines-blref)))[0][0]
+            refline = np.where(np.abs(templines-blref) == np.min(np.abs(templines-blref)))[0][0]
             #Find index of dummyWave closest to actual wavelength of refline
-            refIdx = where(abs(dummyWave-wlines[refline]) == min(abs(dummyWave-wlines[refline])))[0][0]
+            refIdx = np.where(np.abs(dummyWave-wlines[refline]) == np.min(np.abs(dummyWave-wlines[refline])))[0][0]
             #Guess at index offset between oned cut and dummyFlux cut
             xoffGuess = int(refIdx-reflines[refline])
             refCut = resid[blref-refbox:blref+refbox+1]
 
             if (nonlinear):
                 waveguess = polyFunction(coeffs, blref, dummyOrder)-polyFunction(coeffs, reflines[refline], dummyOrder)+dummyWave[refIdx]
-                guessIdx = where(abs(dummyWave-waveguess) == min(abs(dummyWave-waveguess)))[0][0]
+                guessIdx = np.where(np.abs(dummyWave-waveguess) == np.min(np.abs(dummyWave-waveguess)))[0][0]
                 xoffGuess = guessIdx-blref
             if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
                 print("Line at ref pixel BLREF ", blref, "nearest line", reflines[refline], "wavelength=",wlines[refline])
@@ -1168,36 +1169,36 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
 
             #Cross-correlate
             dumCut = dummyFlux[blref-searchbox+xoffGuess:blref+searchbox+1+xoffGuess]
-            n = min(len(refCut),len(dumCut))
+            n = np.min(len(refCut),len(dumCut))
             #Make sure refCut and dumCut are same length
             refCut = refCut[:n]
             dumCut = dumCut[:n]
-            ccor = correlate(refCut, dumCut, mode='same')
+            ccor = np.correlate(refCut, dumCut, mode='same')
             #plt.plot(refCut)
             #plt.plot(dumCut)
             #plt.show()
             #plt.plot(ccor)
             #plt.show()
             #Fit cross correlation function with a Gaussian
-            p = zeros(4, dtype=float64)
-            p[0] = max(ccor)
-            p[1] = where(ccor == max(ccor))[0][0]
+            p = np.zeros(4, dtype=np.float64)
+            p[0] = np.max(ccor)
+            p[1] = np.where(ccor == np.max(ccor))[0][0]
             if (use_tolerance and abs(p[1]-len(ccor)//2) > shift_tol):
                 #Maybe a line in list that is not in the data?
                 #Zero out 5 pixels around max
-                ccor[max(int(p[1])-2, 0):min(int(p[1])+3, len(ccor))] = 0
+                ccor[np.max(int(p[1])-2, 0):np.min(int(p[1])+3, len(ccor))] = 0
                 #Examine second highest peak
-                cmax2 = max(ccor)
-                peak2 = where(ccor == max(ccor))[0][0]
+                cmax2 = np.max(ccor)
+                peak2 = np.where(ccor == np.max(ccor))[0][0]
                 if (cmax2 >= p[0]*0.25 and abs(peak2-len(ccor)//2) <= shift_tol):
                     p[0] = cmax2
                     p[1] = peak2
             p[2] = gaussWidth
             p[3] = gpu_arraymedian(ccor)
-            llo = max(0, int(p[1]-5))
-            lhi = min(len(ccor), int(p[1]+6))
+            llo = np.max(0, int(p[1]-5))
+            lhi = np.min(len(ccor), int(p[1]+6))
             try:
-                lsq = leastsq(gaussResiduals, p, args=(arange(lhi-llo, dtype=float64)+llo, ccor[llo:lhi]))
+                lsq = leastsq(gaussResiduals, p, args=(np.arange(lhi-llo, dtype=np.float64)+llo, ccor[llo:lhi]))
             except Exception as ex:
                 #Flag and continue
                 obsFlag[blref-1:blref+2] = 0
@@ -1220,13 +1221,13 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             #Centroid line for subpixel accuracy
             #Square data to ensure bright line dominates fit
             refCut = resid[blref-10:blref+11]**2
-            p = zeros(4, dtype=float64)
-            p[0] = max(refCut)
+            p = np.zeros(4, dtype=np.float64)
+            p[0] = np.max(refCut)
             p[1] = 10
-            p[2] = gaussWidth/sqrt(2)
+            p[2] = gaussWidth/np.sqrt(2)
             p[3] = gpu_arraymedian(refCut)
             try:
-                lsq = leastsq(gaussResiduals, p, args=(arange(len(refCut), dtype=float64), refCut))
+                lsq = leastsq(gaussResiduals, p, args=(np.arange(len(refCut), dtype=np.float64), refCut))
             except Exception as ex:
                 #Flag and continue
                 obsFlag[blref-1:blref+2] = 0
@@ -1234,23 +1235,23 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             #Actual centroid of line in image, in pixel space
             currLine = blref+lsq[0][1]-10
             #Add line to obsSpec
-            p = zeros(4)
-            p[0] = sqrt(abs(lsq[0][0]))
+            p = np.zeros(4)
+            p[0] = np.sqrt(abs(lsq[0][0]))
             p[1] = currLine
-            p[2] = abs(lsq[0][2]*sqrt(2))
+            p[2] = abs(lsq[0][2]*math.sqrt(2))
             #Common sense check of paramaters
-            if (p[0] > 1.5*max(resid[blref-5:blref+6]) or p[2] > 5*gaussWidth):
+            if (p[0] > 1.5*np.max(resid[blref-5:blref+6]) or p[2] > 5*gaussWidth):
                 #If width or height seems weird, use actual peak vaule and gaussWidth from 3 brightest lines
-                p[0] = max(resid[blref-5:blref+6])
+                p[0] = np.max(resid[blref-5:blref+6])
                 p[1] = blref
                 p[2] = gaussWidth
-            obsSpec += gaussFunction(p, arange(len(obsSpec), dtype=float32))
-            #Get wavelength from masterWave array.  Use int(currDummy) as index
+            obsSpec += gaussFunction(p, np.arange(len(obsSpec), dtype=np.float32))
+            #Get wavelength from masterWave np.array.  Use int(currDummy) as index
             #and find wavelength from line list closest to wavelength of dummyWave at this index.
-            currWave =  masterWave[where(abs(masterWave-dummyWave[int(currDummy)]) == min(abs(masterWave-dummyWave[int(currDummy)])))][0]
+            currWave =  masterWave[np.where(np.abs(masterWave-dummyWave[int(currDummy)]) == np.min(np.abs(masterWave-dummyWave[int(currDummy)])))][0]
             diff = abs(reflines[refline] - currLine)
 
-            closestLinesIndices = argsort(abs(templines-blref))[:2]
+            closestLinesIndices = np.argsort(np.abs(templines-blref))[:2]
             #scale from closest 2 lines
             slocal = (wlines[closestLinesIndices[1]]-wlines[closestLinesIndices[0]])/(reflines[closestLinesIndices[1]]-reflines[closestLinesIndices[0]])
             delta = (wlines[refline]-currWave)/slocal - (wlines[refline]-currWave)/scale
@@ -1260,7 +1261,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                 obsFlag[blref-1:blref+2] = 0
                 continue
 
-            #Reset inloop array
+            #Reset inloop np.array
             inloop = 0
             #Append this line's pixel centroid to reflines and wavelength to wlines and its parameters to lineParams.
             reflines.append(currLine)
@@ -1269,7 +1270,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             print("\tLine found ("+str(nlines)+"): pixel="+formatNum(currLine)+", wavelength="+formatNum(currWave)+" (sigma = "+formatNum(lsigma)+")")
             #Increment nlines
             nlines+=1
-            #If peak in resid array is <= 2*min_intensity_pct (default 1%) of peak of brightest line, break out of loop
+            #If peak in resid np.array is <= 2*min_intensity_pct (default 1%) of peak of brightest line, break out of loop
             if (resid[xlo+5:xhi-4].max() <= maxPeak*min_intensity_pct*2):
                 findLines = False
 
@@ -1282,8 +1283,8 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             findLines = True
             inloop = 0
             #Incrementally expand range by 50 pixels per pass
-            xlo = int(max(min(reflines)-(250+npass*50), 25))
-            xhi = int(min(max(reflines)+(250+npass*50), len(oned)-26))
+            xlo = int(np.max(np.min(reflines)-(250+npass*50), 25))
+            xhi = int(np.min(np.max(reflines)+(250+npass*50), len(oned)-26))
             npass+=1
             #Within each pass, loop over current range until found all lines in area
             while (findLines and inloop < 25):
@@ -1299,19 +1300,19 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                     dummyFlux *= fluxScale
                 oldnlines = nlines
 
-                #Set up resid array = residuals of (oned - found lines) * obsFlag
+                #Set up resid np.array = residuals of (oned - found lines) * obsFlag
                 resid = (oned-obsSpec)*obsFlag
-                #If peak in resid array is <= min_intensity_pct (default 0.5%) of peak of brightest line, break out of loop
+                #If peak in resid np.array is <= min_intensity_pct (default 0.5%) of peak of brightest line, break out of loop
                 #continue to next pass in expanding range
                 if (resid[xlo+5:xhi-4].max() <= maxPeak*min_intensity_pct):
                     findLines = False
                     break
-                blref = where(resid[xlo:xhi+1] == max(resid[xlo+5:xhi-4]))[0][0]+xlo
+                blref = np.where(resid[xlo:xhi+1] == np.max(resid[xlo+5:xhi-4]))[0][0]+xlo
                 #Edge cases - ensure peak of line found
                 if (blref-xlo < 10):
-                    blref = where(resid[blref-5:blref+1] == max(resid[blref-5:blref+1]))[0][0]+blref-5
+                    blref = np.where(resid[blref-5:blref+1] == np.max(resid[blref-5:blref+1]))[0][0]+blref-5
                 if (xhi-blref < 10):
-                    blref = where(resid[blref:blref+6] == max(resid[blref:blref+6]))[0][0]+blref
+                    blref = np.where(resid[blref:blref+6] == np.max(resid[blref:blref+6]))[0][0]+blref
                 if (xlo == 25 and blref < 75):
                     resid[:20] = 0
                 elif (xhi == len(oned)-26 and blref > len(oned)-76):
@@ -1322,26 +1323,26 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                     resid[blref+30:blref+50] = 0
                 refbox = 25
                 searchbox = 25
-                templines = array(reflines)
+                templines = np.array(reflines)
                 #Find closest line in pixel space to this one to use for initial guesses
-                refline = where(abs(templines-blref) == min(abs(templines-blref)))[0][0]
+                refline = np.where(np.abs(templines-blref) == np.min(np.abs(templines-blref)))[0][0]
                 #Find index of dummyWave closest to actual wavelength of ref line
-                refIdx = where(abs(dummyWave-wlines[refline]) == min(abs(dummyWave-wlines[refline])))[0][0]
+                refIdx = np.where(np.abs(dummyWave-wlines[refline]) == np.min(np.abs(dummyWave-wlines[refline])))[0][0]
                 #Guess at index offset between oned cut and dummyFlux cut
                 xoffGuess = int(refIdx-reflines[refline])
                 refCut = resid[blref-refbox:blref+refbox+1]
                 if (nonlinear):
                     waveguess = polyFunction(coeffs, blref, dummyOrder)-polyFunction(coeffs, reflines[refline], dummyOrder)+dummyWave[refIdx]
-                    guessIdx = where(abs(dummyWave-waveguess) == min(abs(dummyWave-waveguess)))[0][0]
+                    guessIdx = np.where(np.abs(dummyWave-waveguess) == np.min(np.abs(dummyWave-waveguess)))[0][0]
                     xoffGuess = guessIdx-blref
                 elif ((abs(reflines[refline]-blref) > 200 and nlines >= 8) or (abs(reflines[refline]-blref) > 100 and nlines >= 32)):
                     #Try 2nd order guess if > 200 pixels from closest matched line and at least 8 lines matched
-                    p = zeros(3, dtype=float32)
+                    p = np.zeros(3, dtype=np.float32)
                     p[1] = scale
-                    lsq = leastsq(polyResiduals, p, args=(array(reflines), array(wlines), 2))
+                    lsq = leastsq(polyResiduals, p, args=(np.array(reflines), np.array(wlines), 2))
                     waveguess = polyFunction(lsq[0], blref, 2)-polyFunction(lsq[0], reflines[refline], 2)+dummyWave[refIdx]
                     #Find nearest line
-                    guessIdx = where(abs(dummyWave-waveguess) == min(abs(dummyWave-waveguess)))[0][0]
+                    guessIdx = np.where(np.abs(dummyWave-waveguess) == np.min(np.abs(dummyWave-waveguess)))[0][0]
                     xoffGuess = guessIdx-blref
                     if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
                         print("2nd order XOFF guess", lsq[0], waveguess, guessIdx, xoffGuess)
@@ -1362,11 +1363,11 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
 
                 #Cross-correlate
                 dumCut = dummyFlux[blref-searchbox+xoffGuess:blref+searchbox+1+xoffGuess]
-                n = min(len(refCut),len(dumCut))
+                n = np.min(len(refCut),len(dumCut))
                 #Make sure refCut and dumCut are same length
                 refCut = refCut[:n]
                 dumCut = dumCut[:n]
-                ccor = correlate(refCut, dumCut, mode='same')
+                ccor = np.correlate(refCut, dumCut, mode='same')
                 #if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
                 #  plt.plot(refCut, 'r')
                 #  plt.plot(dumCut, 'g')
@@ -1374,15 +1375,15 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                 #  plt.plot(ccor)
                 #  plt.show()
                 #Fit cross correlation function with a Gaussian
-                p = zeros(4, dtype=float64)
-                p[0] = max(ccor)
-                p[1] = where(ccor == max(ccor))[0][0]
+                p = np.zeros(4, dtype=np.float64)
+                p[0] = np.max(ccor)
+                p[1] = np.where(ccor == np.max(ccor))[0][0]
                 p[2] = gaussWidth
                 p[3] = gpu_arraymedian(ccor)
-                llo = max(0, int(p[1]-5))
-                lhi = min(len(ccor), int(p[1]+6))
+                llo = np.max(0, int(p[1]-5))
+                lhi = np.min(len(ccor), int(p[1]+6))
                 try:
-                    lsq = leastsq(gaussResiduals, p, args=(arange(lhi-llo, dtype=float64)+llo, ccor[llo:lhi]))
+                    lsq = leastsq(gaussResiduals, p, args=(np.arange(lhi-llo, dtype=np.float64)+llo, ccor[llo:lhi]))
                 except Exception as ex:
                     #Flag and continue
                     obsFlag[blref-1:blref+2] = 0
@@ -1401,41 +1402,41 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                 #Centroid line for subpixel accuracy
                 #Square data to ensure bright line dominates fit
                 refCut = resid[blref-10:blref+11]**2
-                p = zeros(4, dtype=float64)
-                p[0] = max(refCut)
+                p = np.zeros(4, dtype=np.float64)
+                p[0] = np.max(refCut)
                 p[1] = 10
-                p[2] = gaussWidth/sqrt(2)
+                p[2] = gaussWidth/np.sqrt(2)
                 p[3] = gpu_arraymedian(refCut)
                 try:
-                    lsq = leastsq(gaussResiduals, p, args=(arange(len(refCut), dtype=float64), refCut))
+                    lsq = leastsq(gaussResiduals, p, args=(np.arange(len(refCut), dtype=np.float64), refCut))
                 except Exception as ex:
                     #Flag and continue
                     obsFlag[blref-1:blref+2] = 0
                     continue
                 currLine = blref+lsq[0][1]-10
                 #Add line to obsSpec
-                p = zeros(4)
-                p[0] = sqrt(abs(lsq[0][0]))
+                p = np.zeros(4)
+                p[0] = np.sqrt(abs(lsq[0][0]))
                 p[1] = currLine
-                p[2] = abs(lsq[0][2]*sqrt(2))
+                p[2] = abs(lsq[0][2]*math.sqrt(2))
                 #Common sense check of paramaters
-                if (p[0] > 1.5*max(resid[blref-5:blref+6]) or p[2] > 5*gaussWidth):
+                if (p[0] > 1.5*np.max(resid[blref-5:blref+6]) or p[2] > 5*gaussWidth):
                     #If width or height seems weird, use actual peak vaule and gaussWidth from 3 brightest lines
-                    p[0] = max(resid[blref-5:blref+6])
+                    p[0] = np.max(resid[blref-5:blref+6])
                     p[1] = blref
                     p[2] = gaussWidth
-                obsSpec += gaussFunction(p, arange(len(obsSpec))+0.)
+                obsSpec += gaussFunction(p, np.arange(len(obsSpec))+0.)
                 if (int(currDummy-1) < 0 or int(currDummy+1) > len(dummyWave)):
                     #Out of range!
                     if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
                         print("FAIL X - out of range")
                     continue
-                #Get wavelength from masterWave array.  Use int(currDummy) as index
+                #Get wavelength from masterWave np.array.  Use int(currDummy) as index
                 #and find wavelength from line list closest to wavelength of dummyWave at this index.
-                currWave =  masterWave[where(abs(masterWave-dummyWave[int(currDummy)]) == min(abs(masterWave-dummyWave[int(currDummy)])))][0]
+                currWave =  masterWave[np.where(np.abs(masterWave-dummyWave[int(currDummy)]) == np.min(np.abs(masterWave-dummyWave[int(currDummy)])))][0]
                 diff = abs(reflines[refline] - currLine)
 
-                closestLinesIndices = argsort(abs(templines-blref))[:2]
+                closestLinesIndices = np.argsort(np.abs(templines-blref))[:2]
                 #scale from closest 2 lines
                 slocal = (wlines[closestLinesIndices[1]]-wlines[closestLinesIndices[0]])/(reflines[closestLinesIndices[1]]-reflines[closestLinesIndices[0]])
                 delta = (wlines[refline]-currWave)/slocal - (wlines[refline]-currWave)/scale
@@ -1445,7 +1446,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                     obsFlag[blref-1:blref+2] = 0
                     continue
 
-                #Reset inloop array
+                #Reset inloop np.array
                 inloop = 0
                 #Append this line's pixel centroid to reflines and wavelength to wlines and its parameters to lineParams.
                 reflines.append(currLine)
@@ -1454,19 +1455,19 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                 print("\tLine found ("+str(nlines)+"): pixel="+formatNum(currLine)+", wavelength="+formatNum(currWave)+" (sigma = "+formatNum(lsigma)+")")
                 #Increment nlines
                 nlines+=1
-                #If peak in resid array is <= min_intensity_pct (default 0.5%) of peak of brightest line, break out of loop
+                #If peak in resid np.array is <= min_intensity_pct (default 0.5%) of peak of brightest line, break out of loop
                 if (resid[xlo+5:xhi-4].max() <= maxPeak*min_intensity_pct):
                     findLines = False
 
         #Fit polynomial to find wavelength solution
         #Convert lists to arrays
-        reflines = array(reflines)
-        wlines = array(wlines)
-        lineParams = array(lineParams)
+        reflines = np.array(reflines)
+        wlines = np.array(wlines)
+        lineParams = np.array(lineParams)
         #Throw out flagged lines to not use in fit
-        flags = zeros(len(wlines))
+        flags = np.zeros(len(wlines))
         for i in range(len(wlines)):
-            b = where(masterWave == wlines[i])
+            b = np.where(masterWave == wlines[i])
             #0 = use for fit, nonzero = don't use for fit
             flags[i] = masterFlag[b[0][0]]
         if ((flags == 0).sum() > 3):
@@ -1481,7 +1482,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             print("\tWarning: Could not throw out flagged lines because not enough lines would remain to perform fit.")
 
         #Fit polynomial of order fit_order to lines
-        p = zeros(fit_order+1, dtype=float32)
+        p = np.zeros(fit_order+1, dtype=np.float32)
         p[1] = scale
         if (len(reflines) <= fit_order):
             print("\tWarning: Only found "+str(len(reflines))+" lines.  Using fit order = 1.")
@@ -1497,12 +1498,12 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         sigThresh = 2
         niter = 0
         norig = len(reflines)
-        bad = where(abs(residLines-residLines.mean())/residLines.std() > sigThresh)
+        bad = np.where(np.abs(residLines-residLines.mean())/residLines.std() > sigThresh)
         print("\t\tPerforming iterative sigma clipping to throw away outliers...")
         #Iterative sigma clipping
         while (len(bad[0]) > 0):
             niter += 1
-            good = where(abs(residLines-residLines.mean())/residLines.std() <= sigThresh)
+            good = np.where(np.abs(residLines-residLines.mean())/residLines.std() <= sigThresh)
             if (len(good[0]) < fit_order):
                 break
             reflines = reflines[good]
@@ -1521,13 +1522,13 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             if (niter > 2):
                 #Gradually increase sigma threshold
                 sigThresh += 0.2
-            bad = where(abs(residLines-residLines.mean())/residLines.std() > sigThresh)
+            bad = np.where(np.abs(residLines-residLines.mean())/residLines.std() > sigThresh)
         print("\t\tAfter "+str(niter)+" passes, kept "+str(len(reflines))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]))
         print("\t\tData - fit mean: "+formatNum(residLines.mean())+"\tsigma: "+formatNum(residLines.std()))
 
         #Output "spec" file
-        xs = polyFunction(lsq[0], arange(len(oned), dtype=float32), fit_order)
-        dummyFlux = zeros(len(oned), dtype=float32)
+        xs = polyFunction(lsq[0], np.arange(len(oned), dtype=np.float32), fit_order)
+        dummyFlux = np.zeros(len(oned), dtype=np.float32)
         #Add gaussians for each line in line list
         dummyFlux = self.populateDummyFlux(masterFlux, masterWave, xs, dummyFlux, lsq[0][1], gaussWidth)
         #Scale template
@@ -1634,12 +1635,12 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             fdu.disable()
             return
 
-        xout_data = zeros(fdu.getShape(), dtype=float32)
+        xout_data = np.zeros(fdu.getShape(), dtype=np.float32)
         #Linear wavelength scale
         #scale = (maxLambda-minLambda)/sky_xsize
         #scale_data = (maxLambda-minLambda)/xsize
         scale_data = scale
-        xs_data = arange(xsize, dtype=float32)
+        xs_data = np.arange(xsize, dtype=np.float32)
         #New header keywords for resampled data
         resampHeader = dict()
         resampHeader['RESAMPLD'] = 'YES'
@@ -1663,8 +1664,8 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         xsize_data = xsize
         sxlo_data = xsize_data*seg
         sxhi_data = xsize_data*(seg+1)
-        xs = arange(xsize, dtype=float32)
-        xs_data = arange(xsize_data, dtype=float32)
+        xs = np.arange(xsize, dtype=np.float32)
+        xs_data = np.arange(xsize_data, dtype=np.float32)
 
         #Calculate wavelength input scale
         lambdaIn_data = polyFunction(fitParams[0][0], xs_data, len(fitParams[0][0])-1)

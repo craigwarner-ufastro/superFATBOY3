@@ -4,21 +4,18 @@ try:
     if (not superFATBOY.gpuEnabled()):
         hasCuda = False
     else:
-        import pycuda.driver as drv
-        import pycuda.tools
-        if (not superFATBOY.threaded()):
-            #If not threaded mode, import autoinit.  Otherwise assume context exists.
-            #Code will crash if in threaded mode and context does not exist.
-            import pycuda.autoinit
-        from pycuda.compiler import SourceModule
+        import cupy as cp
 except Exception:
-    print("gpu_pysurfit> WARNING: PyCUDA not installed!")
+    print("gpu_pysurfit> WARNING: CuPy not installed!")
     hasCuda = False
     superFATBOY.setGPUEnabled(False)
 
+import numpy as np
 import scipy
+import time
 from scipy.optimize import leastsq
 from .fatboyDataUnit import *
+from .fatboyLibs import gpusum
 
 MODE_FITS = 0
 MODE_RAW = 1
@@ -32,8 +29,8 @@ block_size = 512
 def get_mod():
     mod = None
     if (hasCuda and superFATBOY.gpuEnabled()):
-        mod = SourceModule("""
-
+        code = r"""
+        extern "C" {
         __global__ void calcXin(float *xin, int nx, float offset) {
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           xin[i] = (i%nx) + offset;
@@ -88,7 +85,7 @@ def get_mod():
           int n = 3;
           for (int j = 2; j < order+1; j++) {
             for (int l = 0; l < j+1; l++) {
-              f += p[n] * pow(x[i], j-l) * pow(y[i], l);
+              f += p[n] * powf((float)(x[i]), (float)(j-l)) * powf((float)(y[i]), (float)(l));
               n++;
             }
           }
@@ -106,15 +103,14 @@ def get_mod():
           int n = 3;
           for (int j = 2; j < order+1; j++) {
             for (int l = 0; l < j+1; l++) {
-              f += p[n] * pow(x[i], j-l) * pow(y[i], l);
+              f += p[n] * powf((float)(x[i]), (float)(j-l)) * powf((float)(y[i]), (float)(l));
               n++;
             }
           }
           resid[i] = (float)(data[i]-f);
         }
 
-
-        __global__ void calcPysurface(float *fit, int nx, float *lsq, int order, int size) {
+        __global__ void calcPysurface(float *fit, int nx, double *lsq, int order, int size) {
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) return;
           float x = (i%nx);
@@ -127,7 +123,7 @@ def get_mod():
           int n = 3;
           for (int j = 2; j < order+1; j++) {
             for (int l = 0; l < j+1; l++) {
-              fit[i] += lsq[n] * pow(x, j-l) * pow(y, l);
+              fit[i] += lsq[n] * powf((float)(x), (float)(j-l)) * powf((float)(y), (float)(l));
               n++;
             }
           }
@@ -142,8 +138,9 @@ def get_mod():
             inmask[i] = false;
           }
         }
-
-    """)
+        }
+        """
+        mod = cp.RawModule(code=code)
     return mod
 #end get_mod()
 
@@ -161,45 +158,30 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
             logtype = LOGTYPE_ASCII
         elif(isinstance(log, fatboyLog)):
             logtype = LOGTYPE_FATBOY
-            _verbosity = log._verbosity
+            _verbosity = log.verbosity
 
-    if (not superFATBOY.threaded()):
-        global mod
-    else:
-        mod = get_mod()
-
-    #Find type
     if (mode is None):
-        mode = MODE_FITS
-        if (isinstance(frames[0], str)):
-            mode = MODE_FITS
-        elif (isinstance(frames[0], ndarray)):
-            mode = MODE_RAW
-        elif (isinstance(frames[0], fatboyDataUnit)):
+        if (isinstance(input, fatboyDataUnit)):
             mode = MODE_FDU
-
-    #Process input
-    if (mode == MODE_FITS):
-        if (os.access(input, os.F_OK)):
-            outimage = pyfits.open(input)
-            data = outimage[mef].data.astype(float32)
+        elif (isinstance(input, list)):
+            mode = MODE_FDU_DIFFERENCE
+        elif (isinstance(input, str)):
+            mode = MODE_FITS
         else:
-            print("gpu_pysurfit> Could not find file "+input)
-            write_fatboy_log(log, logtype, "Could not find file "+input, __name__)
-            return None
+            mode = MODE_RAW
+
+    if (mode == MODE_FITS):
+        outimage = pyfits.open(input)
+        data = outimage[mef].data
     elif (mode == MODE_RAW):
-        data = input.astype(float32)
+        data = input
     elif (mode == MODE_FDU):
         data = input.getData()
     elif (mode == MODE_FDU_DIFFERENCE):
-        data = input[1].getData()-input[0].getData()
-        #input should be a list in this case
+        #data is difference frame
+        data = input[0].getData() - input[1].getData()
     elif (mode == MODE_FDU_TAG):
         data = input.getData(tag=dataTag)
-    else:
-        print("gpu_pysurfit> Invalid input!  Exiting!")
-        write_fatboy_log(log, logtype, "Invalid input!  Exiting!", __name__)
-        return None
 
     blocks = data.size//block_size
     if (data.size % block_size != 0):
@@ -215,7 +197,7 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
         nonzero = True
     elif (isinstance(inmask, fatboyDataUnit)):
         inmask = inmask.getData()
-    elif (not isinstance(inmask, ndarray)):
+    elif (not isinstance(inmask, np.ndarray) and (cp is None or not isinstance(inmask, cp.ndarray))):
         inmask = None
     else:
         nonzero = True
@@ -230,18 +212,28 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
     #binning
     binData = mod.get_function("binData")
     n = (ny*nx)//(bin*bin)
-    xin = empty(n, float32)
-    yin = empty(n, float32)
-    d2 = empty(n, float32)
+    
+    is_cpu = isinstance(data, np.ndarray)
+    data_gpu = cp.asarray(data).astype(cp.np.float32)
+    
+    xin_gpu = cp.np.empty(n, cp.np.float32)
+    yin_gpu = cp.np.empty(n, cp.np.float32)
+    d2_gpu = cp.np.empty(n, cp.np.float32)
     hasMask = True
     if (inmask is None):
-        inmask = empty(n, bool)
+        inmask_gpu = cp.np.zeros(data.size, dtype=bool) # Original size before binning? 
+        # Actually binData takes data of size nx*ny and outputs d2 of size n.
+        # It takes inmask of size nx*ny.
         hasMask = False
     else:
-        inmask = inmask.astype(bool)
-    binmask = empty(n, bool)
-    binData(drv.In(data), drv.Out(xin), drv.Out(yin), drv.Out(d2), drv.In(inmask), drv.Out(binmask), int32(hasMask), int32(bin), int32(nx), grid=(blocks//(bin*bin),1), block=(block_size,1,1))
-    inmask = binmask
+        inmask_gpu = cp.asarray(inmask).astype(bool)
+        
+    binmask_gpu = cp.np.empty(n, bool)
+    
+    binData((blocks//(bin*bin), 1), (block_size, 1, 1), (data_gpu, xin_gpu, yin_gpu, d2_gpu, inmask_gpu, binmask_gpu, np.int32(hasMask), np.int32(bin), np.int32(nx)))
+    
+    inmask_gpu = binmask_gpu # Now it's binned mask
+    
     if (_verbosity == fatboyLog.VERBOSE):
         print("\tBinning / Input mask / Input Arrays: ",time.time()-tt,"; Total: ",time.time()-t)
     tt = time.time()
@@ -250,71 +242,85 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
     terms = 0
     for j in range(order+2):
         terms+=j
-    p = zeros(terms, float64)
-    p[0] = d2[inmask].mean(dtype=float64)
+    p = np.zeros(terms, np.float64)
+    # Get d2 and inmask to CPU for mean calc if needed, or use CuPy
+    p[0] = float(d2_gpu[inmask_gpu].mean())
 
-    nkeep = gpusum(inmask)
+    nkeep = int(gpusum(inmask_gpu))
     nkeepold = 0
     curriter = 0
     if (_verbosity == fatboyLog.VERBOSE):
         print("\tInitial Guesses: ",time.time()-tt,"; Total: ",time.time()-t)
     tt = time.time()
 
+    calcPysurfaceResid = mod.get_function("calcPysurfaceResid")
+    updateMask = mod.get_function("updateMask")
+
     while (curriter < niter and nkeep != nkeepold):
         tt = time.time()
         print("\tgpu_pysurfit: iteration "+str(curriter))
         write_fatboy_log(log, logtype, "pysurfit: iteration "+str(curriter), __name__, printCaller=False, tabLevel=1)
-        b = inmask
-        xb = xin[b]
-        yb = yin[b]
-        d2b = d2[b]
+        
+        xb_cpu = xin_gpu[inmask_gpu].get()
+        yb_cpu = yin_gpu[inmask_gpu].get()
+        d2b_cpu = d2_gpu[inmask_gpu].get()
+        
         if (_verbosity == fatboyLog.VERBOSE):
             print("\t\tMasking: ",time.time()-tt,"; Total: ",time.time()-t)
         tt = time.time()
-        lsq = leastsq(pysurfaceResiduals, p, args=(xb,yb,d2b,order))
+        
+        lsq = leastsq(surfaceResiduals, p, args=(xb_cpu, yb_cpu, d2b_cpu, order))
+        p = lsq[0]
+        
         if (_verbosity == fatboyLog.VERBOSE):
             print("\t\tCalc Fit: ",time.time()-tt,"; Total: ",time.time()-t)
         tt = time.time()
 
-        print("\t\tFit params: "+str(lsq[0]))
-        write_fatboy_log(log, logtype, "Fit params: "+str(lsq[0]), __name__, printCaller=False, tabLevel=1)
-        resid = empty(d2.shape, float64)
-        calcPysurfaceResid = mod.get_function("calcPysurfaceResid")
-        calcPysurfaceResid(drv.In(xin), drv.In(yin), drv.In(d2), drv.Out(resid), drv.In(lsq[0]), int32(order), int32(resid.size), grid=(resid.size//512+1,1), block=(block_size,1,1))
+        print("\t\tFit params: "+str(p))
+        write_fatboy_log(log, logtype, "Fit params: "+str(p), __name__, printCaller=False, tabLevel=1)
+        
+        resid_gpu = cp.np.empty(d2_gpu.shape, cp.np.float64)
+        p_gpu = cp.asarray(p).astype(cp.np.float64)
+        
+        calcPysurfaceResid((n//512+1,1), (block_size,1,1), (xin_gpu, yin_gpu, d2_gpu, resid_gpu, p_gpu, np.int32(order), np.int32(n)))
 
-        residb = empty(d2b.shape, float64)
-        calcPysurfaceResid(drv.In(xb), drv.In(yb), drv.In(d2b), drv.Out(residb), drv.In(lsq[0]), int32(order), int32(residb.size), grid=(residb.size//512+1,1), block=(block_size,1,1))
-
-        tempmean = residb.mean()
-        tempstddev = residb.std()
+        residb_gpu = resid_gpu[inmask_gpu]
+        tempmean = float(residb_gpu.mean())
+        tempstddev = float(residb_gpu.std())
+        
         print("\t\tData - fit    mean: "+str(tempmean) + "   sigma: "+str(tempstddev))
         write_fatboy_log(log, logtype, "Data - fit    mean: "+str(tempmean) + "   sigma: "+str(tempstddev), __name__, printCaller=False, tabLevel=1)
-        updateMask = mod.get_function("updateMask")
-        updateMask(drv.InOut(inmask), drv.In(resid), float32(tempmean), float32(tempstddev), float32(upper), float32(lower), int32(resid.size), grid=(resid.size//512+1,1), block=(block_size,1,1))
+        
+        updateMask((n//512+1,1), (block_size,1,1), (inmask_gpu, resid_gpu, np.float32(tempmean), np.float32(tempstddev), np.float32(upper), np.float32(lower), np.int32(n)))
+        
         curriter+=1
         nkeepold = nkeep
-        nkeep = gpusum(inmask)
-        p = lsq[0]
+        nkeep = int(gpusum(inmask_gpu))
+        
         if (_verbosity == fatboyLog.VERBOSE):
             print("\t\tCalc Resid: ",time.time()-tt,"; Total: ",time.time()-t)
         tt = time.time()
 
     #reconstruct fit from original data size
     calcPysurface = mod.get_function("calcPysurface")
-    #fit = empty(shape=(ny,nx), dtype=float32)
-    fit = zeros(shape=(ny,nx), dtype=float32)
-    calcPysurface(drv.Out(fit), int32(nx), drv.In(float32(lsq[0])), int32(order), int32(fit.size), grid=(blocks,1), block=(block_size,1,1))
+    fit_gpu = cp.np.zeros((ny,nx), dtype=cp.np.float32)
+    p_gpu = cp.asarray(p).astype(cp.np.float64)
+    
+    calcPysurface((data.size//block_size+1, 1), (block_size, 1, 1), (fit_gpu, np.int32(nx), p_gpu, np.int32(order), np.int32(data.size)))
+    
     if (_verbosity == fatboyLog.VERBOSE):
         print("\tApply Fit: ",time.time()-tt,"; Total: ",time.time()-t)
     tt = time.time()
 
+    fit = fit_gpu.get()
+
     if (out is not None):
-        print("\tOutput file: "+outfile)
-        write_fatboy_log(log, logtype, "\tOutput file: "+outfile, __name__, printCaller=False, tabLevel=1)
+        print("\tOutput file: "+out)
+        write_fatboy_log(log, logtype, "\tOutput file: "+out, __name__, printCaller=False, tabLevel=1)
         if (mode == MODE_FITS):
             outimage[mef].data = fit
         elif (mode == MODE_RAW):
-            hdu = pyfits.PrimaryHDU(float32(fit))
+            hdu = pyfits.PrimaryHDU(fit)
             outimage = pyfits.HDUList([hdu])
         elif (mode == MODE_FDU or mode == MODE_FDU_TAG):
             outimage = pyfits.open(input.getFilename())
@@ -323,19 +329,24 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
             outimage = pyfits.open(input[0].getFilename())
             outimage[mef].data = fit
         outimage.verify('silentfix')
-        outimage.writeto(out, output_verify='silentfix')
+        outimage.writeto(out, overwrite=True) # use overwrite instead of verify
         outimage.close()
+        
     print("gpu_pysurfit: Total Time = "+str(time.time()-t)+" s")
     write_fatboy_log(log, logtype, "Total Time = "+str(time.time()-t)+" s", __name__, printCaller=False, tabLevel=1)
     return fit
 
-def pysurfaceResiduals(p, x, y, out, order):
-    resid = empty(x.shape, float64)
-    blocks = x.size//512+1
-    if (not superFATBOY.threaded()):
-        global mod
-    else:
-        mod = get_mod()
-    calcPysurfaceResid = mod.get_function("calcPysurfaceResid")
-    calcPysurfaceResid(drv.In(x), drv.In(y), drv.In(out), drv.Out(resid), drv.In(p), int32(order), int32(x.size), grid=(blocks,1), block=(block_size,1,1))
-    return resid
+def pysurfaceResiduals(p, x, y, data, order):
+    # This is for leastsq on CPU
+    # p = coeffs
+    # x, y, data are CPU arrays
+    f = p[0]
+    if (order >= 1):
+        f += p[1]*x
+        f += p[2]*y
+    n = 3
+    for j in range(2, order+1):
+        for l in range(j+1):
+            f += p[n] * (x**(j-l)) * (y**l)
+            n += 1
+    return data - f

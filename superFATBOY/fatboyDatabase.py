@@ -841,8 +841,8 @@ class fatboyDatabase:
                 self._log.writeLog(__name__, fdu.getFullId()+" has no header keyword "+sortby+". It will not be used for onsource sky!", type=fatboyLog.WARNING)
                 continue
             fdus.append(fdu)
-        sortedi = array(indices).argsort()
-        fdus = array(fdus)[sortedi]
+        sortedi = np.array(indices).argsort()
+        fdus = np.array(fdus)[sortedi]
         return fdus.tolist()
     #end getSortedFDUs
 

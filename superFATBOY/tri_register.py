@@ -1,3 +1,4 @@
+import numpy as np
 hasSep = True
 try:
     import sep
@@ -238,7 +239,7 @@ def tri_register(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, ybox
             refData = temp[mef].data
             if (not refData.dtype.isnative):
                 print("triregister> Byteswapping "+filelist[refframe])
-                refData = float32(refData)
+                refData = refData.astype(np.float32)
             refName = filelist[refframe]
             temp.close()
         else:
@@ -347,7 +348,7 @@ def tri_register(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, ybox
                 currData = temp[mef].data
                 if (not currData.dtype.isnative):
                     print("triregister> Byteswapping "+filelist[j])
-                    currData = float32(currData)
+                    currData = currData.astype(np.float32)
                 currName = filelist[j]
                 temp.close()
             else:
@@ -434,10 +435,10 @@ def tri_register(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, ybox
             ydiff = removeOutliersSigmaClip(ydiff, sig_to_clip, 5)
             print ("triregister> Sigma clipping: kept "+str(len(xdiff))+" of "+str(nx)+" X datapoints, "+str(len(ydiff))+" of "+str(ny)+" Y datapoints.")
             write_fatboy_log(log, logtype, "Sigma clipping: kept "+str(len(xdiff))+" of "+str(nx)+" X datapoints, "+str(len(ydiff))+" of "+str(ny)+" Y datapoints.", __name__)
-        xshift = round(xdiff.mean(), 3)
-        yshift = round(ydiff.mean(), 3)
-        xsd = round(xdiff.std(), 3)
-        ysd = round(ydiff.std(), 3)
+        xshift = np.round(xdiff.mean(), 3)
+        yshift = np.round(ydiff.mean(), 3)
+        xsd = np.round(xdiff.std(), 3)
+        ysd = np.round(ydiff.std(), 3)
         print("triregister> Used "+str(len(xdiff))+" matching triangles.  xshift = "+str(xshift)+" +/- "+str(xsd)+"; yshift = "+str(yshift)+" +/- "+str(ysd))
         write_fatboy_log(log, logtype, "Used "+str(len(xdiff))+" matching triangles.  xshift = "+str(xshift)+" +/- "+str(xsd)+"; yshift = "+str(yshift)+" +/- "+str(ysd), __name__)
 

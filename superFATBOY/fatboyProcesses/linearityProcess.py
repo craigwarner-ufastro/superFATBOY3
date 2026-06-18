@@ -1,6 +1,9 @@
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLog import fatboyLog
-import cupy as cp
+try:
+    import cupy as cp
+except ImportError:
+    cp = None
 import numpy as np
 import os
 import time
@@ -104,7 +107,7 @@ class linearityProcess(fatboyProcess):
     #end execute
 
     def linearity_cpu(self, data, coeffs):
-        data = np.float32(data)
+        data = data.astype(np.float32)
         output = np.zeros(np.shape(data), np.float32)
         n = 0
         t = time.time()
@@ -125,17 +128,17 @@ class linearityProcess(fatboyProcess):
         gpu_mod = self.get_linearity_mod()
         if (data.dtype == np.int32):
             gpu_linearity = gpu_mod.get_function("gpu_linearity_int")
-            data_gpu = cp.array(data)
+            data_gpu = cp.np.array(data)
         else:
             #Cast data
             gpu_linearity = gpu_mod.get_function("gpu_linearity_float")
-            data_gpu = cp.array(data.astype(np.float32))
+            data_gpu = cp.np.array(data.astype(np.float32))
             
-        coeffs_gpu = cp.array(coeffs).astype(np.float32)
+        coeffs_gpu = cp.np.array(coeffs).astype(np.float32)
         ncoeffs = coeffs_gpu.size
-        output_gpu = cp.empty(data.shape, np.float32)
+        output_gpu = cp.np.empty(data.shape, np.float32)
 
-        gpu_linearity((blocks, 1, 1), (block_size, 1, 1), (output_gpu, data_gpu, coeffs_gpu, np.int32(ncoeffs), np.int32(data.size)))
+        gpu_linearity((blocks, 1, 1), (block_size, 1, 1), (output_gpu, data_gpu, coeffs_gpu, ncoeffs.astype(np.int32), np.int32(data.size)))
         if (self._fdb._verbosity == fatboyLog.VERBOSE):
             print("GPU linearize: ",time.time()-t)
 

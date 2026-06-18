@@ -1,3 +1,4 @@
+import numpy as np
 from superFATBOY.fatboyCalib import fatboyCalib
 from superFATBOY.fatboyDataUnit import fatboyDataUnit
 from superFATBOY.fatboyImage import fatboyImage
@@ -73,7 +74,7 @@ class darkSubtractProcess(fatboyProcess):
                 if (self._fdb.getGPUMode()):
                     nm = createNoisemap(masterDark.getData(), ncomb)
                 else:
-                    nm = sqrt(masterDark.getData()/ncomb)
+                    nm = np.sqrt(masterDark.getData()/ncomb)
                 masterDark.tagDataAs("noisemap", nm)
                 masterDark.writeTo(nmfile, tag="noisemap")
 
@@ -116,8 +117,11 @@ class darkSubtractProcess(fatboyProcess):
             self.updateNoisemap(fdu, masterDark)
 
         #make sure both are floating point before subtracting
-        fdu.updateData(float32(fdu.getData())-float32(masterDark.getData()))
-        fdu._header.add_history('Dark subtracted using '+masterDark._id)
+        if (self._fdb.getGPUMode()):
+            fdu.updateData(cp.asarray(fdu.getData().astype(np.float32)))
+            masterDark.updateData(cp.asarray(masterDark.getData().astype(np.float32)))
+        fdu.updateData(fdu.getData().astype(np.float32)-masterDark.getData().astype(np.float32))
+        fdu._header.add_history('Dark subtracted using '+masterDark._id)   
         return True
     #end execute
 
@@ -359,15 +363,15 @@ class darkSubtractProcess(fatboyProcess):
             if (self._fdb.getGPUMode()):
                 nm = createNoisemap(masterDark.getData(), ncomb)
             else:
-                nm = sqrt(masterDark.getData()/ncomb)
+                nm = np.sqrt(masterDark.getData()/ncomb)
             masterDark.tagDataAs("noisemap", nm)
         #Get this FDU's noisemap
         nm = fdu.getData(tag="noisemap")
-        #Propagate noisemaps.  For subtraction, dz = sqrt(dx^2 + dy^2)
+        #Propagate noisemaps.  For subtraction, dz = np.sqrt(dx^2 + dy^2)
         if (self._fdb.getGPUMode()):
             nm = noisemaps_ds_gpu(fdu.getData(tag="noisemap"), masterDark.getData("noisemap"))
         else:
-            nm = sqrt(fdu.getData(tag="noisemap")**2+masterDark.getData("noisemap")**2)
+            nm = np.sqrt(fdu.getData(tag="noisemap")**2+masterDark.getData("noisemap")**2)
         fdu.tagDataAs("noisemap", nm)
     #end updateNoisemap
 

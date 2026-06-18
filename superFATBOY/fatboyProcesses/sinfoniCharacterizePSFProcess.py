@@ -1,3 +1,4 @@
+import numpy as np
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
@@ -37,23 +38,23 @@ class sinfoniCharacterizePSFProcess(fatboyProcess):
             maxVals = rdata.max(1)
             medVals = gpu_arraymedian(rdata, axis="X", even=True, kernel2d=fatboyclib.median2d)
             stdDevs = rdata.std(axis=1)
-            b = where(stdDevs == 0)
+            b = np.where(stdDevs == 0)
             stdDevs[b] = 1
             sigmas = (maxVals-medVals)/stdDevs
             stdDevs[b] = 0
             sigmas[b] = 0
-            #PSF = n x 8 array with columns wavelength, x_cen, y_cen, fwhm, peak, median background, std dev, sigma
+            #PSF = n x 8 np.array with columns wavelength, x_cen, y_cen, fwhm, peak, median background, std dev, sigma
             #Where the peak is below the detection threshold, x_cen, y_cen, and fwhm are set to -1
-            psf = zeros((ysize, 8), dtype=float32)
+            psf = np.zeros((ysize, 8), dtype=np.float32)
             psf[:,0] = getWavelengthSolution(fdu, 0, ysize)
             psf[:,4] = maxVals
             psf[:,5] = medVals
             psf[:,6] = stdDevs
             psf[:,7] = sigmas
-            #Set flag as bool array, True where a centroid should be done
-            #Don't centroid where sigma is below dthresh
+            #Set flag as bool np.array, True np.where a centroid should be done
+            #Don't centroid np.where sigma is below dthresh
             flag = sigmas >= dthresh
-            #Don't centroid where there are ANY rows with < 3 datapoints
+            #Don't centroid np.where there are ANY rows with < 3 datapoints
             flag[(data != 0).sum(2).min(1) < 3] = False
             #Don't centroid if total flux in this cut is < 1% of the average flux
             nzero = data.copy()
@@ -61,7 +62,7 @@ class sinfoniCharacterizePSFProcess(fatboyProcess):
             sum1d = nzero.sum(2).sum(1)
             flag[sum1d < gpu_arraymedian(sum1d)/100.] = False
             #Don't centroid if peak value is at (0,0) in this cut
-            flag[argmax(rdata, axis=1) == 0] = False
+            flag[np.argmax(rdata, axis=1) == 0] = False
             if (flag.sum() < flag.size/100):
                 #Less than 1% of cuts can be characterized
                 print("sinfoniCharacterizePSFProcess::characterizePSF> WARNING: Could not characterize PSF.  Not enough datapoints.")
@@ -70,7 +71,7 @@ class sinfoniCharacterizePSFProcess(fatboyProcess):
                 return False
             if (centroid_method == "fit_2d_gaussian"):
                 #Find initial guesses
-                guess = zeros(5, dtype=float32)
+                guess = np.zeros(5, dtype=np.float32)
                 if (fdu.hasProperty("image_centroid")):
                     #Collapsed spaxels have been centroided already
                     (xcen, ycen, fwhm) = fdu.getProperty("image_centroid")
@@ -99,19 +100,19 @@ class sinfoniCharacterizePSFProcess(fatboyProcess):
                     #gpufit requires xsize == ysize for each cut
                     dshape = data.shape
                     nfits = dshape[0]
-                    maxdim = max(dshape[1], dshape[2])
-                    padded_data = zeros((nfits, maxdim, maxdim), float32)
+                    maxdim = max(dshape[1],  dshape[2])
+                    padded_data = np.zeros((nfits, maxdim, maxdim), np.float32)
                     pady = (maxdim - dshape[1])//2
                     padx = (maxdim - dshape[2])//2
-                    padded_data[:, pady:pady+dshape[1], padx:padx+dshape[2]] = data.astype(float32)
+                    padded_data[:, pady:pady+dshape[1], padx:padx+dshape[2]] = data.astype(np.float32)
                     padded_data = padded_data.reshape((nfits, maxdim*maxdim))
                     #Setup initial guesses
-                    init_guess = zeros((nfits, 5), float32)
+                    init_guess = np.zeros((nfits, 5), np.float32)
                     init_guess[:,0] = padded_data.max(1)
                     init_guess[:,1] = xcen+padx
                     init_guess[:,2] = ycen+pady
                     init_guess[:,3] = fwhm/2.3548
-                    #Mask zeros
+                    #Mask np.zeros
                     padded_data[padded_data < 0] = 0
                     #Do fit
                     parameters, states, chi_squares, number_iterations, execution_time = gf.fit(padded_data, None, model_id, init_guess, None, max_number_iterations, None, estimator_id, None)
@@ -150,9 +151,9 @@ class sinfoniCharacterizePSFProcess(fatboyProcess):
                             psf[j,3] = abs(lsq[0][3]*2.3548) #fwhm
             elif (centroid_method == "use_derivatives"):
                 #need to pad data if either dimension < 9
-                padx = max(9-data.shape[2], 0)//2
-                pady = max(9-data.shape[1], 0)//2
-                padded = zeros((data.shape[0], data.shape[1]+pady*2, data.shape[2]+padx*2), dtype=float32)
+                padx = max(9-data.shape[2],  0)//2
+                pady = max(9-data.shape[1],  0)//2
+                padded = np.zeros((data.shape[0], data.shape[1]+pady*2, data.shape[2]+padx*2), dtype=np.float32)
                 padded[:, pady:padded.shape[1]-pady, padx:padded.shape[2]-padx] = data
                 #Find initial guesses
                 if (fdu.hasProperty("image_centroid")):
@@ -164,7 +165,7 @@ class sinfoniCharacterizePSFProcess(fatboyProcess):
                 else:
                     #Collapse 3-d datacube and centroid
                     padded2d = padded.sum(0)
-                    b = where(padded2d == padded2d.max())
+                    b = np.where(padded2d == padded2d.max())
                     mx = b[1][0]
                     my = b[0][0]
                     (fwhm, sig, fwhm1ds, bg) = fwhm2d(padded2d)
@@ -197,11 +198,11 @@ class sinfoniCharacterizePSFProcess(fatboyProcess):
                             psf[j,2] = ycen-pady
                             psf[j,3] = fwhm_vals[0]
             #b = (psf[:,2] != -1)
-            #xs = arange(ysize)
+            #xs = np.arange(ysize)
             #plt.plot(xs[b], psf[b,2])
             #plt.plot(xs[b], psf[b,3])
             #plt.show()
-            b = where(psf[:,1] != -1)
+            b = np.where(psf[:,1] != -1)
             mxcen = psf[b,1].mean()
             mycen = psf[b,2].mean()
             mfwhm = psf[b,3].mean()

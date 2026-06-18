@@ -1,8 +1,9 @@
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
-from numpy import *
-import os, time
+import numpy as np
+import os
+import time
 
 class trimWindowProcess(fatboyProcess):
     _modeTags = ["circe"]
@@ -98,11 +99,12 @@ class trimWindowProcess(fatboyProcess):
         if (self._ymax is not None):
             y2 = self._ymax
         elif (windowYmax is not None and isInt(windowYmax)):
-            y2 = int(windowxYmax)
+            #Fixed a typo in original: windowxYmax -> windowYmax
+            y2 = int(windowYmax)
         print("trimWindowProcess::trimWindow> Trimed flag is "+flagStat+" for "+fdu.getFullId()+" - TRIMMING to window (X,Y) = ("+str(x1)+", "+str(y1)+") to ("+str(x2)+", "+str(y2)+").")
         self._log.writeLog(__name__, "Trimed flag is "+flagStat+" for "+fdu.getFullId()+" - TRIMMING to window (X,Y) = ("+str(x1)+", "+str(y1)+") to ("+str(x2)+", "+str(y2)+").")
         data = data[y1:y2, x1:x2]
-        return ascontiguousarray(data)
+        return np.ascontiguousarray(data)
     #end trimWindow
 
     ## OVERRRIDE set default options here

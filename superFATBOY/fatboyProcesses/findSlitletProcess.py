@@ -5,7 +5,8 @@ from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
 
 from superFATBOY import gpu_imcombine, imcombine
-from numpy import *
+import numpy as np
+import math
 from scipy.optimize import leastsq
 
 usePlot = True
@@ -51,14 +52,14 @@ class findSlitletProcess(fatboyProcess):
 
         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
             if (use_median):
-                cut1d = gpu_arraymedian(flatData[:,x_auto-halfbox:x_auto+halfbox+1], axis="X").astype(float64)
+                cut1d = gpu_arraymedian(flatData[:,x_auto-halfbox:x_auto+halfbox+1], axis="X").astype(np.float64)
             else:
-                cut1d = flatData[:,x_auto-halfbox:x_auto+halfbox+1].sum(1).astype(float64)
+                cut1d = flatData[:,x_auto-halfbox:x_auto+halfbox+1].sum(1).astype(np.float64)
         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
             if (use_median):
-                cut1d = gpu_arraymedian(flatData[x_auto-halfbox:x_auto+halfbox+1,:], axis="Y").astype(float64)
+                cut1d = gpu_arraymedian(flatData[x_auto-halfbox:x_auto+halfbox+1,:], axis="Y").astype(np.float64)
             else:
-                cut1d = flatData[x_auto-halfbox:x_auto+halfbox+1,:].sum(0).astype(float64)
+                cut1d = flatData[x_auto-halfbox:x_auto+halfbox+1,:].sum(0).astype(np.float64)
         if (do_subtract_bkg):
             #Use running boxcar min function to subtract off background level
             #Create copy of cut1d to measure background as we update cut1d
@@ -85,15 +86,15 @@ class findSlitletProcess(fatboyProcess):
             plt.close()
 
         if (use_peak_local_max):
-            y = where(cut1d > median(cut1d))
-            x = r_[True, cut1d[1:] > cut1d[:-1]] & r_[cut1d[:-1] > cut1d[1:], True] & r_[True, True, cut1d[2:] > cut1d[:-2]] & r_[cut1d[:-2] > cut1d[2:], True, True]
+            y = np.where(cut1d > np.median(cut1d))
+            x = np.r_[True, cut1d[1:] > cut1d[:-1]] & np.r_[cut1d[:-1] > cut1d[1:], True] & np.r_[True, True, cut1d[2:] > cut1d[:-2]] & np.r_[cut1d[:-2] > cut1d[2:], True, True]
             x[:y[0][0]] = False
             x[y[0][-1]+1:] = False
-            z = where(x)[0]
+            z = np.where(x)[0]
             sylo = z-fiber_width//2
             syhi = z+fiber_width//2
-            slitx = array([x_auto]*len(sylo))
-            slitw = array([boxsize]*len(sylo))
+            slitx = np.array([x_auto]*len(sylo))
+            slitw = np.array([boxsize]*len(sylo))
             return (sylo, syhi, slitx, slitw)
 
         if (normal):
@@ -105,12 +106,12 @@ class findSlitletProcess(fatboyProcess):
 
 
         if (slitlets is None):
-            #Return empty lists
+            #Return np.empty lists
             return([], [], [], [])
         sylo = slitlets[:,0]
         syhi = slitlets[:,1]
-        slitx = array([x_auto]*len(sylo))
-        slitw = array([boxsize]*len(sylo))
+        slitx = np.array([x_auto]*len(sylo))
+        slitw = np.array([boxsize]*len(sylo))
 
         if (self.getOption("slitlet_attempt_autocorrect", fdu.getTag()).lower() == "yes"):
             nslits_ref = int(self.getOption("slitlet_autodetect_nslits", fdu.getTag()))
@@ -121,11 +122,11 @@ class findSlitletProcess(fatboyProcess):
                 sgap = slitlets[1:,0]-slitlets[:-1,1]
                 mwidth = gpu_arraymedian(swidth)
                 mgap = gpu_arraymedian(sgap)
-                wsig = abs((swidth-mwidth)/swidth.std())
-                gsig = abs((sgap-mgap)/sgap.std())
-                bw = where(wsig > 2)[0] #slit width > 2 sigma
-                gw = where(wsig <= 2)[0]
-                gg = where(gsig <= 2)[0]
+                wsig = np.abs((swidth-mwidth)/swidth.std())
+                gsig = np.abs((sgap-mgap)/sgap.std())
+                bw = np.where(wsig > 2)[0] #slit width > 2 sigma
+                gw = np.where(wsig <= 2)[0]
+                gg = np.where(gsig <= 2)[0]
                 wsigg = swidth[gw].std() #std dev of "good" slitlets widths
                 gsigg = sgap[gg].std() #std dev of "good" slitlets gaps
                 possibleGapStart = False
@@ -166,7 +167,7 @@ class findSlitletProcess(fatboyProcess):
                 #Sort in case slitlets were added
                 slitlets.sort()
                 #recalc variables
-                slitlets = array(slitlets)
+                slitlets = np.array(slitlets)
                 if (nslits_ref > 0 and nslits_ref > len(sylo)):
                     #look for gaps
                     sylo = slitlets[:,0]
@@ -175,11 +176,11 @@ class findSlitletProcess(fatboyProcess):
                     sgap = slitlets[1:,0]-slitlets[:-1,1]
                     mwidth = gpu_arraymedian(swidth)
                     mgap = gpu_arraymedian(sgap)
-                    wsig = abs((swidth-mwidth)/swidth.std())
-                    gsig = abs((sgap-mgap)/sgap.std())
-                    gw = where(wsig <= 2)[0]
-                    bg = where(gsig > 2)[0]
-                    gg = where(gsig <= 2)[0]
+                    wsig = np.abs((swidth-mwidth)/swidth.std())
+                    gsig = np.abs((sgap-mgap)/sgap.std())
+                    gw = np.where(wsig <= 2)[0]
+                    bg = np.where(gsig > 2)[0]
+                    gg = np.where(gsig <= 2)[0]
                     wsigg = swidth[gw].std() #std dev of "good" slitlets widths
                     gsigg = sgap[gg].std() #std dev of "good" slitlets gaps
                     #convert slitlets to list
@@ -192,13 +193,13 @@ class findSlitletProcess(fatboyProcess):
                         slitlets.append([int(sylo[0]-mwidth-mgap), int(sylo[0]-mgap)])
                     if (nslits_ref > len(slitlets) and possibleGapEnd):
                         slitlets.append([int(syhi[-1]+mgap), int(syhi[-1]+mwidth+mgap)])
-                    #Sort and convert to array
+                    #Sort and convert to np.array
                     slitlets.sort()
-                    slitlets = array(slitlets)
+                    slitlets = np.array(slitlets)
                 sylo = slitlets[:,0]
                 syhi = slitlets[:,1]
-                slitx = array([x_auto]*len(sylo))
-                slitw = array([boxsize]*len(sylo))
+                slitx = np.array([x_auto]*len(sylo))
+                slitw = np.array([boxsize]*len(sylo))
                 print("findSlitletProcess::autoDetectSlitlets> After autocorrect, found "+str(len(sylo))+" slitlets...")
                 self._log.writeLog(__name__, "After autocorrect, found "+str(len(sylo))+" slitlets...")
 
@@ -476,9 +477,9 @@ class findSlitletProcess(fatboyProcess):
         self._options.setdefault('subtract_background_level', 'no')
         self._optioninfo.setdefault('subtract_background_level', 'Subtract a running boxcar min from the 1-d cut\tbefore attempting to find slitlets')
         self._options.setdefault('trace_peak_local_max', 'no')
-        self._optioninfo.setdefault('trace_peak_local_max', 'Set to yes for MEGARA or other fiber data where the curvature changes between fibers')
+        self._optioninfo.setdefault('trace_peak_local_max', 'Set to yes for MEGARA or other fiber data np.where the curvature changes between fibers')
         self._options.setdefault('trace_slitlets_individually', 'yes')
-        self._optioninfo.setdefault('trace_slitlets_individually', 'Set to yes for echelle spectra where the curvature changes between slitlets.')
+        self._optioninfo.setdefault('trace_slitlets_individually', 'Set to yes for echelle spectra np.where the curvature changes between slitlets.')
         self._options.setdefault('write_plots', 'no')
     #end setDefaultOptions
 
@@ -605,7 +606,7 @@ class findSlitletProcess(fatboyProcess):
         #Get xstride
         xstride = xsize//n_segments
         #Get data from master flat
-        flatData = masterFlat.getData().copy()
+        flatData = masterFlat.getData(force_cpu=True).copy()
         qaData = flatData.copy()
         #Slits can't extend beyond image top/bottom
         for j in range(nslits):
@@ -613,19 +614,19 @@ class findSlitletProcess(fatboyProcess):
             syhi[j] = min(syhi[j], ysize-edge_thresh)
 
         #Set up yloMask and yhiMask arrays to track low and high values of each slitlet
-        yloMask = zeros((nslits, xsize))
-        yhiMask = zeros((nslits, xsize))
+        yloMask = np.zeros((nslits, xsize))
+        yhiMask = np.zeros((nslits, xsize))
 
         #If CPU mode, will need to create slitmask as we go
         if (not self._fdb.getGPUMode()):
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                #Generate y index array
-                slitmask = zeros((ysize,xsize), dtype=int32)
-                yind = arange(xsize*ysize, dtype=int32).reshape(ysize,xsize)//xsize
+                #Generate y index np.array
+                slitmask = np.zeros((ysize,xsize), dtype=np.int32)
+                yind = np.arange(xsize*ysize, dtype=np.int32).reshape(ysize,xsize)//xsize
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                #Generate x index array
-                xind = arange(xsize*ysize, dtype=int32).reshape(xsize,ysize)%ysize
-                slitmask = zeros((xsize,ysize), dtype=int32)
+                #Generate x index np.array
+                xind = np.arange(xsize*ysize, dtype=np.int32).reshape(xsize,ysize)%ysize
+                slitmask = np.zeros((xsize,ysize), dtype=np.int32)
 
         outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
         if (not os.access(outdir+"/findSlitlets", os.F_OK)):
@@ -675,11 +676,11 @@ class findSlitletProcess(fatboyProcess):
                     yoff_slit = ylo_slit-(ysize-boxsize)
                     ylo_slit = ysize-boxsize
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    #islit = flatData[syval-halfbox:syval+halfbox+1, xinit-5:xinit+6].sum(1).astype(float64)
-                    islit = flatData[ylo_slit:ylo_slit+boxsize, xinit-5:xinit+6].sum(1).astype(float64)
+                    #islit = flatData[syval-halfbox:syval+halfbox+1, xinit-5:xinit+6].sum(1).astype(np.float64)
+                    islit = flatData[ylo_slit:ylo_slit+boxsize, xinit-5:xinit+6].sum(1).astype(np.float64)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    #islit = flatData[xinit-5:xinit+6, syval-halfbox:syval+halfbox+1].sum(0).astype(float64)
-                    islit = flatData[xinit-5:xinit+6, ylo_slit:ylo_slit+boxsize].sum(0).astype(float64)
+                    #islit = flatData[xinit-5:xinit+6, syval-halfbox:syval+halfbox+1].sum(0).astype(np.float64)
+                    islit = flatData[xinit-5:xinit+6, ylo_slit:ylo_slit+boxsize].sum(0).astype(np.float64)
                 if (do_subtract_bkg):
                     islit -= islit.min()
                 if (do_invert):
@@ -707,13 +708,13 @@ class findSlitletProcess(fatboyProcess):
                             x3 = xstride*(seg+1)+bndry
                             x4 = xstride*(seg+1)+bndry+50
                         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                            oned_seg1 = flatData[y1:y2, x1:x2].sum(1).astype(float64)
-                            oned_seg0 = flatData[y1:y2, x3:x4].sum(1).astype(float64)
+                            oned_seg1 = flatData[y1:y2, x1:x2].sum(1).astype(np.float64)
+                            oned_seg0 = flatData[y1:y2, x3:x4].sum(1).astype(np.float64)
                         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                            oned_seg1 = flatData[x1:x2, y1:y2].sum(0).astype(float64)
-                            oned_seg0 = flatData[x3:x4, y1:y2].sum(0).astype(float64)
-                        ccor = correlate(oned_seg0, oned_seg1, mode='same')
-                        mcor = where(ccor == max(ccor))[0]
+                            oned_seg1 = flatData[x1:x2, y1:y2].sum(0).astype(np.float64)
+                            oned_seg0 = flatData[x3:x4, y1:y2].sum(0).astype(np.float64)
+                        ccor = np.correlate(oned_seg0, oned_seg1, mode='same')
+                        mcor = np.where(ccor == np.max(ccor))[0]
                         seg_shifts.append(len(ccor)//2-mcor[0])
 
                 #Setup lists and arrays for within each loop
@@ -745,7 +746,7 @@ class findSlitletProcess(fatboyProcess):
                             lastYs = [syval + seg_shifts[currSeg]]
                             lastXs = [xinit]
                         else:
-                            lastIdx = where(abs(array(xcoords)-xs[j]) == min(abs(array(xcoords)-xs[j])))[0][0]
+                            lastIdx = np.where(np.abs(np.array(xcoords)-xs[j]) == min(np.abs(np.array(xcoords)-xs[j])))[0][0]
                             currY = ycoords[lastIdx]+seg_shifts[currSeg]
                             lastYs = [ycoords[lastIdx]+seg_shifts[currSeg]]
                             lastXs = [xcoords[lastIdx]]
@@ -754,7 +755,7 @@ class findSlitletProcess(fatboyProcess):
                         #Use values that have been fit already to trace it out
                         continue
 
-                    intY = int(round(currY, 3))
+                    intY = int(np.round(currY, 3))
                     ylo_slit = intY-halfbox
                     if (ylo_slit < 0):
                         ylo_slit = 0
@@ -763,11 +764,11 @@ class findSlitletProcess(fatboyProcess):
                     #1-d cut of flat in cross-dispersion direction, sum of 11 pixels in dispersion direction centered at current X
                     #Only look at 21 pixel box in dispersion direction centered at currY  => 21x11 box => 21 pixel 1-d line
                     if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                        #cut1d = flatData[intY-halfbox:intY+halfbox+1, int(xs[j]-5):int(xs[j]+6)].sum(1).astype(float64)
-                        cut1d = flatData[ylo_slit:ylo_slit+boxsize, int(xs[j]-5):int(xs[j]+6)].sum(1).astype(float64)
+                        #cut1d = flatData[intY-halfbox:intY+halfbox+1, int(xs[j]-5):int(xs[j]+6)].sum(1).astype(np.float64)
+                        cut1d = flatData[ylo_slit:ylo_slit+boxsize, int(xs[j]-5):int(xs[j]+6)].sum(1).astype(np.float64)
                     elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                        #cut1d = flatData[int(xs[j]-5):int(xs[j]+6), intY-halfbox:intY+halfbox+1].sum(0).astype(float64)
-                        cut1d = flatData[int(xs[j]-5):int(xs[j]+6), ylo_slit:ylo_slit+boxsize].sum(0).astype(float64)
+                        #cut1d = flatData[int(xs[j]-5):int(xs[j]+6), intY-halfbox:intY+halfbox+1].sum(0).astype(np.float64)
+                        cut1d = flatData[int(xs[j]-5):int(xs[j]+6), ylo_slit:ylo_slit+boxsize].sum(0).astype(np.float64)
                     if (do_subtract_bkg):
                         cut1d -= cut1d.min()
                     if (do_invert):
@@ -792,24 +793,27 @@ class findSlitletProcess(fatboyProcess):
                         continue
                     #Cross correlate cut1d with islit
                     #Use numpy correlate since 1d cut -- not enough pixels to benefit from GPU
-                    ccor = correlate(cut1d, islit, mode='same')
+                    ccor = np.correlate(cut1d, islit, mode='same')
                     #Median filter with 51 pixel boxcar and set negative values to 0 before fitting
                     ccor = medianfilterCPU(ccor)
                     ccor[ccor < 0] = 0
                     #Use leastsq to fit Gaussian to cross-correlation function
-                    p = zeros(4, float64)
+                    p = np.zeros(4, np.float64)
                     #p[1] = round(currY,3) #center = currY
-                    p[1] = round(currY, 3)-ylo_slit
+                    p[1] = np.round(currY, 3)-ylo_slit
                     p[2] = 3. #FWHM = 3
                     p[3] = 0.
-                    p[0] = max(ccor)
+                    p[0] = np.max(ccor)
                     #lsq argument should be centered at currY
                     #Use int(round(currY, 3)) to get around floating point bug
                     lsq = fitGaussian(ccor, maskNeg=True, guess=p)
                     if (lsq[1] == False):
                     #try:
-                    #  lsq = leastsq(gaussResiduals, p, args=(arange(len(ccor))+intY-halfbox, ccor))
+                    #  lsq = leastsq(gaussResiduals, p, args=(np.arange(len(ccor))+intY-halfbox, ccor))
                     #except Exception as ex:
+                        print ("LSQ 1")
+                        import traceback
+                        traceback.print_exc()
                         print("findSlitletProcess::traceOrders> Warning: Order "+str(slitidx)+", syval="+str(syval)+": Leastsq FAILED at "+str(xs[j])+" with "+str(ex))
                         self._log.writeLog(__name__, "Order "+str(slitidx)+", syval="+str(syval)+": Leastsq FAILED at "+str(xs[j])+" with "+str(ex), type=fatboyLog.WARNING)
                         continue
@@ -835,7 +839,7 @@ class findSlitletProcess(fatboyProcess):
                         currY = lsq[0][1]
                         currX = xs[0]
                         meds.append(medVal)
-                        maxcors.append(max(ccor))
+                        maxcors.append(np.max(ccor))
                         xcoords.append(xs[j])
                         ycoords.append(lsq[0][1])
                         lastXs.append(xs[0])
@@ -853,9 +857,9 @@ class findSlitletProcess(fatboyProcess):
                         #Compare current y fit value to weighted avg instead of just
                         #previous value.
                         for i in range(len(lastYs)):
-                            wavg += lastYs[i]/sqrt(abs(lastXs[i]-xs[j]))
-                            wavgx += lastXs[i]/sqrt(abs(lastXs[i]-xs[j]))
-                            wavgDivisor += 1./sqrt(abs(lastXs[i]-xs[j]))
+                            wavg += lastYs[i]/math.sqrt(abs(lastXs[i]-xs[j]))
+                            wavgx += lastXs[i]/math.sqrt(abs(lastXs[i]-xs[j]))
+                            wavgDivisor += 1./math.sqrt(abs(lastXs[i]-xs[j]))
                         if (wavgDivisor != 0):
                             wavg = wavg/wavgDivisor
                             wavgx = wavgx/wavgDivisor
@@ -865,12 +869,12 @@ class findSlitletProcess(fatboyProcess):
                             wavgx = currX
                         #More than 50 pixels in deltaX between weight average of last 10
                         #datapoints and current X
-                        #And not the discontinuity in middle of xs where we jump from end back to center
+                        #And not the discontinuity in middle of xs np.where we jump from end back to center
                         #because abs(xs[j]-xs[j-1]) == step
                         if (abs(xs[j]-xs[j-1]) == step and abs(wavgx-xs[j]) > 50):
                             if (len(lastYs) > 1):
                                 #Fit slope to lastYs
-                                lin = leastsq(linResiduals, [0.,0.], args=(array(lastXs),array(lastYs)))
+                                lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastXs),np.array(lastYs)))
                                 slope = lin[0][1]
                             else:
                                 #Only 1 datapoint, use -0.04 as slope
@@ -882,7 +886,7 @@ class findSlitletProcess(fatboyProcess):
                         else:
                             if (len(lastYs) > 3):
                                 #Fit slope to lastYs
-                                lin = leastsq(linResiduals, [0.,0.], args=(array(lastXs),array(lastYs)))
+                                lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastXs),np.array(lastYs)))
                                 slope = lin[0][1]
                             else:
                                 #Less than 4 datapoints, use -0.04 as slope
@@ -898,7 +902,7 @@ class findSlitletProcess(fatboyProcess):
                             currY = lsq[0][1]
                             currX = xs[j]
                             meds.append(medVal)
-                            maxcors.append(max(ccor))
+                            maxcors.append(np.max(ccor))
                             xcoords.append(xs[j])
                             ycoords.append(lsq[0][1])
                             lastXs.append(xs[j])
@@ -910,7 +914,7 @@ class findSlitletProcess(fatboyProcess):
                             currY = lsq[0][1]
                             currX = xs[j]
                             meds.append(medVal)
-                            maxcors.append(max(ccor))
+                            maxcors.append(np.max(ccor))
                             xcoords.append(xs[j])
                             ycoords.append(lsq[0][1])
                             lastXs.append(xs[j])
@@ -929,7 +933,7 @@ class findSlitletProcess(fatboyProcess):
                             currY = lsq[0][1]
                             currX = xs[j]
                             meds.append(medVal)
-                            maxcors.append(max(ccor))
+                            maxcors.append(np.max(ccor))
                             xcoords.append(xs[j])
                             ycoords.append(lsq[0][1])
                             lastXs.append(xs[j])
@@ -947,11 +951,11 @@ class findSlitletProcess(fatboyProcess):
                 #Phase 2 of rejection criteria after slitlets have been traced
                 #Find outliers > 2.5 sigma in median value of 1-d cuts
                 #and max values of cross correlations and remove them
-                meds = array(meds)
-                maxcors = array(maxcors)
+                meds = np.array(meds)
+                maxcors = np.array(maxcors)
                 #b = (meds > arraymedian(meds)-2.5*meds.std())*(maxcors > arraymedian(maxcors)-2.5*maxcors.std())
-                xcoords = array(xcoords)
-                ycoords = array(ycoords)
+                xcoords = np.array(xcoords)
+                ycoords = np.array(ycoords)
                 xc_keep = [] #Create new lists for xcoords and ycoords that will be kept
                 yc_keep = []
                 iseg_keep = [] #And for segment number of those kept datapoints
@@ -964,10 +968,10 @@ class findSlitletProcess(fatboyProcess):
                     segmask = (xcoords >= sxlo)*(xcoords < sxhi)
                     if (segmask.sum() < 5):
                         if (seg == 0):
-                            z1.append(zeros(xstride))
+                            z1.append(np.zeros(xstride))
                             yf0 = 0
                         else:
-                            z1[-1] = concatenate([z1[-1], zeros(xstride)-yf0])
+                            z1[-1] = concatenate([z1[-1], np.zeros(xstride)-yf0])
                         continue
 
                     b = (meds[segmask] >= arraymedian(meds[segmask])-2.5*meds[segmask].std())*(maxcors[segmask] >= arraymedian(maxcors[segmask])-2.5*maxcors[segmask].std())
@@ -981,18 +985,18 @@ class findSlitletProcess(fatboyProcess):
                     elif (len(seg_xcoords) < 50):
                         seg_order = min(3, seg_order)
 
-                    #xcoords = array(xcoords)[b]
-                    #ycoords = array(ycoords)[b]
+                    #xcoords = np.array(xcoords)[b]
+                    #ycoords = np.array(ycoords)[b]
                     if (n_segments > 1):
                         print("\tSegment "+str(seg)+": rejecting outliers (phase 2) - kept "+str(len(seg_ycoords))+" of "+str(len(ycoords[segmask]))+" datapoints.")
                         self._log.writeLog(__name__, "Segment "+str(seg)+": rejecting outliers (phase 2) - kept "+str(len(ycoords))+" of "+str(len(ycoords[segmask]))+" datapoints.", printCaller=False, tabLevel=1)
                     else:
                         print("\trejecting outliers (phase 2) - kept "+str(len(seg_ycoords))+" datapoints.")
                         self._log.writeLog(__name__, "rejecting outliers (phase 2) - kept "+str(len(seg_ycoords))+" datapoints.", printCaller=False, tabLevel=1)
-                    #xin = 1-d array of x indices
-                    xin = arange(xstride, dtype=float32)+sxlo
+                    #xin = 1-d np.array of x indices
+                    xin = np.arange(xstride, dtype=np.float32)+sxlo
                     #Fit nth order (recommended 2nd) order polynomial to datapoints, Y = f(X)
-                    p = zeros(seg_order+1, float64)
+                    p = np.zeros(seg_order+1, np.float64)
                     p[0] = ycoords[0]
                     try:
                         lsq = leastsq(polyResiduals, p, args=(seg_xcoords,seg_ycoords,seg_order))
@@ -1007,7 +1011,7 @@ class findSlitletProcess(fatboyProcess):
                     yoffset = polyFunction(lsq[0], xin, seg_order)
                     yresid = yoffset[seg_xcoords-sxlo]-seg_ycoords
                     #Remove outliers and refit
-                    b = abs(yresid) < yresid.mean()+2.5*yresid.std()
+                    b = np.abs(yresid) < yresid.mean()+2.5*yresid.std()
                     seg_xcoords = seg_xcoords[b]
                     seg_ycoords = seg_ycoords[b]
 
@@ -1029,8 +1033,8 @@ class findSlitletProcess(fatboyProcess):
                         is_error = True
 
                     #Use previous guess
-                    p = lsq[0].astype(float64)
-                    #p = zeros(seg_order+1, float64)
+                    p = lsq[0].astype(np.float64)
+                    #p = np.zeros(seg_order+1, np.float64)
                     #p[0] = ycoords[0]
                     try:
                         lsq = leastsq(polyResiduals, p, args=(seg_xcoords,seg_ycoords,seg_order))
@@ -1060,7 +1064,7 @@ class findSlitletProcess(fatboyProcess):
                             continue
                         for yi in range(yval-1,yval+2):
                             for xi in range(xval-1,xval+2):
-                                dist = sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
+                                dist = math.sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
                                 qaData[yi,xi] = -50000/((1+dist)**2)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                     for i in range(len(xcoords)):
@@ -1068,7 +1072,7 @@ class findSlitletProcess(fatboyProcess):
                         xval = int(xcoords[i]+.5)
                         for yi in range(yval-1,yval+2):
                             for xi in range(xval-1,xval+2):
-                                dist = sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
+                                dist = math.sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
                                 qaData[xi,yi] = -50000/((1+dist)**2)
             #end for syval
             #Update slitmask
@@ -1084,12 +1088,12 @@ class findSlitletProcess(fatboyProcess):
             if (not self._fdb.getGPUMode()):
                 #Update slitmask piece by piece here for CPU
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    currMask = (yind >= (ylo+z1[0]).astype("int32"))*(yind <= (yhi+z1[1]).astype("int32"))
+                    currMask = (yind >= (ylo+z1[0]).astype(np.int32))*(yind <= (yhi+z1[1]).astype(np.int32))
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                     z1[0] = z1[0].reshape(xsize,1)
                     z1[1] = z1[1].reshape(xsize,1)
-                    currMask = (xind >= (ylo+z1[0]).astype("int32"))*(xind <= (yhi+z1[1]).astype("int32"))
-                b = where(currMask)
+                    currMask = (xind >= (ylo+z1[0]).astype(np.int32))*(xind <= (yhi+z1[1]).astype(np.int32))
+                b = np.where(currMask)
                 slitmask[b] = (slitidx+1)
         #end for slitidx
         #print time.time()-t
@@ -1121,7 +1125,7 @@ class findSlitletProcess(fatboyProcess):
 
         if (slitmask.max() < 256):
             #Only convert to UInt8 if less than 256 slits
-            slitmask = slitmask.astype(uint8)
+            slitmask = slitmask.astype(np.uint8)
 
         #create fatboySpecCalibs and add to calibs dict
         #Use masterFlat as source header
@@ -1292,7 +1296,7 @@ class findSlitletProcess(fatboyProcess):
             xsize = fdu.getShape()[0]
             ysize = fdu.getShape()[1]
         #Get data from master flat
-        flatData = masterFlat.getData().copy()
+        flatData = masterFlat.getData(force_cpu=True).copy()
         #Slits can't extend beyond image top/bottom
         for j in range(nslits):
             sylo[j] = max(sylo[j], edge_thresh)
@@ -1322,15 +1326,15 @@ class findSlitletProcess(fatboyProcess):
 
             #1-d cut of flat in cross-dispersion direction, sum of 11 pixels in dispersion direction centered at current X
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                cut1d = flatData[:,int(xs[j]-halfbox):int(xs[j]+halfbox+1)].sum(1).astype(float64)
+                cut1d = flatData[:,int(xs[j]-halfbox):int(xs[j]+halfbox+1)].sum(1).astype(np.float64)
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                cut1d = flatData[int(xs[j]-halfbox):int(xs[j]+halfbox+1),:].sum(0).astype(float64)
+                cut1d = flatData[int(xs[j]-halfbox):int(xs[j]+halfbox+1),:].sum(0).astype(np.float64)
 
-            y = where(cut1d > median(cut1d))
+            y = np.where(cut1d > np.median(cut1d))
             x = r_[True, cut1d[1:] > cut1d[:-1]] & r_[cut1d[:-1] > cut1d[1:], True] & r_[True, True, cut1d[2:] > cut1d[:-2]] & r_[cut1d[:-2] > cut1d[2:], True, True]
             x[:y[0][0]] = False
             x[y[0][-1]+1:] = False
-            z = where(x)[0]
+            z = np.where(x)[0]
             if (len(z) != nslits):
                 #Number of slits found doesn't match
                 #print "ERR1", xs[j]
@@ -1339,7 +1343,7 @@ class findSlitletProcess(fatboyProcess):
             maxerr = 2
             if (abs(xs[j]-lastX) > 50):
                 maxerr = abs(xs[j]-lastX)/25
-            if (abs(z-currYs).max() > maxerr):
+            if (np.abs(z-currYs).max() > maxerr):
                 #Shift from last datapoint is > max error
                 #print "ERR2", xs[j], abs(z-currYs).max()
                 continue
@@ -1353,18 +1357,18 @@ class findSlitletProcess(fatboyProcess):
         print("findSlitletProcess::tracePeakLocalMax> found "+str(len(ycoords))+" datapoints.")
         self._log.writeLog(__name__, "found "+str(len(ycoords))+" datapoints.")
 
-        xcoords = array(xcoords)
-        ycoords = array(ycoords)
+        xcoords = np.array(xcoords)
+        ycoords = np.array(ycoords)
 
-        #1d array of indices nearest each x index
-        idx = zeros(xsize, int32)
+        #1d np.array of indices nearest each x index
+        idx = np.zeros(xsize, np.int32)
         for xi in range(xsize):
-            idx[xi] = abs(xi-xcoords).argmin()
-        #new xs = 1-d array of x indices
-        xs = arange(xsize, dtype=int32)
+            idx[xi] = np.abs(xi-xcoords).argmin()
+        #new xs = 1-d np.array of x indices
+        xs = np.arange(xsize, dtype=np.int32)
 
-        yloMask = zeros((nslits, xsize))
-        yhiMask = zeros((nslits, xsize))
+        yloMask = np.zeros((nslits, xsize))
+        yhiMask = np.zeros((nslits, xsize))
         #Create slitmask
         for j in range(nslits):
             z1 = ycoords[idx,j]
@@ -1377,24 +1381,24 @@ class findSlitletProcess(fatboyProcess):
         else:
             #CPU mode
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                #Generate y index array
-                yind = arange(xsize*ysize, dtype=int32).reshape(ysize,xsize)//xsize
-                slitmask = zeros((ysize,xsize), dtype=int32)
+                #Generate y index np.array
+                yind = np.arange(xsize*ysize, dtype=np.int32).reshape(ysize,xsize)//xsize
+                slitmask = np.zeros((ysize,xsize), dtype=np.int32)
                 for j in range(nslits):
-                    currMask = (yind >= (yloMask[j,:]).astype(int32))*(yind <= (yhiMask[j,:]).astype(int32))
-                    b = where(currMask)
+                    currMask = (yind >= (yloMask[j,:]).astype(np.int32))*(yind <= (yhiMask[j,:]).astype(np.int32))
+                    b = np.where(currMask)
                     slitmask[b] = (j+1)
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                #Generate x index array
-                xind = arange(xsize*ysize, dtype=int32).reshape(ysize,xsize)%xsize
-                slitmask = zeros((ysize,xsize), dtype=int32)
+                #Generate x index np.array
+                xind = np.arange(xsize*ysize, dtype=np.int32).reshape(ysize,xsize)%xsize
+                slitmask = np.zeros((ysize,xsize), dtype=np.int32)
                 for j in range(nslits):
-                    currMask = (xind >= (yloMask[j,:]).astype(int32))*(xind <= (yhiMask[j,:]).astype(int32))
-                    b = where(currMask)
+                    currMask = (xind >= (yloMask[j,:]).astype(np.int32))*(xind <= (yhiMask[j,:]).astype(np.int32))
+                    b = np.where(currMask)
                     slitmask[b] = (j+1)
         if (slitmask.max() < 256):
             #Only convert to UInt8 if less than 256 slits
-            slitmask = slitmask.astype(uint8)
+            slitmask = slitmask.astype(np.uint8)
 
         #create fatboySpecCalibs and add to calibs dict
         #use masterFlat as source header
@@ -1450,19 +1454,19 @@ class findSlitletProcess(fatboyProcess):
                 #Generate qa data
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                     for i in range(len(xcoords)):
-                        yval = int32(ycoords[i]+.5)
+                        yval = ycoords[i]+.5.astype(np.int32)
                         xval = int(xcoords[i]+.5)
                         for yi in range(-1,2):
                             for xi in range(-1,2):
-                                dist = sqrt((yi**2)+(xi**2))
+                                dist = np.sqrt((yi**2)+(xi**2))
                                 flatData[yval+yi, xval+xi] = -50000/((1+dist)**2)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                     for i in range(len(xcoords)):
-                        yval = int32(ycoords[i]+.5)
+                        yval = ycoords[i]+.5.astype(np.int32)
                         xval = int(xcoords[i]+.5)
                         for yi in range(-1,2):
                             for xi in range(-1,2):
-                                dist = sqrt((yi**2)+(xi**2))
+                                dist = np.sqrt((yi**2)+(xi**2))
                                 flatData[xval+xi, yval+yi] = -50000/((1+dist)**2)
                 masterFlat.tagDataAs("slitqa", flatData)
                 masterFlat.writeTo(qafile, tag="slitqa")
@@ -1578,7 +1582,7 @@ class findSlitletProcess(fatboyProcess):
             xsize = fdu.getShape()[0]
             ysize = fdu.getShape()[1]
         #Get data from master flat
-        flatData = masterFlat.getData().copy()
+        flatData = masterFlat.getData(force_cpu=True).copy()
         #Slits can't extend beyond image top/bottom
         for j in range(nslits):
             sylo[j] = max(sylo[j], edge_thresh)
@@ -1599,9 +1603,9 @@ class findSlitletProcess(fatboyProcess):
 
         #1-d cut of central 11 pixels of flat in cross-dispersion direction
         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-            islit = flatData[slitlet_trace_ylo:slitlet_trace_yhi, xinit-5:xinit+6].sum(1).astype(float64)
+            islit = flatData[slitlet_trace_ylo:slitlet_trace_yhi, xinit-5:xinit+6].sum(1).astype(np.float64)
         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-            islit = flatData[xinit-5:xinit+6, slitlet_trace_ylo:slitlet_trace_yhi].sum(0).astype(float64)
+            islit = flatData[xinit-5:xinit+6, slitlet_trace_ylo:slitlet_trace_yhi].sum(0).astype(np.float64)
 
         #Setup lists and arrays
         #xs = x values (dispersion direction) to cross correlate at
@@ -1629,12 +1633,12 @@ class findSlitletProcess(fatboyProcess):
 
             #1-d cut of flat in cross-dispersion direction, sum of 11 pixels in dispersion direction centered at current X
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                cut1d = flatData[slitlet_trace_ylo:slitlet_trace_yhi, int(xs[j]-5):int(xs[j]+6)].sum(1).astype(float64)
+                cut1d = flatData[slitlet_trace_ylo:slitlet_trace_yhi, int(xs[j]-5):int(xs[j]+6)].sum(1).astype(np.float64)
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                cut1d = flatData[int(xs[j]-5):int(xs[j]+6), slitlet_trace_ylo:slitlet_trace_yhi].sum(0).astype(float64)
+                cut1d = flatData[int(xs[j]-5):int(xs[j]+6), slitlet_trace_ylo:slitlet_trace_yhi].sum(0).astype(np.float64)
             #Cross correlate cut1d with islit
             #Use numpy correlate since 1d cut -- not enough pixels to benefit from GPU
-            ccor = correlate(cut1d, islit, mode='same')
+            ccor = np.correlate(cut1d, islit, mode='same')
             #Median filter with 51 pixel boxcar and set negative values to 0 before fitting
             if (self._fdb.getGPUMode()):
                 ccor = gpumedianfilter(ccor)
@@ -1643,8 +1647,8 @@ class findSlitletProcess(fatboyProcess):
             ccor[ccor < 0] = 0
 
             #Use leastsq to fit Gaussian to cross-correlation function
-            p = zeros(4, float64)
-            p[1] = round(currY,3) #center = currY
+            p = np.zeros(4, np.float64)
+            p[1] = np.round(currY,3) #center = currY
             p[2] = 3. #FWHM = 3
             p[3] = 0.
             #Only examine up to 51 pixels centered at previous result
@@ -1652,10 +1656,12 @@ class findSlitletProcess(fatboyProcess):
             lhi = min(len(ccor), int(cen+p[1]+26))
             #print xs[j], llo, lhi, len(ccor), currY
             #print islit.size, cut1d.size, slitlet_trace_ylo, slitlet_trace_yhi
-            p[0] = max(ccor[llo:lhi])
+            p[0] = np.max(ccor[llo:lhi])
             try:
-                lsq = leastsq(gaussResiduals, p, args=(arange(lhi-llo, dtype=float64)+llo-cen, ccor[llo:lhi]))
+                lsq = leastsq(gaussResiduals, p, args=(np.arange(lhi-llo, dtype=np.float64)+llo-cen, np.asarray(ccor[llo:lhi])))
             except Exception as ex:
+                import traceback
+                traceback.print_exc()
                 print("findSlitletProcess::traceSlitlets> Warning: Leastsq FAILED at "+str(xs[j])+" with "+str(ex))
                 self._log.writeLog(__name__, "Leastsq FAILED at "+str(xs[j])+" with "+str(ex), type=fatboyLog.WARNING)
                 continue
@@ -1674,7 +1680,7 @@ class findSlitletProcess(fatboyProcess):
                 currY = lsq[0][1]
                 currX = xs[0]
                 meds.append(arraymedian(cut1d))
-                maxcors.append(max(ccor))
+                maxcors.append(np.max(ccor))
                 xcoords.append(xs[j])
                 ycoords.append(lsq[0][1])
                 lastXs.append(xs[0])
@@ -1691,9 +1697,9 @@ class findSlitletProcess(fatboyProcess):
                 #Compare current y fit value to weighted avg instead of just
                 #previous value.
                 for i in range(len(lastYs)):
-                    wavg += lastYs[i]/sqrt(abs(lastXs[i]-xs[j]))
-                    wavgx += lastXs[i]/sqrt(abs(lastXs[i]-xs[j]))
-                    wavgDivisor += 1./sqrt(abs(lastXs[i]-xs[j]))
+                    wavg += lastYs[i]/math.sqrt(abs(lastXs[i]-xs[j]))
+                    wavgx += lastXs[i]/math.sqrt(abs(lastXs[i]-xs[j]))
+                    wavgDivisor += 1./math.sqrt(abs(lastXs[i]-xs[j]))
                 if (wavgDivisor != 0):
                     wavg = wavg/wavgDivisor
                     wavgx = wavgx/wavgDivisor
@@ -1703,12 +1709,12 @@ class findSlitletProcess(fatboyProcess):
                     wavgx = currX
                 #More than 50 pixels in deltaX between weight average of last 10
                 #datapoints and current X
-                #And not the discontinuity in middle of xs where we jump from end back to center
+                #And not the discontinuity in middle of xs np.where we jump from end back to center
                 #because abs(xs[j]-xs[j-1]) == step
                 if (abs(xs[j]-xs[j-1]) == step and abs(wavgx-xs[j]) > 50):
                     if (len(lastYs) > 1):
                         #Fit slope to lastYs
-                        lin = leastsq(linResiduals, [0.,0.], args=(array(lastXs),array(lastYs)))
+                        lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastXs),np.array(lastYs)))
                         slope = lin[0][1]
                     else:
                         #Only 1 datapoint, use -0.04 as slope
@@ -1720,7 +1726,7 @@ class findSlitletProcess(fatboyProcess):
                 else:
                     if (len(lastYs) > 3):
                         #Fit slope to lastYs
-                        lin = leastsq(linResiduals, [0.,0.], args=(array(lastXs),array(lastYs)))
+                        lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastXs),np.array(lastYs)))
                         slope = lin[0][1]
                     else:
                         #Less than 4 datapoints, use -0.04 as slope
@@ -1735,7 +1741,7 @@ class findSlitletProcess(fatboyProcess):
                     currY = lsq[0][1]
                     currX = xs[j]
                     meds.append(arraymedian(cut1d))
-                    maxcors.append(max(ccor))
+                    maxcors.append(np.max(ccor))
                     xcoords.append(xs[j])
                     ycoords.append(lsq[0][1])
                     lastXs.append(xs[j])
@@ -1750,7 +1756,7 @@ class findSlitletProcess(fatboyProcess):
                     currY = lsq[0][1]
                     currX = xs[j]
                     meds.append(arraymedian(cut1d))
-                    maxcors.append(max(ccor))
+                    maxcors.append(np.max(ccor))
                     xcoords.append(xs[j])
                     ycoords.append(lsq[0][1])
                     lastXs.append(xs[j])
@@ -1765,17 +1771,17 @@ class findSlitletProcess(fatboyProcess):
         #Phase 2 of rejection criteria after slitlets have been traced
         #Find outliers > 2.5 sigma in median value of 1-d cuts
         #and max values of cross correlations and remove them
-        meds = array(meds)
-        maxcors = array(maxcors)
+        meds = np.array(meds)
+        maxcors = np.array(maxcors)
         b = (meds >= arraymedian(meds)-2.5*meds.std())*(maxcors >= arraymedian(maxcors)-2.5*maxcors.std())
-        xcoords = array(xcoords)[b]
-        ycoords = array(ycoords)[b]
+        xcoords = np.array(xcoords)[b]
+        ycoords = np.array(ycoords)[b]
         print("\trejecting outliers (phase 2) - kept "+str(len(ycoords))+" datapoints.")
         self._log.writeLog(__name__, "rejecting outliers (phase 2) - kept "+str(len(ycoords))+" datapoints.", printCaller=False, tabLevel=1)
-        #new xs = 1-d array of x indices
-        xs = arange(xsize, dtype=float32)
+        #new xs = 1-d np.array of x indices
+        xs = np.arange(xsize, dtype=np.float32)
         #Fit n-th order (recommended 3rd order) polynomial to datapoints, Y = f(X)
-        p = zeros(order+1, float64)
+        p = np.zeros(order+1, np.float64)
         p[0] = ycoords[-1]
         try:
             lsq = leastsq(polyResiduals, p, args=(xcoords,ycoords,order))
@@ -1790,14 +1796,14 @@ class findSlitletProcess(fatboyProcess):
         yoffset = polyFunction(lsq[0], xs, order)
         yresid = yoffset[xcoords]-ycoords
         #Remove outliers and refit
-        b = abs(yresid) < yresid.mean()+2.5*yresid.std()
+        b = np.abs(yresid) < yresid.mean()+2.5*yresid.std()
         xcoords = xcoords[b]
         ycoords = ycoords[b]
         print("\trejecting outliers (phase 3). Sigma = "+formatNum(yresid.std())+". Using "+str(len(ycoords))+" datapoints to fit slitlets.")
         self._log.writeLog(__name__, "rejecting outliers (phase 3). Sigma = "+formatNum(yresid.std())+". Using "+str(len(ycoords))+" datapoints to fit slitlets.", printCaller=False, tabLevel=1)
         #use previous fit as guess
-        p = lsq[0].astype(float64)
-        #p = zeros(order+1, float64)
+        p = lsq[0].astype(np.float64)
+        #p = np.zeros(order+1, np.float64)
         #p[0] = ycoords[-1]
         try:
             lsq = leastsq(polyResiduals, p, args=(xcoords,ycoords,order))
@@ -1812,8 +1818,8 @@ class findSlitletProcess(fatboyProcess):
         yoffset = polyFunction(lsq[0], xs, order)
         #Subtract zero point
         z1 = yoffset - yoffset[0]
-        yloMask = zeros((nslits, len(z1)))
-        yhiMask = zeros((nslits, len(z1)))
+        yloMask = np.zeros((nslits, len(z1)))
+        yhiMask = np.zeros((nslits, len(z1)))
         #Create slitmask
         for j in range(nslits):
             #ylo = sylo[j]-z1[int(slitx[j])]-1
@@ -1827,31 +1833,31 @@ class findSlitletProcess(fatboyProcess):
         else:
             #CPU mode
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                #Generate y index array
-                yind = arange(xsize*ysize, dtype=int32).reshape(ysize,xsize)//xsize
-                slitmask = zeros((ysize,xsize), dtype=int32)
+                #Generate y index np.array
+                yind = np.arange(xsize*ysize, dtype=np.int32).reshape(ysize,xsize)//xsize
+                slitmask = np.zeros((ysize,xsize), dtype=np.int32)
                 for j in range(nslits):
                     #ylo = sylo[j]-z1[int(slitx[j])]-1
                     ylo = sylo[j]-z1[int(slitx[j])]
                     yhi = syhi[j]-z1[int(slitx[j])]
-                    currMask = (yind >= (ylo+z1).astype("int32"))*(yind <= (yhi+z1).astype("int32"))
-                    b = where(currMask)
+                    currMask = (yind >= (ylo+z1).astype(np.int32))*(yind <= (yhi+z1).astype(np.int32))
+                    b = np.where(currMask)
                     slitmask[b] = (j+1)
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                #Generate x index array
-                xind = arange(xsize*ysize, dtype=int32).reshape(ysize,xsize)%xsize
-                slitmask = zeros((ysize,xsize), dtype=int32)
-                #Need to reshape z1 array
+                #Generate x index np.array
+                xind = np.arange(xsize*ysize, dtype=np.int32).reshape(ysize,xsize)%xsize
+                slitmask = np.zeros((ysize,xsize), dtype=np.int32)
+                #Need to reshape z1 np.array
                 z1 = z1.reshape((len(z1), 1))
                 for j in range(nslits):
                     ylo = sylo[j]-z1[int(slitx[j])]-1
                     yhi = syhi[j]-z1[int(slitx[j])]
-                    currMask = (xind >= (ylo+z1).astype("int32"))*(xind <= (yhi+z1).astype("int32"))
-                    b = where(currMask)
+                    currMask = (xind >= (ylo+z1).astype(np.int32))*(xind <= (yhi+z1).astype(np.int32))
+                    b = np.where(currMask)
                     slitmask[b] = (j+1)
         if (slitmask.max() < 256):
             #Only convert to UInt8 if less than 256 slits
-            slitmask = slitmask.astype(uint8)
+            slitmask = slitmask.astype(np.uint8)
 
         #create fatboySpecCalibs and add to calibs dict
         #use masterFlat as source header
@@ -1912,21 +1918,21 @@ class findSlitletProcess(fatboyProcess):
                     #CPU version -- loop over coords first
                     for j in range(len(xcoords)):
                         xval = int(xcoords[j]+.5)
-                        qaxs = arange(9, dtype=int32).reshape((3,3))%3+xval-1
-                        ys = arange(9, dtype=int32).reshape((3,3))//3
-                        #There will be 18 x nslits x ncoords pixels used to show where slitlets were traced out
+                        qaxs = np.arange(9, dtype=np.int32).reshape((3,3))%3+xval-1
+                        ys = np.arange(9, dtype=np.int32).reshape((3,3))//3
+                        #There will be 18 x nslits x ncoords pixels used to show np.where slitlets were traced out
                         for i in range(nslits):
                             yval = int(ycoords[j]+sylo[i]+0.5)
                             #calculate x and y 3x3 index arrays
                             qays = ys+yval-1
-                            dist = sqrt((ycoords[j]+sylo[i]-qays)**2+(xcoords[j]-qaxs)**2)
+                            dist = np.sqrt((ycoords[j]+sylo[i]-qays)**2+(xcoords[j]-qaxs)**2)
                             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                                 flatData[qays,qaxs] = -50000/((1+dist)**2)
                             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                                 flatData[qaxs,qays] = -50000/((1+dist)**2)
                             yval = int(ycoords[j]+syhi[i]+0.5)
                             qays = ys+yval-1
-                            dist = sqrt((ycoords[j]+syhi[i]-qays)**2+(xcoords[j]-qaxs)**2)
+                            dist = np.sqrt((ycoords[j]+syhi[i]-qays)**2+(xcoords[j]-qaxs)**2)
                             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                                 flatData[qays,qaxs] = -50000/((1+dist)**2)
                             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):

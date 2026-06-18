@@ -1,3 +1,4 @@
+import numpy as np
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
@@ -8,14 +9,14 @@ class miradasDARFromConditionsProcess(fatboyProcess):
     """ Estimate differential atmospheric refraction correction as a function
           of wavelength from the site conditions according to Filippenko, 1982
           1) x = 64.328+29498.1/(146-(1/lmbda)**2)+255.4/(41-(1/lmbda)**2)
-              where x = (n(lmbda)_15,760 - 1)*10^6
+              np.where x = (n(lmbda)_15,760 - 1)*10^6
           2) y = (x/1.e+6)*(P*(1+(1.049-0.0157*T)*1.e-6*P))/(720.883*(1+0.003661*T))
-              where P in mm HG, T in C, and y = n(lmbda)_T,P - 1
+              np.where P in mm HG, T in C, and y = n(lmbda)_T,P - 1
           3) z = y - (0.0624-0.000680/lmbda**2)/(1+0.003661*T)*f*1.e-6
-              where z = n(lmbda)_T,P - 1, corrected for water vapor pressure,
+              np.where z = n(lmbda)_T,P - 1, corrected for water vapor pressure,
               f, in mm HG.
           4) delta_R(lmbda) = R_lmbda - R_5000 = 206265*(n_lmbda - n_5000)*tan z
-              where n_5000 is the refractive index at 5000 angstroms and
+              np.where n_5000 is the refractive index at 5000 angstroms and
               z is the zenith angle of the object
 
           Quantities needed:
@@ -38,7 +39,7 @@ class miradasDARFromConditionsProcess(fatboyProcess):
             slitlet_number = int(slitlet_number)
 
         if (doAllSlitlets):
-            slitlets = arange(1, nslits+1)
+            slitlets = np.arange(1, nslits+1)
         else:
             slitlets = [slitlet_number]
 

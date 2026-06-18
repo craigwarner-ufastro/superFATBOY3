@@ -2,7 +2,10 @@ from superFATBOY.fatboyCalib import fatboyCalib
 from superFATBOY.fatboyDataUnit import fatboyDataUnit
 from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY.fatboyProcess import fatboyProcess
-import cupy as cp
+try:
+    import cupy as cp
+except ImportError:
+    cp = None
 import numpy as np
 import math
 import time
@@ -80,8 +83,8 @@ class skySubtractProcess(fatboyProcess):
 
         wimage = self._fdb._tempdir+'/TEMPsxt_weight_image_'+fdu._id+'.fits'
         if (not os.access(wimage, os.F_OK)):
-            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("int32")
-            write_fits_file(wimage, goodPixelMask, uint8, overwrite=True, log=self._log)
+            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("np.int32")
+            write_fits_file(wimage, goodPixelMask, np.uint8, overwrite=True, log=self._log)
 
         t = time.time()
         sxtfile = self._fdb._tempdir+"/TEMPsxt_"+fdu.getFullId()
@@ -318,7 +321,7 @@ class skySubtractProcess(fatboyProcess):
         masterSky = fatboyCalib(self._pname, "master_sky", skies[0], data=data, tagname=msname, headerExt=header, log=self._log)
 
         if (self.getOption('interp_zeros_sky', fdu.getTag()).lower() == 'yes'):
-            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("int32")
+            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("np.int32")
             if (self._fdb.getGPUMode()):
                 masterSky.updateData(linterp_gpu(masterSky.getData(), 0, goodPixelMask, log=self._log))
             else:
@@ -367,7 +370,7 @@ class skySubtractProcess(fatboyProcess):
         masterSky = fatboyCalib(self._pname, "master_sky", skies[0], data=data, tagname=msname, headerExt=header, log=self._log)
 
         if (self.getOption('interp_zeros_sky', fdu.getTag()).lower() == 'yes'):
-            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("int32")
+            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("np.int32")
             if (self._fdb.getGPUMode()):
                 masterSky.updateData(linterp_gpu(masterSky.getData(), 0, goodPixelMask, log=self._log))
             else:
@@ -733,9 +736,9 @@ class skySubtractProcess(fatboyProcess):
         surf = pysurfit_method(data, order=1, niter=2, lower=2.5, upper=2.5, inmask=goodPixelMask, log=self._log, mode=gpu_pysurfit.MODE_RAW)
 
         if (self._fdb.getGPUMode()):
-            fdu.updateData(subtractImages(fdu.getData(), surf, gpm=goodPixelMask.astype("int32")))
+            fdu.updateData(subtractImages(fdu.getData(), surf, gpm=goodPixelMask.astype("np.int32")))
         else:
-            fdu.updateData(fdu.getData() - surf*goodPixelMask.astype("int32"))
+            fdu.updateData(fdu.getData() - surf*goodPixelMask.astype("np.int32"))
         del goodPixelMask
         fdu._header.add_history('Fit sky subtracted surface')
     #end fitSkySubtractedSurf
@@ -929,8 +932,8 @@ class skySubtractProcess(fatboyProcess):
     def skySubtractImage(self, image, sky, scale):
         t = time.time()
         if (self._fdb.getGPUMode()):
-            image_gpu = cp.array(image)
-            sky_gpu = cp.array(sky)
+            image_gpu = cp.np.array(image)
+            sky_gpu = cp.np.array(sky)
             image_gpu -= sky_gpu * scale
             image = cp.asnumpy(image_gpu)
         else:

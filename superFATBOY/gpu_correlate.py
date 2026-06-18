@@ -2,7 +2,10 @@
 import superFATBOY
 import time
 import numpy as np
-import cupy as cp
+try:
+    import cupy as cp
+except ImportError:
+    cp = None
 
 ## Create wrapper functions here for FFTs based on cupy
 ## Using cupy as standard for GPU acceleration
@@ -14,7 +17,7 @@ def gpu_fft2(x, return_gpuarray=True):
         cx = x
     else:
         cx = cp.array(x)
-    #Execute FFT and get data to return in numpy array
+    #Execute FFT and get data to return in numpy np.array
     cfftx = cp.fft.fft2(cx)
     if (return_gpuarray):
         return cfftx
@@ -27,7 +30,7 @@ def gpu_ifft2(fftx, return_gpuarray=True):
         cfftx = fftx
     else:
         cfftx = cp.array(fftx)
-    #Execute FFT and get data to return in numpy array
+    #Execute FFT and get data to return in numpy np.array
     cx = cp.fft.ifft2(cfftx)
     if (return_gpuarray):
         return cx

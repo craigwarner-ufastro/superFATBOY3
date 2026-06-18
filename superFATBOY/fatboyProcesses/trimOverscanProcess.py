@@ -1,8 +1,9 @@
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
-from numpy import *
-import os, time
+import numpy as np
+import os
+import time
 
 class trimOverscanProcess(fatboyProcess):
     _modeTags = ["imaging", "spectroscopy"]
@@ -47,8 +48,8 @@ class trimOverscanProcess(fatboyProcess):
                 flagStat = "set to false" #update flag status for print message
 
         #Not trimmed.  Trim this data to remove overscan regions
-        #Create boolean array of indices to keep
-        keep = ones(data.shape, bool)
+        #Create boolean np.array of indices to keep
+        keep = np.ones(data.shape, dtype=bool)
 
         if (self.getOption('overscan_cols', fdu.getTag()) is not None):
             #Columns of format "54, 320:384, 947, 1024:1080"
@@ -95,14 +96,14 @@ class trimOverscanProcess(fatboyProcess):
         #Then find new shape and reshape
         oldy = data.shape[0]
         oldx = data.shape[1]
-        data = ascontiguousarray(data[keep])
+        data = np.ascontiguousarray(data[keep])
         ysize = keep.sum(0).max()
         xsize = keep.sum(1).max()
         data = data.reshape((ysize, xsize))
 
         print("trimOverscanProcess::trimOverscan> Trimed flag is "+flagStat+" for "+fdu.getFullId()+" - TRIMMING from original shape = ("+str(oldy)+", "+str(oldx)+") to new shape ("+str(ysize)+", "+str(xsize)+").")
         self._log.writeLog(__name__, "Trimed flag is "+flagStat+" for "+fdu.getFullId()+" - TRIMMING from original shape = ("+str(oldy)+", "+str(oldx)+") to new shape ("+str(ysize)+", "+str(xsize)+").")
-        return ascontiguousarray(data)
+        return np.ascontiguousarray(data)
     #end trimOverscan
 
     ## OVERRRIDE set default options here

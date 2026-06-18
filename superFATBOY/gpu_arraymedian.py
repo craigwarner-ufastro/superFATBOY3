@@ -1,25 +1,23 @@
+import numpy as np
+import time
+try:
+    import cupy as cp
+except ImportError:
+    cp = None
+
 hasCuda = True
 try:
     import superFATBOY
     if (not superFATBOY.gpuEnabled()):
         hasCuda = False
-    else:
-        import pycuda.driver as drv
-        import pycuda.tools
-        if (not superFATBOY.threaded()):
-            #If not threaded mode, import autoinit.  Otherwise assume context exists.
-            #Code will crash if in threaded mode and context does not exist.
-            import pycuda.autoinit
-        from pycuda.compiler import SourceModule
 except Exception:
-    print("gpu_arraymedian> WARNING: PyCUDA not installed!")
+    print("gpu_arraymedian> WARNING: GPU support not available!")
     hasCuda = False
     superFATBOY.setGPUEnabled(False)
-import numpy
-import numpy.linalg as la
 
-import math, time
-from numpy import *
+blocks = 2048 * 4
+block_size = 512
+
 from superFATBOY import fatboyclib
 defaultKernel = fatboyclib.median
 try:
@@ -33,14 +31,14 @@ try:
 except Exception:
     print("gpu_arraymedian> WARNING: fatboycudalib not installed!")
 
-blocks = 2048*4
-block_size = 512
-
 def get_mod():
     mod = None
     if (hasCuda and superFATBOY.gpuEnabled()):
         try:
-            mod = SourceModule("""
+            mod = cp.RawModule(code="""
+#define INT_MIN -2147483648
+#define INT_MAX 2147483647
+extern "C" {
 
         __device__ void bubblesort_float(float* arr, int n) {
           float temp;
@@ -4822,7 +4820,7 @@ def get_mod():
             }
             output[i] = sum/divisor;
           }
-
+}
          """)
 
         except Exception as ex:
@@ -4841,7 +4839,9 @@ ALGORITHM_BUBBLESORT = 2
 
 def gputranspose(data):
     if (data.size < 2048):
-        return ascontiguousarray(data.transpose())
+        return np.ascontiguousarray(data.transpose())
+    is_cpu = isinstance(data, np.ndarray)
+    data_gpu = cp.asarray(data)
     rows = data.shape[0]
     cols = data.shape[1]
     blocks = data.size//block_size
@@ -4856,32 +4856,37 @@ def gputranspose(data):
         global mod
     else:
         mod = get_mod()
-    if (data.dtype == float32):
+    if (data.dtype == np.float32):
         transpose = mod.get_function("transpose_float")
-    elif (data.dtype == int32):
+    elif (data.dtype == np.int32):
         transpose = mod.get_function("transpose_int")
-    elif (data.dtype == int64):
+    elif (data.dtype == np.int64):
         transpose = mod.get_function("transpose_long")
-    elif (data.dtype == float64):
+    elif (data.dtype == np.float64):
         transpose = mod.get_function("transpose_double")
     else:
         print("Invalid datatype: ", data.dtype)
         return None
-    output = empty((cols, rows), outtype)
-    transpose(drv.In(data), drv.Out(output), int32(rows), int32(cols), grid=(blocks,blocky), block=(block_size,1,1))
-    return output
+    output_gpu = cp.empty((cols, rows), outtype)
+    transpose((blocks,blocky), (block_size,1,1), (data_gpu, output_gpu, np.int32(rows), np.int32(cols)))
+    if is_cpu:
+        return output_gpu.get()
+    else:
+        return output_gpu
 
 def gputranspose3d(data, axis1, axis2):
     if (len(data.shape) != 3):
-        print("Invalid shape!  Must be 3-d array!")
+        print("Invalid shape!  Must be 3-d np.array!")
         return None
     if (data.size < 2048):
         if (axis1 == 0 and axis2 == 1):
-            return ascontiguousarray(swapaxes(data, 0, 1))
+            return np.ascontiguousarray(np.swapaxes(data, 0, 1))
         elif (axis1 == 0 and axis2 == 2):
-            return ascontiguousarray(swapaxes(data, 0, 2))
+            return np.ascontiguousarray(np.swapaxes(data, 0, 2))
         elif (axis1 == 1 and axis2 == 2):
-            return ascontiguousarray(swapaxes(data, 1, 2))
+            return np.ascontiguousarray(np.swapaxes(data, 1, 2))
+    is_cpu = isinstance(data, np.ndarray)
+    data_gpu = cp.asarray(data)
     rows = data.shape[0]
     cols = data.shape[1]
     depth = data.shape[2]
@@ -4897,34 +4902,37 @@ def gputranspose3d(data, axis1, axis2):
         global mod
     else:
         mod = get_mod()
-    if (data.dtype == float32):
+    if (data.dtype == np.float32):
         transpose = mod.get_function("transpose3d_float")
-    elif (data.dtype == int32):
+    elif (data.dtype == np.int32):
         transpose = mod.get_function("transpose3d_int")
-    elif (data.dtype == int64):
+    elif (data.dtype == np.int64):
         transpose = mod.get_function("transpose3d_long")
-    elif (data.dtype == float64):
+    elif (data.dtype == np.float64):
         transpose = mod.get_function("transpose3d_double")
     else:
         print("Invalid datatype: ", data.dtype)
         return None
     if (axis1 == 0 and axis2 == 1):
-        output = empty((cols, rows, depth), outtype)
-        transpose(drv.In(data), drv.Out(output), int32(rows), int32(cols), int32(depth), int32(0), grid=(blocks,blocky), block=(block_size,1,1))
+        output_gpu = cp.empty((cols, rows, depth), outtype)
+        transpose((blocks,blocky), (block_size,1,1), (data_gpu, output_gpu, np.int32(rows), np.int32(cols), np.int32(depth), np.int32(0)))
     elif (axis1 == 0 and axis2 == 2):
-        output = empty((depth, cols, rows), outtype)
-        transpose(drv.In(data), drv.Out(output), int32(rows), int32(cols), int32(depth), int32(1), grid=(blocks,blocky), block=(block_size,1,1))
+        output_gpu = cp.empty((depth, cols, rows), outtype)
+        transpose((blocks,blocky), (block_size,1,1), (data_gpu, output_gpu, np.int32(rows), np.int32(cols), np.int32(depth), np.int32(1)))
     elif (axis1 == 1 and axis2 == 2):
-        output = empty((rows, depth, cols), outtype)
-        transpose(drv.In(data), drv.Out(output), int32(rows), int32(cols), int32(depth), int32(2), grid=(blocks,blocky), block=(block_size,1,1))
+        output_gpu = cp.empty((rows, depth, cols), outtype)
+        transpose((blocks,blocky), (block_size,1,1), (data_gpu, output_gpu, np.int32(rows), np.int32(cols), np.int32(depth), np.int32(2)))
     else:
         print("Invalid axes!")
         return None
-    return output
+    if is_cpu:
+        return output_gpu.get()
+    else:
+        return output_gpu
 
 def gpumedianfilter(data, algorithm=ALGORITHM_BUBBLESORT, boxsize=51, nonzero=False, minpts=0, nhigh=0, nlow=0):
     if (len(data.shape) != 1):
-        print("Invalid shape!  Must be 1-d array!")
+        print("Invalid shape!  Must be 1-d np.array!")
         return None
     if (boxsize > 51):
         print("Using maximum boxsize of 51!")
@@ -4932,6 +4940,8 @@ def gpumedianfilter(data, algorithm=ALGORITHM_BUBBLESORT, boxsize=51, nonzero=Fa
     elif (boxsize % 2 == 0):
         boxsize += 1
         print("Boxsize must be odd!  Using "+str(boxsize))
+    is_cpu = isinstance(data, np.ndarray)
+    data_gpu = cp.asarray(data)
     n = data.size
     block_size = 512
     if (n < 2048):
@@ -4944,25 +4954,28 @@ def gpumedianfilter(data, algorithm=ALGORITHM_BUBBLESORT, boxsize=51, nonzero=Fa
         global mod
     else:
         mod = get_mod()
-    if (data.dtype == float32):
+    if (data.dtype == np.float32):
         medianfilter = mod.get_function("medianfilter_float")
-    elif (data.dtype == int32):
+    elif (data.dtype == np.int32):
         medianfilter = mod.get_function("medianfilter_int")
-    elif (data.dtype == int64):
+    elif (data.dtype == np.int64):
         medianfilter = mod.get_function("medianfilter_long")
-    elif (data.dtype == float64):
+    elif (data.dtype == np.float64):
         medianfilter = mod.get_function("medianfilter_double")
     else:
         print("Invalid datatype: ", data.dtype)
         return None
-    output = empty(n, outtype)
-    medianfilter(drv.In(data), drv.Out(output), int32(n), int32(algorithm), int32(boxsize), int32(nonzero), int32(minpts), int32(nhigh), int32(nlow), grid=(blocks,1), block=(block_size,1,1))
-    return output
+    output_gpu = cp.empty(n, outtype)
+    medianfilter((blocks,1), (block_size,1,1), (data_gpu, output_gpu, np.int32(n), np.int32(algorithm), np.int32(boxsize), np.int32(nonzero), np.int32(minpts), np.int32(nhigh), np.int32(nlow)))
+    if is_cpu:
+        return output_gpu.get()
+    else:
+        return output_gpu
 #end gpumedianfilter
 
 def gpumedianfilter2d(data, algorithm=ALGORITHM_BUBBLESORT, boxsize=51, axis="X", nonzero=False, minpts=0, nhigh=0, nlow=0):
     if (len(data.shape) != 2):
-        print("Invalid shape!  Must be 2-d array!")
+        print("Invalid shape!  Must be 2-d np.array!")
         return None
     if (boxsize > 51):
         print("Using maximum boxsize of 51!")
@@ -4973,6 +4986,8 @@ def gpumedianfilter2d(data, algorithm=ALGORITHM_BUBBLESORT, boxsize=51, axis="X"
     direction = 0
     if (axis == "Y"):
         direction = 1
+    is_cpu = isinstance(data, np.ndarray)
+    data_gpu = cp.asarray(data)
     rows = data.shape[0]
     cols = data.shape[1]
     blocks = data.size//block_size
@@ -4983,56 +4998,68 @@ def gpumedianfilter2d(data, algorithm=ALGORITHM_BUBBLESORT, boxsize=51, axis="X"
         global mod
     else:
         mod = get_mod()
-    if (data.dtype == float32):
+    if (data.dtype == np.float32):
         medianfilter2d = mod.get_function("medianfilter2d_float")
-    elif (data.dtype == int32):
+    elif (data.dtype == np.int32):
         medianfilter2d = mod.get_function("medianfilter2d_int")
-    elif (data.dtype == int64):
+    elif (data.dtype == np.int64):
         medianfilter2d = mod.get_function("medianfilter2d_long")
-    elif (data.dtype == float64):
+    elif (data.dtype == np.float64):
         medianfilter2d = mod.get_function("medianfilter2d_double")
     else:
         print("Invalid datatype: ", data.dtype)
         return None
-    output = empty((rows,cols), outtype)
-    medianfilter2d(drv.In(data), drv.Out(output), int32(rows), int32(cols), int32(algorithm), int32(boxsize), int32(direction), int32(nonzero), int32(minpts), int32(nhigh), int32(nlow), grid=(blocks,1), block=(block_size,1,1))
-    return output
+    output_gpu = cp.empty((rows,cols), outtype)
+    medianfilter2d((blocks,1), (block_size,1,1), (data_gpu, output_gpu, np.int32(rows), np.int32(cols), np.int32(algorithm), np.int32(boxsize), np.int32(direction), np.int32(nonzero), np.int32(minpts), np.int32(nhigh), np.int32(nlow)))
+    if is_cpu:
+        return output_gpu.get()
+    else:
+        return output_gpu
 #end gpumedianfilter2d
 
 def gpumedianS(data, slitmask, nslits, nonzero=False, even=False, kernel=None, trans=False):
     if (kernel is None):
         kernel = fatboycudalib.gpumedianS
-    #Return array containing median values of each slitlet
-    medians = zeros(nslits, dtype=float32)
+    #Return np.array containing median values of each slitlet
+    medians = np.zeros(nslits, dtype=np.float32)
+    
+    # Ensure inputs are numpy arrays for the C extension
+    if hasattr(data, 'get'):
+        data = data.get()
+    if hasattr(slitmask, 'get'):
+        slitmask = slitmask.get()
+
     if (trans):
         #Transpose data first
-        kernel(gputranspose(float32(data)), slitmask=gputranspose(int32(slitmask)), medians=medians, nslits=nslits, nonzero=nonzero, even=even)
+        kernel(gputranspose(data.astype(np.float32)), slitmask=gputranspose(slitmask.astype(np.int32)), medians=medians, nslits=nslits, nonzero=nonzero, even=even)
     else:
-        kernel(float32(data), slitmask=int32(slitmask), medians=medians, nslits=nslits, nonzero=nonzero, even=even)
+        kernel(data.astype(np.float32), slitmask=slitmask.astype(np.int32), medians=medians, nslits=nslits, nonzero=nonzero, even=even)
     return medians
 #end gpumedianS
 
 def gpumedian3d(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nlow=0, nhigh=0, nonzero=False, even=False, axis="Z"):
     if (len(input.shape) != 3):
-        print("Invalid shape!  Must be 3-d array!")
+        print("Invalid shape!  Must be 3-d np.array!")
         return None
+    is_cpu = isinstance(input, np.ndarray)
+    input_gpu = cp.asarray(input)
     rows = input.shape[0]
     cols = input.shape[1]
     depth = input.shape[2]
-    outtype = float32
+    outtype = np.float32
     if (not superFATBOY.threaded()):
         global mod
     else:
         mod = get_mod()
-    if (input.dtype == float32):
+    if (input.dtype == np.float32):
         median2d = mod.get_function("median2d_float")
-    elif (input.dtype == int32):
+    elif (input.dtype == np.int32):
         median2d = mod.get_function("median2d_int")
-    elif (input.dtype == int64):
+    elif (input.dtype == np.int64):
         median2d = mod.get_function("median2d_long")
-    elif (input.dtype == float64):
+    elif (input.dtype == np.float64):
         median2d = mod.get_function("median2d_double")
-        outtype = float64
+        outtype = np.float64
     else:
         print("Invalid datatype: ", input.dtype)
         return None
@@ -5044,31 +5071,39 @@ def gpumedian3d(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nlow=0, nhigh=0, 
     blocks = rows*cols//block_size
     if (rows*cols % block_size != 0):
         blocks += 1
-    medVals = empty((rows,cols), outtype)
-    median2d(drv.In(input), drv.Out(medVals), int32(rows*cols), int32(depth), float32(lthreshold), float32(hthreshold), int32(nlow), int32(nhigh), int32(nonzero), int32(even), grid=(blocks,1), block=(block_size,1,1))
-    return medVals
+    medVals_gpu = cp.empty((rows,cols), outtype)
+    median2d((blocks,1), (block_size,1,1), (input_gpu, medVals_gpu, rows*np.int32(cols), np.int32(depth), np.float32(lthreshold), np.float32(hthreshold), np.int32(nlow), np.int32(nhigh), np.int32(nonzero), np.int32(even)))
+    if is_cpu:
+        return medVals_gpu.get()
+    else:
+        return medVals_gpu
 
 def gpumedian3d_w(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nlow=0, nhigh=0, nonzero=False, even=False, w=None, wmap=None):
     if (len(input.shape) != 3):
-        print("Invalid shape!  Must be 3-d array!")
+        print("Invalid shape!  Must be 3-d np.array!")
         return None
+    is_cpu = isinstance(input, np.ndarray)
+    input_gpu = cp.asarray(input)
+    w_gpu = cp.asarray(w) if w is not None else None
+    wmap_gpu = cp.asarray(wmap) if wmap is not None else cp.zeros((input.shape[0], input.shape[1]), np.float32)
+    
     rows = input.shape[0]
     cols = input.shape[1]
     depth = input.shape[2]
-    outtype = float32
+    outtype = np.float32
     if (not superFATBOY.threaded()):
         global mod
     else:
         mod = get_mod()
-    if (input.dtype == float32):
+    if (input.dtype == np.float32):
         median2d_w = mod.get_function("median2d_float_w")
-    elif (input.dtype == int32):
+    elif (input.dtype == np.int32):
         median2d_w = mod.get_function("median2d_int_w")
-    elif (input.dtype == int64):
+    elif (input.dtype == np.int64):
         median2d_w = mod.get_function("median2d_long_w")
-    elif (input.dtype == float64):
+    elif (input.dtype == np.float64):
         median2d_w = mod.get_function("median2d_double_w")
-        outtype = float64
+        outtype = np.float64
     else:
         print("Invalid datatype: ", input.dtype)
         return None
@@ -5078,13 +5113,17 @@ def gpumedian3d_w(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nlow=0, nhigh=0
     blocks = rows*cols//block_size
     if (rows*cols % block_size != 0):
         blocks += 1
-    medVals = empty((rows,cols), outtype)
-    median2d_w(drv.In(input), drv.Out(medVals), drv.In(w), drv.Out(wmap), int32(rows*cols), int32(depth), float32(lthreshold), float32(hthreshold), int32(nlow), int32(nhigh), int32(nonzero), int32(even), grid=(blocks,1), block=(block_size,1,1))
-    return medVals
+    medVals_gpu = cp.empty((rows,cols), outtype)
+    median2d_w((blocks,1), (block_size,1,1), (input_gpu, medVals_gpu, w_gpu, wmap_gpu, rows*np.int32(cols), np.int32(depth), np.float32(lthreshold), np.float32(hthreshold), np.int32(nlow), np.int32(nhigh), np.int32(nonzero), np.int32(even)))
+    if is_cpu:
+        if wmap is not None: wmap[:] = wmap_gpu.get()
+        return medVals_gpu.get()
+    else:
+        return medVals_gpu
 
 def gpumedian3d_sigclip(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nonzero=False, even=False, w=None, wmap=None, niter=5, lsigma=3, hsigma=3, mclip=0):
     if (len(input.shape) != 3):
-        print("Invalid shape!  Must be 3-d array!")
+        print("Invalid shape!  Must be 3-d np.array!")
         return None
     if (isinstance(mclip, str)):
         if (mclip == 'median' or mclip == 'med'):
@@ -5094,11 +5133,16 @@ def gpumedian3d_sigclip(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nonzero=F
     if (mclip != 0 and mclip != 1):
         print("Invalid mclip: "+str(mclip)+".  Using mean (mclip = 0).")
         mclip = 0
+    is_cpu = isinstance(input, np.ndarray)
+    input_gpu = cp.asarray(input)
+    w_gpu = cp.asarray(w) if w is not None else None
+    wmap_gpu = cp.asarray(wmap) if wmap is not None else cp.zeros((input.shape[0], input.shape[1]), np.float32)
+
     rows = input.shape[0]
     cols = input.shape[1]
     depth = input.shape[2]
-    outtype = float32
-    medVals = empty((rows,cols), outtype)
+    outtype = np.float32
+    medVals_gpu = cp.empty((rows,cols), outtype)
     block_size = 512
     if (rows*cols <= 2048):
         block_size = 32
@@ -5110,56 +5154,65 @@ def gpumedian3d_sigclip(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nonzero=F
     else:
         mod = get_mod()
     if (w is None and wmap is None):
-        if (input.dtype == float32):
+        if (input.dtype == np.float32):
             median2d_sig = mod.get_function("median2d_float_sigclip")
-        elif (input.dtype == int32):
+        elif (input.dtype == np.int32):
             median2d_sig = mod.get_function("median2d_int_sigclip")
-        elif (input.dtype == int64):
+        elif (input.dtype == np.int64):
             median2d_sig = mod.get_function("median2d_long_sigclip")
-        elif (input.dtype == float64):
+        elif (input.dtype == np.float64):
             median2d_sig = mod.get_function("median2d_double_sigclip")
-            outtype = float64
+            outtype = np.float64
+            medVals_gpu = cp.empty((rows,cols), outtype)
         else:
             print("Invalid datatype: ", input.dtype)
             return None
-        median2d_sig(drv.In(input), drv.Out(medVals), int32(rows*cols), int32(depth), float32(lthreshold), float32(hthreshold), int32(nonzero), int32(even), int32(niter), float32(lsigma), float32(hsigma), int32(mclip), grid=(blocks,1), block=(block_size,1,1))
+        median2d_sig((blocks,1), (block_size,1,1), (input_gpu, medVals_gpu, rows*np.int32(cols), np.int32(depth), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), np.int32(even), np.int32(niter), np.float32(lsigma), np.float32(hsigma), np.int32(mclip)))
     else:
-        if (input.dtype == float32):
+        if (input.dtype == np.float32):
             median2d_sig = mod.get_function("median2d_float_sigclip_w")
-        elif (input.dtype == int32):
+        elif (input.dtype == np.int32):
             median2d_sig = mod.get_function("median2d_int_sigclip_w")
-        elif (input.dtype == int64):
+        elif (input.dtype == np.int64):
             median2d_sig = mod.get_function("median2d_long_sigclip_w")
-        elif (input.dtype == float64):
+        elif (input.dtype == np.float64):
             median2d_sig = mod.get_function("median2d_double_sigclip_w")
-            outtype = float64
+            outtype = np.float64
+            medVals_gpu = cp.empty((rows,cols), outtype)
         else:
             print("Invalid datatype: ", input.dtype)
             return None
         if (len(w.shape) != 3):
-            w2 = empty(input.shape, input.dtype)
-            w2[:,:] = w
-            w = w2
-        median2d_sig(drv.In(input), drv.Out(medVals), drv.In(w), drv.Out(wmap), int32(rows*cols), int32(depth), float32(lthreshold), float32(hthreshold), int32(nonzero), int32(even), int32(niter), float32(lsigma), float32(hsigma), int32(mclip), grid=(blocks,1), block=(block_size,1,1))
-    return medVals
+            w2_gpu = cp.empty(input.shape, input.dtype)
+            w2_gpu[:,:] = w_gpu
+            w_gpu = w2_gpu
+        median2d_sig((blocks,1), (block_size,1,1), (input_gpu, medVals_gpu, w_gpu, wmap_gpu, rows*np.int32(cols), np.int32(depth), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), np.int32(even), np.int32(niter), np.float32(lsigma), np.float32(hsigma), np.int32(mclip)))
+    
+    if is_cpu:
+        if wmap is not None: wmap[:] = wmap_gpu.get()
+        return medVals_gpu.get()
+    else:
+        return medVals_gpu
 
 def gpumedian2d(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nlow=0, nhigh=0, nonzero=False, even=False):
+    is_cpu = isinstance(input, np.ndarray)
+    input_gpu = cp.asarray(input)
     rows = input.shape[0]
     cols = input.shape[1]
-    outtype = float32
+    outtype = np.float32
     if (not superFATBOY.threaded()):
         global mod
     else:
         mod = get_mod()
-    if (input.dtype == float32):
+    if (input.dtype == np.float32):
         median2d = mod.get_function("median2d_float")
-    elif (input.dtype == int32):
+    elif (input.dtype == np.int32):
         median2d = mod.get_function("median2d_int")
-    elif (input.dtype == int64):
+    elif (input.dtype == np.int64):
         median2d = mod.get_function("median2d_long")
-    elif (input.dtype == float64):
+    elif (input.dtype == np.float64):
         median2d = mod.get_function("median2d_double")
-        outtype = float64
+        outtype = np.float64
     else:
         print("Invalid datatype: ", input.dtype)
         return None
@@ -5169,27 +5222,35 @@ def gpumedian2d(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nlow=0, nhigh=0, 
     blocks = rows//block_size
     if (rows % block_size != 0):
         blocks += 1
-    medVals = empty(rows, outtype)
-    median2d(drv.In(input), drv.Out(medVals), int32(rows), int32(cols), float32(lthreshold), float32(hthreshold), int32(nlow), int32(nhigh), int32(nonzero), int32(even), grid=(blocks,1), block=(block_size,1,1))
-    return medVals
+    medVals_gpu = cp.empty(rows, outtype)
+    median2d((blocks,1), (block_size,1,1), (input_gpu, medVals_gpu, np.int32(rows), np.int32(cols), np.float32(lthreshold), np.float32(hthreshold), np.int32(nlow), np.int32(nhigh), np.int32(nonzero), np.int32(even)))
+    if is_cpu:
+        return medVals_gpu.get()
+    else:
+        return medVals_gpu
 
 def gpumedian2d_w(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nlow=0, nhigh=0, nonzero=False, even=False, w=None, wmap=None):
+    is_cpu = isinstance(input, np.ndarray)
+    input_gpu = cp.asarray(input)
+    w_gpu = cp.asarray(w) if w is not None else None
+    wmap_gpu = cp.asarray(wmap) if wmap is not None else cp.zeros(input.shape[0], np.float32)
+
     rows = input.shape[0]
     cols = input.shape[1]
-    outtype = float32
+    outtype = np.float32
     if (not superFATBOY.threaded()):
         global mod
     else:
         mod = get_mod()
-    if (input.dtype == float32):
+    if (input.dtype == np.float32):
         median2d_w = mod.get_function("median2d_float_w")
-    elif (input.dtype == int32):
+    elif (input.dtype == np.int32):
         median2d_w = mod.get_function("median2d_int_w")
-    elif (input.dtype == int64):
+    elif (input.dtype == np.int64):
         median2d_w = mod.get_function("median2d_long_w")
-    elif (input.dtype == float64):
+    elif (input.dtype == np.float64):
         median2d_w = mod.get_function("median2d_double_w")
-        outtype = float64
+        outtype = np.float64
     else:
         print("Invalid datatype: ", input.dtype)
         return None
@@ -5199,13 +5260,17 @@ def gpumedian2d_w(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nlow=0, nhigh=0
     blocks = rows//block_size
     if (rows % block_size != 0):
         blocks += 1
-    medVals = empty(rows, outtype)
-    median2d_w(drv.In(input), drv.Out(medVals), drv.In(w), drv.Out(wmap), int32(rows), int32(cols), float32(lthreshold), float32(hthreshold), int32(nlow), int32(nhigh), int32(nonzero), int32(even), grid=(blocks,1), block=(block_size,1,1))
-    return medVals
+    medVals_gpu = cp.empty(rows, outtype)
+    median2d_w((blocks,1), (block_size,1,1), (input_gpu, medVals_gpu, w_gpu, wmap_gpu, np.int32(rows), np.int32(cols), np.float32(lthreshold), np.float32(hthreshold), np.int32(nlow), np.int32(nhigh), np.int32(nonzero), np.int32(even)))
+    if is_cpu:
+        if wmap is not None: wmap[:] = wmap_gpu.get()
+        return medVals_gpu.get()
+    else:
+        return medVals_gpu
 
 def gpumedian2d_sigclip(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nonzero=False, even=False, w=None, wmap=None, niter=5, lsigma=3, hsigma=3, mclip=0):
     if (len(input.shape) != 2):
-        print("Invalid shape!  Must be 2-d array!")
+        print("Invalid shape!  Must be 2-d np.array!")
         return None
     if (isinstance(mclip, str)):
         if (mclip == 'median' or mclip == 'med'):
@@ -5215,10 +5280,15 @@ def gpumedian2d_sigclip(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nonzero=F
     if (mclip != 0 and mclip != 1):
         print("Invalid mclip: "+str(mclip)+".  Using mean (mclip = 0).")
         mclip = 0
+    is_cpu = isinstance(input, np.ndarray)
+    input_gpu = cp.asarray(input)
+    w_gpu = cp.asarray(w) if w is not None else None
+    wmap_gpu = cp.asarray(wmap) if wmap is not None else cp.zeros(input.shape[0], np.float32)
+
     rows = input.shape[0]
     cols = input.shape[1]
-    outtype = float32
-    medVals = empty(rows, outtype)
+    outtype = np.float32
+    medVals_gpu = cp.empty(rows, outtype)
     block_size = 512
     if (rows <= 2048):
         block_size = 32
@@ -5230,46 +5300,53 @@ def gpumedian2d_sigclip(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nonzero=F
     else:
         mod = get_mod()
     if (w is None and wmap is None):
-        if (input.dtype == float32):
+        if (input.dtype == np.float32):
             median2d_sig = mod.get_function("median2d_float_sigclip")
-        elif (input.dtype == int32):
+        elif (input.dtype == np.int32):
             median2d_sig = mod.get_function("median2d_int_sigclip")
-        elif (input.dtype == int64):
+        elif (input.dtype == np.int64):
             median2d_sig = mod.get_function("median2d_long_sigclip")
-        elif (input.dtype == float64):
+        elif (input.dtype == np.float64):
             median2d_sig = mod.get_function("median2d_double_sigclip")
-            outtype = float64
+            outtype = np.float64
+            medVals_gpu = cp.empty(rows, outtype)
         else:
             print("Invalid datatype: ", input.dtype)
             return None
-        median2d_sig(drv.In(input), drv.Out(medVals), int32(rows), int32(cols), float32(lthreshold), float32(hthreshold), int32(nonzero), int32(even), int32(niter), float32(lsigma), float32(hsigma), int32(mclip), grid=(blocks,1), block=(block_size,1,1))
+        median2d_sig((blocks,1), (block_size,1,1), (input_gpu, medVals_gpu, np.int32(rows), np.int32(cols), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), np.int32(even), np.int32(niter), np.float32(lsigma), np.float32(hsigma), np.int32(mclip)))
     else:
-        if (input.dtype == float32):
+        if (input.dtype == np.float32):
             median2d_sig = mod.get_function("median2d_float_sigclip_w")
-        elif (input.dtype == int32):
+        elif (input.dtype == np.int32):
             median2d_sig = mod.get_function("median2d_int_sigclip_w")
-        elif (input.dtype == int64):
+        elif (input.dtype == np.int64):
             median2d_sig = mod.get_function("median2d_long_sigclip_w")
-        elif (input.dtype == float64):
+        elif (input.dtype == np.float64):
             median2d_sig = mod.get_function("median2d_double_sigclip_w")
-            outtype = float64
+            outtype = np.float64
+            medVals_gpu = cp.empty(rows, outtype)
         else:
             print("Invalid datatype: ", input.dtype)
             return None
         if (len(w.shape) != 2):
-            w2 = empty(input.shape, input.dtype)
-            w2[:] = w
-            w = w2
-        median2d_sig(drv.In(input), drv.Out(medVals), drv.In(w), drv.Out(wmap), int32(rows), int32(cols), float32(lthreshold), float32(hthreshold), int32(nonzero), int32(even), int32(niter), float32(lsigma), float32(hsigma), int32(mclip), grid=(blocks,1), block=(block_size,1,1))
-    return medVals
+            w2_gpu = cp.empty(input.shape, input.dtype)
+            w2_gpu[:] = w_gpu
+            w_gpu = w2_gpu
+        median2d_sig((blocks,1), (block_size,1,1), (input_gpu, medVals_gpu, w_gpu, wmap_gpu, np.int32(rows), np.int32(cols), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), np.int32(even), np.int32(niter), np.float32(lsigma), np.float32(hsigma), np.int32(mclip)))
+    
+    if is_cpu:
+        if wmap is not None: wmap[:] = wmap_gpu.get()
+        return medVals_gpu.get()
+    else:
+        return medVals_gpu
 
 def gpu_arraymedian(input, axis="both", lthreshold=None, hthreshold=None, nlow=0, nhigh=0, nonzero=False, even=False, kernel=None, kernel2d=gpumedian2d, kernel3d=gpumedian3d, w=None, wmap=None, sigclip=False, niter=5, lsigma=3, hsigma=3, mclip=0):
     if (not input.dtype.isnative):
         #Byteswap
         print("Byteswapping data!")
-        input = float32(input)
-    if (input.dtype != float32 and input.dtype != int32 and input.dtype != float64 and input.dtype != int64):
-        input = input.astype(float32) #Cast for example uint16 as float32
+        input = input.astype(np.float32)
+    if (input.dtype != np.float32 and input.dtype != np.int32 and input.dtype != np.float64 and input.dtype != np.int64):
+        input = input.astype(np.float32) #Cast for example uint16 as np.float32
     t = time.time()
     n = input.size
     if (n < 2**16 or not hasCuda):
@@ -5282,7 +5359,7 @@ def gpu_arraymedian(input, axis="both", lthreshold=None, hthreshold=None, nlow=0
         return 0
     if (axis == "both" or dims == 1):
         if (kernel is None):
-            #Check after above test for array size so that it doesn't crash on CPU-only machines
+            #Check after above test for np.array size so that it doesn't crash on CPU-only machines
             #Where no kernel is listed for taking median of smaller arrays
             kernel = defaultKernel #Use defaultKernel, which depends on imports
         input = input.copy()
@@ -5307,7 +5384,7 @@ def gpu_arraymedian(input, axis="both", lthreshold=None, hthreshold=None, nlow=0
             if (kernel2d == fatboyclib.median2d):
                 if (dims == 2):
                     if (axis == "Y"):
-                        medVals = kernel2d(ascontiguousarray(input.transpose()), lthreshold=lthreshold, hthreshold=hthreshold, nonzero=nonzero, even=even, sigclip=True, niter=niter, lsigma=lsigma, hsigma=hsigma, mclip=mclip)
+                        medVals = kernel2d(np.ascontiguousarray(input.transpose()), lthreshold=lthreshold, hthreshold=hthreshold, nonzero=nonzero, even=even, sigclip=True, niter=niter, lsigma=lsigma, hsigma=hsigma, mclip=mclip)
                     elif (axis == "X"):
                         medVals = kernel2d(input, lthreshold=lthreshold, hthreshold=hthreshold, nonzero=nonzero, even=even, sigclip=True, niter=niter, lsigma=lsigma, hsigma=hsigma, mclip=mclip)
             else:
@@ -5346,7 +5423,7 @@ def gpu_arraymedian(input, axis="both", lthreshold=None, hthreshold=None, nlow=0
             #Regular median
             if (dims == 2):
                 if (kernel2d == fatboyclib.median2d and axis == "Y"):
-                    medVals = kernel2d(ascontiguousarray(input.transpose()), lthreshold=lthreshold, hthreshold=hthreshold, nlow=nlow, nhigh=nhigh, nonzero=nonzero, even=even)
+                    medVals = kernel2d(np.ascontiguousarray(input.transpose()), lthreshold=lthreshold, hthreshold=hthreshold, nlow=nlow, nhigh=nhigh, nonzero=nonzero, even=even)
                 elif (axis == "Y"):
                     medVals = kernel2d(gputranspose(input), lthreshold=lthreshold, hthreshold=hthreshold, nlow=nlow, nhigh=nhigh, nonzero=nonzero, even=even)
                 elif (axis == "X"):
@@ -5366,95 +5443,108 @@ def gpu_arraymedian(input, axis="both", lthreshold=None, hthreshold=None, nlow=0
 
 def gpumean3d(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nlow=0, nhigh=0, nonzero=False, weights=None):
     if (len(input.shape) != 3):
-        print("Invalid shape!  Must be 3-d array!")
+        print("Invalid shape!  Must be 3-d np.array!")
         return None
-    rows = input.shape[0]
-    cols = input.shape[1]
-    depth = input.shape[2]
+    is_cpu = isinstance(input, np.ndarray)
+    input_gpu = cp.asarray(input)
+    rows = input_gpu.shape[0]
+    cols = input_gpu.shape[1]
+    depth = input_gpu.shape[2]
     block_size = 512
-    blocks = input.size//block_size
-    if (input.size % block_size != 0):
+    blocks = input_gpu.size//block_size
+    if (input_gpu.size % block_size != 0):
         blocks += 1
-    outtype = float32
-    meanVals = empty((rows,cols), outtype)
+    outtype = np.float32
+    if (input_gpu.dtype == np.float64):
+        outtype = np.float64
+    meanVals_gpu = cp.empty((rows,cols), outtype)
     if (not superFATBOY.threaded()):
         global mod
     else:
         mod = get_mod()
     if (weights is None):
-        if (input.dtype == float32):
+        if (input_gpu.dtype == np.float32):
             mean2d = mod.get_function("mean2d_float")
-        elif (input.dtype == int32):
+        elif (input_gpu.dtype == np.int32):
             mean2d = mod.get_function("mean2d_int")
-        elif (input.dtype == int64):
+        elif (input_gpu.dtype == np.int64):
             mean2d = mod.get_function("mean2d_long")
-        elif (input.dtype == float64):
+        elif (input_gpu.dtype == np.float64):
             mean2d = mod.get_function("mean2d_double")
-            outtype = float64
-            meanVals = empty((rows,cols), outtype)
         else:
-            print("Invalid datatype: ", input.dtype)
+            print("Invalid datatype: ", input_gpu.dtype)
             return None
-        mean2d(drv.In(input), drv.Out(meanVals), int32(rows*cols), int32(depth), float32(lthreshold), float32(hthreshold), int32(nlow), int32(nhigh), int32(nonzero), grid=(blocks,1), block=(block_size,1,1))
+        mean2d((blocks,1), (block_size,1,1), (input_gpu, meanVals_gpu, rows*np.int32(cols), np.int32(depth), np.float32(lthreshold), np.float32(hthreshold), np.int32(nlow), np.int32(nhigh), np.int32(nonzero)))
     else:
         if (nlow > 0 or nhigh > 0):
             print("Weighting not supported for minmax rejection!")
             return None
-        if (input.dtype == float32):
+        weights_gpu = cp.asarray(weights)
+        if (input_gpu.dtype == np.float32):
             mean2d = mod.get_function("wmean2d_float")
-        elif (input.dtype == int32):
+        elif (input_gpu.dtype == np.int32):
             mean2d = mod.get_function("wmean2d_int")
-        elif (input.dtype == int64):
+        elif (input_gpu.dtype == np.int64):
             mean2d = mod.get_function("wmean2d_long")
-        elif (input.dtype == float64):
+        elif (input_gpu.dtype == np.float64):
             mean2d = mod.get_function("wmean2d_double")
-            outtype = float64
-            meanVals = empty((rows,cols), outtype)
         else:
-            print("Invalid datatype: ", input.dtype)
+            print("Invalid datatype: ", input_gpu.dtype)
             return None
-        divisor = weights.sum()
-        mean2d(drv.In(input), drv.Out(meanVals), int32(rows*cols), int32(depth), float32(lthreshold), float32(hthreshold), int32(nonzero), drv.In(weights), outtype(divisor), grid=(blocks,1), block=(block_size,1,1))
-    return meanVals
+        divisor = weights_gpu.sum()
+        mean2d((blocks,1), (block_size,1,1), (input_gpu, meanVals_gpu, rows*np.int32(cols), np.int32(depth), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), weights_gpu, outtype(divisor)))
+    return meanVals_gpu.get() if is_cpu else meanVals_gpu
 
 def gpumean3d_w(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nonzero=False, w=None, wmap=None, weights=None):
     if (len(input.shape) != 3):
-        print("Invalid shape!  Must be 3-d array!")
+        print("Invalid shape!  Must be 3-d np.array!")
         return None
-    rows = input.shape[0]
-    cols = input.shape[1]
-    depth = input.shape[2]
+    is_cpu = isinstance(input, np.ndarray)
+    input_gpu = cp.asarray(input)
+    rows = input_gpu.shape[0]
+    cols = input_gpu.shape[1]
+    depth = input_gpu.shape[2]
     block_size = 512
-    blocks = input.size//block_size
-    if (input.size % block_size != 0):
+    blocks = input_gpu.size//block_size
+    if (input_gpu.size % block_size != 0):
         blocks += 1
-    outtype = float32
+    outtype = np.float32
+    if (input_gpu.dtype == np.float64):
+        outtype = np.float64
     if (not superFATBOY.threaded()):
         global mod
     else:
         mod = get_mod()
-    if (input.dtype == float32):
+    if (input_gpu.dtype == np.float32):
         mean2d_w = mod.get_function("mean2d_float_w")
-    elif (input.dtype == int32):
+    elif (input_gpu.dtype == np.int32):
         mean2d_w = mod.get_function("mean2d_int_w")
-    elif (input.dtype == int64):
+    elif (input_gpu.dtype == np.int64):
         mean2d_w = mod.get_function("mean2d_long_w")
-    elif (input.dtype == float64):
+    elif (input_gpu.dtype == np.float64):
         mean2d_w = mod.get_function("mean2d_double_w")
-        outtype = float64
     else:
-        print("Invalid datatype: ", input.dtype)
+        print("Invalid datatype: ", input_gpu.dtype)
         return None
     if (weights is None):
-        weights = ones(depth, outtype)
-    divisor = weights.sum()
-    meanVals = empty((rows,cols), outtype)
-    mean2d_w(drv.In(input), drv.Out(meanVals), drv.In(w), drv.Out(wmap), int32(rows*cols), int32(depth), float32(lthreshold), float32(hthreshold), int32(nonzero), drv.In(weights), outtype(divisor), grid=(blocks,1), block=(block_size,1,1))
-    return meanVals
+        weights_gpu = cp.ones(depth, outtype)
+    else:
+        weights_gpu = cp.asarray(weights)
+    divisor = weights_gpu.sum()
+    meanVals_gpu = cp.empty((rows,cols), outtype)
+    w_gpu = cp.asarray(w) if w is not None else cp.empty(0, dtype=input_gpu.dtype)
+    wmap_gpu = cp.asarray(wmap) if wmap is not None else cp.empty((rows, cols), outtype)
+    mean2d_w((blocks,1), (block_size,1,1), (input_gpu, meanVals_gpu, w_gpu, wmap_gpu, rows*np.int32(cols), np.int32(depth), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), weights_gpu, outtype(divisor)))
+    if is_cpu:
+        if wmap is not None:
+            wmap[:] = wmap_gpu.get()
+        return meanVals_gpu.get()
+    else:
+        return meanVals_gpu
 
 def gpumean3d_sigclip(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nonzero=False, w=None, wmap=None, niter=5, lsigma=3, hsigma=3, mclip=0, weights=None):
     if (len(input.shape) != 3):
-        print("Invalid shape!  Must be 3-d array!")
+        print("Invalid shape!  Must be 3-d np.array!")
         return None
     if (isinstance(mclip, str)):
         if (mclip == 'mean' or mclip == 'med'):
@@ -5464,172 +5554,189 @@ def gpumean3d_sigclip(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nonzero=Fal
     if (mclip != 0 and mclip != 1):
         print("Invalid mclip: "+str(mclip)+".  Using mean (mclip = 0).")
         mclip = 0
-    rows = input.shape[0]
-    cols = input.shape[1]
-    depth = input.shape[2]
+    is_cpu = isinstance(input, np.ndarray)
+    input_gpu = cp.array(input) # ALWAYS COPY because it's modified in place!
+    rows = input_gpu.shape[0]
+    cols = input_gpu.shape[1]
+    depth = input_gpu.shape[2]
     block_size = 512
-    blocks = input.size//block_size
-    if (input.size % block_size != 0):
+    blocks = input_gpu.size//block_size
+    if (input_gpu.size % block_size != 0):
         blocks += 1
-    outtype = float32
-    meanVals = empty((rows,cols), outtype)
+    outtype = np.float32
+    if (input_gpu.dtype == np.float64):
+        outtype = np.float64
+    meanVals_gpu = cp.empty((rows,cols), outtype)
     if (not superFATBOY.threaded()):
         global mod
     else:
         mod = get_mod()
-    if (weights is None and w is None and wmap is None):
-        if (input.dtype == float32):
+    weights_gpu = cp.asarray(weights) if weights is not None else None
+    w_gpu = cp.array(w) if w is not None else None
+    wmap_gpu = cp.asarray(wmap) if wmap is not None else cp.empty((rows, cols), outtype)
+    if (weights_gpu is None and w_gpu is None and wmap is None):
+        if (input_gpu.dtype == np.float32):
             mean2d_sig = mod.get_function("mean2d_float_sigclip")
-        elif (input.dtype == int32):
+        elif (input_gpu.dtype == np.int32):
             mean2d_sig = mod.get_function("mean2d_int_sigclip")
-        elif (input.dtype == int64):
+        elif (input_gpu.dtype == np.int64):
             mean2d_sig = mod.get_function("mean2d_long_sigclip")
-        elif (input.dtype == float64):
+        elif (input_gpu.dtype == np.float64):
             mean2d_sig = mod.get_function("mean2d_double_sigclip")
-            outtype = float64
-            meanVals = empty((rows,cols), outtype)
         else:
-            print("Invalid datatype: ", input.dtype)
+            print("Invalid datatype: ", input_gpu.dtype)
             return None
-        mean2d_sig(drv.In(input), drv.Out(meanVals), int32(rows*cols), int32(depth), float32(lthreshold), float32(hthreshold), int32(nonzero), int32(niter), float32(lsigma), float32(hsigma), int32(mclip), grid=(blocks,1), block=(block_size,1,1))
-    elif (w is None and wmap is None):
-        if (input.dtype == float32):
+        mean2d_sig((blocks,1), (block_size,1,1), (input_gpu, meanVals_gpu, rows*np.int32(cols), np.int32(depth), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), np.int32(niter), np.float32(lsigma), np.float32(hsigma), np.int32(mclip)))
+    elif (w_gpu is None and wmap is None):
+        if (input_gpu.dtype == np.float32):
             mean2d_sig = mod.get_function("wmean2d_float_sigclip")
-        elif (input.dtype == int32):
+        elif (input_gpu.dtype == np.int32):
             mean2d_sig = mod.get_function("wmean2d_int_sigclip")
-        elif (input.dtype == int64):
+        elif (input_gpu.dtype == np.int64):
             mean2d_sig = mod.get_function("wmean2d_long_sigclip")
-        elif (input.dtype == float64):
+        elif (input_gpu.dtype == np.float64):
             mean2d_sig = mod.get_function("wmean2d_double_sigclip")
-            outtype = float64
-            meanVals = empty((rows,cols), outtype)
         else:
-            print("Invalid datatype: ", input.dtype)
+            print("Invalid datatype: ", input_gpu.dtype)
             return None
-        mean2d_sig(drv.In(input), drv.Out(meanVals), int32(rows*cols), int32(depth), float32(lthreshold), float32(hthreshold), int32(nonzero), int32(niter), float32(lsigma), float32(hsigma), int32(mclip), drv.In(weights), grid=(blocks,1), block=(block_size,1,1))
-    elif (weights is None):
-        if (input.dtype == float32):
+        mean2d_sig((blocks,1), (block_size,1,1), (input_gpu, meanVals_gpu, rows*np.int32(cols), np.int32(depth), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), np.int32(niter), np.float32(lsigma), np.float32(hsigma), np.int32(mclip), weights_gpu))
+    elif (weights_gpu is None):
+        if (input_gpu.dtype == np.float32):
             mean2d_sig = mod.get_function("mean2d_float_sigclip_w")
-        elif (input.dtype == int32):
+        elif (input_gpu.dtype == np.int32):
             mean2d_sig = mod.get_function("mean2d_int_sigclip_w")
-        elif (input.dtype == int64):
+        elif (input_gpu.dtype == np.int64):
             mean2d_sig = mod.get_function("mean2d_long_sigclip_w")
-        elif (input.dtype == float64):
+        elif (input_gpu.dtype == np.float64):
             mean2d_sig = mod.get_function("mean2d_double_sigclip_w")
-            outtype = float64
-            meanVals = empty((rows,cols), outtype)
         else:
-            print("Invalid datatype: ", input.dtype)
+            print("Invalid datatype: ", input_gpu.dtype)
             return None
-        if (len(w.shape) != 3):
-            w2 = empty(input.shape, input.dtype)
-            w2[:,:] = w
-            w = w2
-        mean2d_sig(drv.In(input), drv.Out(meanVals), drv.In(w), drv.Out(wmap), int32(rows*cols), int32(depth), float32(lthreshold), float32(hthreshold), int32(nonzero), int32(niter), float32(lsigma), float32(hsigma), int32(mclip), grid=(blocks,1), block=(block_size,1,1))
+        if (len(w_gpu.shape) != 3):
+            w2_gpu = cp.empty(input_gpu.shape, input_gpu.dtype)
+            w2_gpu[:] = w_gpu
+            w_gpu = w2_gpu
+        mean2d_sig((blocks,1), (block_size,1,1), (input_gpu, meanVals_gpu, w_gpu, wmap_gpu, rows*np.int32(cols), np.int32(depth), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), np.int32(niter), np.float32(lsigma), np.float32(hsigma), np.int32(mclip)))
     else:
-        if (input.dtype == float32):
+        if (input_gpu.dtype == np.float32):
             mean2d_sig = mod.get_function("wmean2d_float_sigclip_w")
-        elif (input.dtype == int32):
+        elif (input_gpu.dtype == np.int32):
             mean2d_sig = mod.get_function("wmean2d_int_sigclip_w")
-        elif (input.dtype == int64):
+        elif (input_gpu.dtype == np.int64):
             mean2d_sig = mod.get_function("wmean2d_long_sigclip_w")
-        elif (input.dtype == float64):
+        elif (input_gpu.dtype == np.float64):
             mean2d_sig = mod.get_function("wmean2d_double_sigclip_w")
-            outtype = float64
-            meanVals = empty((rows,cols), outtype)
         else:
-            print("Invalid datatype: ", input.dtype)
+            print("Invalid datatype: ", input_gpu.dtype)
             return None
-        if (len(w.shape) != 3):
-            w2 = empty(input.shape, input.dtype)
-            w2[:,:] = w
-            w = w2
-        mean2d_sig(drv.In(input), drv.Out(meanVals), drv.In(w), drv.Out(wmap), int32(rows*cols), int32(depth), float32(lthreshold), float32(hthreshold), int32(nonzero), int32(niter), float32(lsigma), float32(hsigma), int32(mclip), drv.In(weights), grid=(blocks,1), block=(block_size,1,1))
-    return meanVals
+        if (len(w_gpu.shape) != 3):
+            w2_gpu = cp.empty(input_gpu.shape, input_gpu.dtype)
+            w2_gpu[:] = w_gpu
+            w_gpu = w2_gpu
+        mean2d_sig((blocks,1), (block_size,1,1), (input_gpu, meanVals_gpu, w_gpu, wmap_gpu, rows*np.int32(cols), np.int32(depth), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), np.int32(niter), np.float32(lsigma), np.float32(hsigma), np.int32(mclip), weights_gpu))
+    if is_cpu:
+        if wmap is not None:
+             wmap[:] = wmap_gpu.get()
+        return meanVals_gpu.get()
+    else:
+        return meanVals_gpu
 
 def gpumean2d(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nlow=0, nhigh=0, nonzero=False, weights=None):
-    rows = input.shape[0]
-    cols = input.shape[1]
+    is_cpu = isinstance(input, np.ndarray)
+    input_gpu = cp.asarray(input)
+    rows = input_gpu.shape[0]
+    cols = input_gpu.shape[1]
     block_size = 512
-    blocks = input.size//block_size
-    if (input.size % block_size != 0):
+    blocks = input_gpu.size//block_size
+    if (input_gpu.size % block_size != 0):
         blocks += 1
-    outtype = float32
-    meanVals = empty(rows, outtype)
+    outtype = np.float32
+    if (input_gpu.dtype == np.float64):
+        outtype = np.float64
+    meanVals_gpu = cp.empty(rows, outtype)
     if (not superFATBOY.threaded()):
         global mod
     else:
         mod = get_mod()
     if (weights is None):
-        if (input.dtype == float32):
+        if (input_gpu.dtype == np.float32):
             mean2d = mod.get_function("mean2d_float")
-        elif (input.dtype == int32):
+        elif (input_gpu.dtype == np.int32):
             mean2d = mod.get_function("mean2d_int")
-        elif (input.dtype == int64):
+        elif (input_gpu.dtype == np.int64):
             mean2d = mod.get_function("mean2d_long")
-        elif (input.dtype == float64):
+        elif (input_gpu.dtype == np.float64):
             mean2d = mod.get_function("mean2d_double")
-            outtype = float64
-            meanVals = empty(rows, outtype)
         else:
-            print("Invalid datatype: ", input.dtype)
+            print("Invalid datatype: ", input_gpu.dtype)
             return None
-        mean2d(drv.In(input), drv.Out(meanVals), int32(rows), int32(cols), float32(lthreshold), float32(hthreshold), int32(nlow), int32(nhigh), int32(nonzero), grid=(blocks,1), block=(block_size,1,1))
+        mean2d((blocks,1), (block_size,1,1), (input_gpu, meanVals_gpu, np.int32(rows), np.int32(cols), np.float32(lthreshold), np.float32(hthreshold), np.int32(nlow), np.int32(nhigh), np.int32(nonzero)))
     else:
         if (nlow > 0 or nhigh > 0):
             print("Weighting not supported for minmax rejection!")
             return None
-        if (input.dtype == float32):
+        weights_gpu = cp.asarray(weights)
+        if (input_gpu.dtype == np.float32):
             mean2d = mod.get_function("wmean2d_float")
-        elif (input.dtype == int32):
+        elif (input_gpu.dtype == np.int32):
             mean2d = mod.get_function("wmean2d_int")
-        elif (input.dtype == int64):
+        elif (input_gpu.dtype == np.int64):
             mean2d = mod.get_function("wmean2d_long")
-        elif (input.dtype == float64):
+        elif (input_gpu.dtype == np.float64):
             mean2d = mod.get_function("wmean2d_double")
-            outtype = float64
-            meanVals = empty(rows, outtype)
         else:
-            print("Invalid datatype: ", input.dtype)
+            print("Invalid datatype: ", input_gpu.dtype)
             return None
-        divisor = weights.sum()
-        mean2d(drv.In(input), drv.Out(meanVals), int32(rows), int32(cols), float32(lthreshold), float32(hthreshold), int32(nlow), int32(nhigh), int32(nonzero), drv.In(weights), outtype(divisor), grid=(blocks,1), block=(block_size,1,1))
-    return meanVals
+        divisor = weights_gpu.sum()
+        mean2d((blocks,1), (block_size,1,1), (input_gpu, meanVals_gpu, np.int32(rows), np.int32(cols), np.float32(lthreshold), np.float32(hthreshold), np.int32(nlow), np.int32(nhigh), np.int32(nonzero), weights_gpu, outtype(divisor)))
+    return meanVals_gpu.get() if is_cpu else meanVals_gpu
 
 def gpumean2d_w(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nonzero=False, w=None, wmap=None, weights=None):
-    rows = input.shape[0]
-    cols = input.shape[1]
+    is_cpu = isinstance(input, np.ndarray)
+    input_gpu = cp.asarray(input)
+    rows = input_gpu.shape[0]
+    cols = input_gpu.shape[1]
     block_size = 512
-    blocks = input.size//block_size
-    if (input.size % block_size != 0):
+    blocks = input_gpu.size//block_size
+    if (input_gpu.size % block_size != 0):
         blocks += 1
-    outtype = float32
+    outtype = np.float32
+    if (input_gpu.dtype == np.float64):
+        outtype = np.float64
     if (not superFATBOY.threaded()):
         global mod
     else:
         mod = get_mod()
-    if (input.dtype == float32):
+    if (input_gpu.dtype == np.float32):
         mean2d_w = mod.get_function("mean2d_float_w")
-    elif (input.dtype == int32):
+    elif (input_gpu.dtype == np.int32):
         mean2d_w = mod.get_function("mean2d_int_w")
-    elif (input.dtype == int64):
+    elif (input_gpu.dtype == np.int64):
         mean2d_w = mod.get_function("mean2d_long_w")
-    elif (input.dtype == float64):
+    elif (input_gpu.dtype == np.float64):
         mean2d_w = mod.get_function("mean2d_double_w")
-        outtype = float64
     else:
-        print("Invalid datatype: ", input.dtype)
+        print("Invalid datatype: ", input_gpu.dtype)
         return None
     if (weights is None):
-        weights = ones(cols, outtype)
-    divisor = weights.sum()
-    meanVals = empty(rows, outtype)
-    mean2d_w(drv.In(input), drv.Out(meanVals), drv.In(w), drv.Out(wmap), int32(rows), int32(cols), float32(lthreshold), float32(hthreshold), int32(nonzero), drv.In(weights), outtype(divisor), grid=(blocks,1), block=(block_size,1,1))
-    return meanVals
+        weights_gpu = cp.ones(cols, outtype)
+    else:
+        weights_gpu = cp.asarray(weights)
+    divisor = weights_gpu.sum()
+    meanVals_gpu = cp.empty(rows, outtype)
+    w_gpu = cp.asarray(w) if w is not None else cp.empty(0, dtype=input_gpu.dtype)
+    wmap_gpu = cp.asarray(wmap) if wmap is not None else cp.empty(rows, outtype)
+    mean2d_w((blocks,1), (block_size,1,1), (input_gpu, meanVals_gpu, w_gpu, wmap_gpu, np.int32(rows), np.int32(cols), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), weights_gpu, outtype(divisor)))
+    if is_cpu:
+        if wmap is not None:
+            wmap[:] = wmap_gpu.get()
+        return meanVals_gpu.get()
+    else:
+        return meanVals_gpu
 
 def gpumean2d_sigclip(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nonzero=False, w=None, wmap=None, niter=5, lsigma=3, hsigma=3, mclip=0, weights=None):
     if (len(input.shape) != 2):
-        print("Invalid shape!  Must be 2-d array!")
+        print("Invalid shape!  Must be 2-d np.array!")
         return None
     if (isinstance(mclip, str)):
         if (mclip == 'mean' or mclip == 'med'):
@@ -5639,87 +5746,91 @@ def gpumean2d_sigclip(input, lthreshold=INT_MIN, hthreshold=INT_MAX, nonzero=Fal
     if (mclip != 0 and mclip != 1):
         print("Invalid mclip: "+str(mclip)+".  Using mean (mclip = 0).")
         mclip = 0
-    rows = input.shape[0]
-    cols = input.shape[1]
+    is_cpu = isinstance(input, np.ndarray)
+    input_gpu = cp.array(input) # ALWAYS COPY because it's modified in place!
+    rows = input_gpu.shape[0]
+    cols = input_gpu.shape[1]
     block_size = 512
-    blocks = input.size//block_size
-    if (input.size % block_size != 0):
+    blocks = input_gpu.size//block_size
+    if (input_gpu.size % block_size != 0):
         blocks += 1
-    outtype = float32
-    meanVals = empty(rows, outtype)
+    outtype = np.float32
+    if (input_gpu.dtype == np.float64):
+        outtype = np.float64
+    meanVals_gpu = cp.empty(rows, outtype)
     if (not superFATBOY.threaded()):
         global mod
     else:
         mod = get_mod()
-    if (weights is None and w is None and wmap is None):
-        if (input.dtype == float32):
+    weights_gpu = cp.asarray(weights) if weights is not None else None
+    w_gpu = cp.array(w) if w is not None else None
+    wmap_gpu = cp.asarray(wmap) if wmap is not None else cp.empty(rows, outtype)
+    if (weights_gpu is None and w_gpu is None and wmap is None):
+        if (input_gpu.dtype == np.float32):
             mean2d_sig = mod.get_function("mean2d_float_sigclip")
-        elif (input.dtype == int32):
+        elif (input_gpu.dtype == np.int32):
             mean2d_sig = mod.get_function("mean2d_int_sigclip")
-        elif (input.dtype == int64):
+        elif (input_gpu.dtype == np.int64):
             mean2d_sig = mod.get_function("mean2d_long_sigclip")
-        elif (input.dtype == float64):
+        elif (input_gpu.dtype == np.float64):
             mean2d_sig = mod.get_function("mean2d_double_sigclip")
-            outtype = float64
-            meanVals = empty(rows, outtype)
         else:
-            print("Invalid datatype: ", input.dtype)
+            print("Invalid datatype: ", input_gpu.dtype)
             return None
-        mean2d_sig(drv.In(input), drv.Out(meanVals), int32(rows), int32(cols), float32(lthreshold), float32(hthreshold), int32(nonzero), int32(niter), float32(lsigma), float32(hsigma), int32(mclip), grid=(blocks,1), block=(block_size,1,1))
-    elif (w is None and wmap is None):
-        if (input.dtype == float32):
+        mean2d_sig((blocks,1), (block_size,1,1), (input_gpu, meanVals_gpu, np.int32(rows), np.int32(cols), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), np.int32(niter), np.float32(lsigma), np.float32(hsigma), np.int32(mclip)))
+    elif (w_gpu is None and wmap is None):
+        if (input_gpu.dtype == np.float32):
             mean2d_sig = mod.get_function("wmean2d_float_sigclip")
-        elif (input.dtype == int32):
+        elif (input_gpu.dtype == np.int32):
             mean2d_sig = mod.get_function("wmean2d_int_sigclip")
-        elif (input.dtype == int64):
+        elif (input_gpu.dtype == np.int64):
             mean2d_sig = mod.get_function("wmean2d_long_sigclip")
-        elif (input.dtype == float64):
+        elif (input_gpu.dtype == np.float64):
             mean2d_sig = mod.get_function("wmean2d_double_sigclip")
-            outtype = float64
-            meanVals = empty(rows, outtype)
         else:
-            print("Invalid datatype: ", input.dtype)
+            print("Invalid datatype: ", input_gpu.dtype)
             return None
-        mean2d_sig(drv.In(input), drv.Out(meanVals), int32(rows), int32(cols), float32(lthreshold), float32(hthreshold), int32(nonzero), int32(niter), float32(lsigma), float32(hsigma), int32(mclip), drv.In(weights), grid=(blocks,1), block=(block_size,1,1))
-    elif (weights is None):
-        if (input.dtype == float32):
+        mean2d_sig((blocks,1), (block_size,1,1), (input_gpu, meanVals_gpu, np.int32(rows), np.int32(cols), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), np.int32(niter), np.float32(lsigma), np.float32(hsigma), np.int32(mclip), weights_gpu))
+    elif (weights_gpu is None):
+        if (input_gpu.dtype == np.float32):
             mean2d_sig = mod.get_function("mean2d_float_sigclip_w")
-        elif (input.dtype == int32):
+        elif (input_gpu.dtype == np.int32):
             mean2d_sig = mod.get_function("mean2d_int_sigclip_w")
-        elif (input.dtype == int64):
+        elif (input_gpu.dtype == np.int64):
             mean2d_sig = mod.get_function("mean2d_long_sigclip_w")
-        elif (input.dtype == float64):
+        elif (input_gpu.dtype == np.float64):
             mean2d_sig = mod.get_function("mean2d_double_sigclip_w")
-            outtype = float64
-            meanVals = empty(rows, outtype)
         else:
-            print("Invalid datatype: ", input.dtype)
+            print("Invalid datatype: ", input_gpu.dtype)
             return None
-        if (len(w.shape) != 2):
-            w2 = empty(input.shape, input.dtype)
-            w2[:] = w
-            w = w2
-        mean2d_sig(drv.In(input), drv.Out(meanVals), drv.In(w), drv.Out(wmap), int32(rows), int32(cols), float32(lthreshold), float32(hthreshold), int32(nonzero), int32(niter), float32(lsigma), float32(hsigma), int32(mclip), grid=(blocks,1), block=(block_size,1,1))
+        if (len(w_gpu.shape) != 2):
+            w2_gpu = cp.empty(input_gpu.shape, input_gpu.dtype)
+            w2_gpu[:] = w_gpu
+            w_gpu = w2_gpu
+        mean2d_sig((blocks,1), (block_size,1,1), (input_gpu, meanVals_gpu, w_gpu, wmap_gpu, np.int32(rows), np.int32(cols), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), np.int32(niter), np.float32(lsigma), np.float32(hsigma), np.int32(mclip)))
     else:
-        if (input.dtype == float32):
+        if (input_gpu.dtype == np.float32):
             mean2d_sig = mod.get_function("wmean2d_float_sigclip_w")
-        elif (input.dtype == int32):
+        elif (input_gpu.dtype == np.int32):
             mean2d_sig = mod.get_function("wmean2d_int_sigclip_w")
-        elif (input.dtype == int64):
+        elif (input_gpu.dtype == np.int64):
             mean2d_sig = mod.get_function("wmean2d_long_sigclip_w")
-        elif (input.dtype == float64):
+        elif (input_gpu.dtype == np.float64):
             mean2d_sig = mod.get_function("wmean2d_double_sigclip_w")
-            outtype = float64
-            meanVals = empty(rows, outtype)
         else:
-            print("Invalid datatype: ", input.dtype)
+            print("Invalid datatype: ", input_gpu.dtype)
             return None
-        if (len(w.shape) != 2):
-            w2 = empty(input.shape, input.dtype)
-            w2[:] = w
-            w = w2
-        mean2d_sig(drv.In(input), drv.Out(meanVals), drv.In(w), drv.Out(wmap), int32(rows), int32(cols), float32(lthreshold), float32(hthreshold), int32(nonzero), int32(niter), float32(lsigma), float32(hsigma), int32(mclip), drv.In(weights), grid=(blocks,1), block=(block_size,1,1))
-    return meanVals
+        if (len(w_gpu.shape) != 2):
+            w2_gpu = cp.empty(input_gpu.shape, input_gpu.dtype)
+            w2_gpu[:] = w_gpu
+            w_gpu = w2_gpu
+        mean2d_sig((blocks,1), (block_size,1,1), (input_gpu, meanVals_gpu, w_gpu, wmap_gpu, np.int32(rows), np.int32(cols), np.float32(lthreshold), np.float32(hthreshold), np.int32(nonzero), np.int32(niter), np.float32(lsigma), np.float32(hsigma), np.int32(mclip), weights_gpu))
+    if is_cpu:
+        if wmap is not None:
+             wmap[:] = wmap_gpu.get()
+        return meanVals_gpu.get()
+    else:
+        return meanVals_gpu
 
 def gpu_arraymean(input, axis="both", lthreshold=None, hthreshold=None, nlow=0, nhigh=0, nonzero=False, kernel=None, kernel2d=gpumean2d, kernel3d=gpumean3d, w=None, wmap=None, sigclip=False, niter=5, lsigma=3, hsigma=3, mclip=0, weights=None):
     t = time.time()

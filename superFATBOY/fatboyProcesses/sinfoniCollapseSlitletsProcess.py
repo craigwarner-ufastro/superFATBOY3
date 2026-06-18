@@ -1,3 +1,4 @@
+import numpy as np
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
@@ -63,12 +64,12 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
             lamp1d = lamp2d.sum(0)
         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
             lamp1d = lamp2d.sum(1)
-        maxLoc = where(lamp1d == lamp1d[searchbox_lo:searchbox_hi].max())[0][0]
+        maxLoc = np.where(lamp1d == lamp1d[searchbox_lo:searchbox_hi].max())[0][0]
         lsq = fitGaussian(lamp1d[maxLoc-10:maxLoc+11])
         xlo = int(maxLoc-10+lsq[0][1]-lsq[0][2]*2.348*2)
         xhi = int(maxLoc-10+lsq[0][1]+lsq[0][2]*2.348*2+1)
         if (usePlot and (debug or writePlots)):
-            plt.plot(arange(len(lamp1d[searchbox_lo:searchbox_hi]))+searchbox_lo, lamp1d[searchbox_lo:searchbox_hi])
+            plt.plot(np.arange(len(lamp1d[searchbox_lo:searchbox_hi]))+searchbox_lo, lamp1d[searchbox_lo:searchbox_hi])
             plt.title('1-d Cut of '+lampkey)
             plt.xlabel("xlo = "+str(xlo)+"; xhi = "+str(xhi))
             if (writePlots):
@@ -78,7 +79,7 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
             plt.close()
 
         maxWidth = (yhis-ylos).max()+1
-        image2d = zeros((nslits, maxWidth), float32)
+        image2d = np.zeros((nslits, maxWidth), np.float32)
         #Loop over slitlets (could be one pass or nslits passes)
         for j in range(nslits):
             #Take 1-d cut of arclamp in each slitlet
@@ -104,7 +105,7 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
                 plt.plot(image2d[j,:])
             plt.xlabel('Pixel')
             plt.ylabel('Slitlet collapsed flux')
-            plt.legend(arange(nslits)+1)
+            plt.legend(np.arange(nslits)+1)
             if (writePlots):
                 plt.savefig(outdir+"/collapsedSlitlets/slits_collapsed_"+calibs[lampkey]._id+".png", dpi=200)
             if (debug):
@@ -131,8 +132,8 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
                 continue
             slitCut1 = image2d[j,:halfWidth]
             slitCut2 = image2d[j,halfWidth:]
-            ccor1 = correlate(refCut1, slitCut1, mode='same')
-            ccor2 = correlate(refCut2, slitCut2, mode='same')
+            ccor1 = np.correlate(refCut1, slitCut1, mode='same')
+            ccor2 = np.correlate(refCut2, slitCut2, mode='same')
             ccor1 = medianfilterCPU(ccor1) #median filter
             ccor2 = medianfilterCPU(ccor2) #median filter
             if (usePlot and (debug or writePlots)):
@@ -149,16 +150,16 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
                     ax2.plot(c2)
                     ax2.set(xlabel='Filtered cross correlations')
                     ax2.legend(['Left edge', 'Right edge'])
-            mcor1 = where(ccor1 == max(ccor1))[0]
+            mcor1 = np.where(ccor1 == np.max(ccor1))[0]
             shift1 = -1*(len(ccor1)//2-mcor1[0])
-            mcor2 = where(ccor2 == max(ccor2))[0]
+            mcor2 = np.where(ccor2 == np.max(ccor2))[0]
             shift2 = -1*(len(ccor2)//2-mcor2[0])
             shift = (shift1+shift2)/2.0
             if (integerShifts):
                 xsh.append(shift)
                 xsh.append(shift)
             else:
-                p = zeros(4, float64)
+                p = np.zeros(4, np.float64)
                 p[0] = ccor1.max()
                 p[1] = mcor1[0]
                 p[2] = 4.0
@@ -180,16 +181,16 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
                 if (debug):
                     plt.show()
                 plt.close()
-        xsh = array(xsh)
+        xsh = np.array(xsh)
         xsh -= xsh.min() #subtract min
         widths = []
         for j in range(nslits):
             widths.append(yhis[j]-ylos[j]+xsh[2*j])
-        widths = array(widths)
+        widths = np.array(widths)
         maxWidth = widths.max()+1
 
         if (integerShifts):
-            image2d = zeros((2*nslits, maxWidth), float32)
+            image2d = np.zeros((2*nslits, maxWidth), np.float32)
             for j in range(2*nslits):
                 image2d[j, xsh[j]:xsh[j]+images[j].size] = images[j]
         else:
@@ -238,9 +239,9 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
                 plt.plot(data.sum(1))
                 plt.legend(['X-cut','Y-cut'])
             if (centroid_method == "fit_2d_gaussian"):
-                p = zeros(5, float32)
+                p = np.zeros(5, np.float32)
                 p[0] = data.max()
-                b = where(data == p[0])
+                b = np.where(data == p[0])
                 if (fdu.hasProperty("xcen_guess")):
                     p[1] = fdu.getProperty("xcen_guess")
                 else:
@@ -261,7 +262,7 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
                 fwhm = lsq[0][3]*2.3548
             else:
                 #use_derivatives
-                b = where(data == data.max())
+                b = np.where(data == data.max())
                 mx = b[1][0]
                 my = b[0][0]
                 (fwhm, sig, fwhm1ds, bg) = fwhm2d(data)
@@ -330,7 +331,7 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
         hasCleanFrame = False
         if (fdu.hasProperty("cleanFrame")):
             hasCleanFrame = True
-            clean2d = zeros((nslits, maxWidthInit), float32)
+            clean2d = np.zeros((nslits, maxWidthInit), np.float32)
             clean_images = []
 
         #Get slitmask
@@ -340,10 +341,10 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
             self._log.writeLog(__name__, "Could not find slitmask so could not collapse slitlets.", type=fatboyLog.ERROR)
             return False
         smdata = slitmask.getData()
-        sm2d = zeros((nslits, maxWidthInit), slitmask.getData().dtype)
+        sm2d = np.zeros((nslits, maxWidthInit), slitmask.getData().dtype)
         sm_images = []
 
-        image2d = zeros((nslits, maxWidthInit), float32)
+        image2d = np.zeros((nslits, maxWidthInit), np.float32)
         images = []
         #Loop over slitlets (could be one pass or nslits passes)
         #Re-order here
@@ -385,14 +386,14 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
             sm_images.append(sm2d[j,:]) #Append this row twice
 
         if (integerShifts):
-            image2d = zeros((2*nslits, maxWidth), float32)
+            image2d = np.zeros((2*nslits, maxWidth), np.float32)
             for j in range(2*nslits):
                 image2d[j, xsh[j]:xsh[j]+images[j].size] = images[j]
             if (hasCleanFrame):
-                clean2d = zeros((2*nslits, maxWidth), float32)
+                clean2d = np.zeros((2*nslits, maxWidth), np.float32)
                 for j in range(2*nslits):
                     clean2d[j, xsh[j]:xsh[j]+clean_images[j].size] = clean_images[j]
-            sm2d = zeros((2*nslits, maxWidth), fdu.getProperty("slitmask").dtype)
+            sm2d = np.zeros((2*nslits, maxWidth), fdu.getProperty("slitmask").dtype)
             for j in range(2*nslits):
                 sm2d[j, xsh[j]:xsh[j]+sm_images[j].size] = sm_images[j]
         else:

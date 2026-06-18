@@ -1,3 +1,5 @@
+import numpy as np
+import math
 from superFATBOY.fatboyDataUnit import fatboyDataUnit
 from superFATBOY.fatboyImage import fatboyImage
 from superFATBOY.fatboyLibs import *
@@ -31,7 +33,7 @@ class skySubtractSpecProcess(fatboyProcess):
         else:
             yhis = [fdu.getShape()[1]]
         slitmask = None
-        currMask = ones(fdu.getShape(), dtype=bool)
+        currMask = np.ones(fdu.getShape(), dtype=bool)
         if (fdu._specmode != fdu.FDU_TYPE_LONGSLIT):
             ###MOS/IFU data -- get slitmask
             slitmask = self.findSlitmask(fdu, calibs, prevProc)
@@ -39,7 +41,7 @@ class skySubtractSpecProcess(fatboyProcess):
                 #FDU will be disabled in execute
                 return None
             if (not slitmask.hasProperty("nslits")):
-                slitmask.setProperty("nslits", slitmask.getData().max())
+                slitmask.setProperty("nslits", slitmask.getData(force_cpu=True).max())
             nslits = slitmask.getProperty("nslits")
             if (slitmask.hasProperty("regions")):
                 (ylos, yhis, slitx, slitw) = slitmask.getProperty("regions")
@@ -54,7 +56,7 @@ class skySubtractSpecProcess(fatboyProcess):
             #Use GPU for median filter
             medFilt2dFunc = gpumedianfilter2d
 
-        filtData = zeros(fdu.getShape(), dtype=float32)
+        filtData = np.zeros(fdu.getShape(), dtype=np.float32)
         for j in range(nslits):
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                 if (slitmask is not None):
@@ -76,7 +78,7 @@ class skySubtractSpecProcess(fatboyProcess):
 
         if (fdu.hasProperty("cleanFrame")):
             #create "cleanFrame" for master sky too
-            filtData = zeros(fdu.getShape(), dtype=float32)
+            filtData = np.zeros(fdu.getShape(), dtype=np.float32)
             for j in range(nslits):
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                     if (slitmask is not None):
@@ -117,7 +119,7 @@ class skySubtractSpecProcess(fatboyProcess):
         else:
             yhis = [fdu.getShape()[1]]
         slitmask = None
-        currMask = ones(fdu.getShape(), dtype=bool)
+        currMask = np.ones(fdu.getShape(), dtype=bool)
         if (fdu._specmode != fdu.FDU_TYPE_LONGSLIT):
             ###MOS/IFU data -- get slitmask
             slitmask = self.findSlitmask(fdu, calibs, prevProc)
@@ -125,7 +127,7 @@ class skySubtractSpecProcess(fatboyProcess):
                 #FDU will be disabled in execute
                 return None
             if (not slitmask.hasProperty("nslits")):
-                slitmask.setProperty("nslits", slitmask.getData().max())
+                slitmask.setProperty("nslits", slitmask.getData(force_cpu=True).max())
             nslits = slitmask.getProperty("nslits")
             if (slitmask.hasProperty("regions")):
                 (ylos, yhis, slitx, slitw) = slitmask.getProperty("regions")
@@ -139,7 +141,7 @@ class skySubtractSpecProcess(fatboyProcess):
         if (self._fdb.getGPUMode()):
             #Use GPU for medians
             kernel2d=gpumedian2d
-        skyData = zeros(fdu.getShape(), dtype=float32)
+        skyData = np.zeros(fdu.getShape(), dtype=np.float32)
         for j in range(nslits):
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                 if (slitmask is not None):
@@ -159,7 +161,7 @@ class skySubtractSpecProcess(fatboyProcess):
         masterSky = fatboySpecCalib(self._pname, "master_sky", fdu, data=skyData, tagname=msname, log=self._log)
 
         if (fdu.hasProperty("cleanFrame")):
-            cleanSkyData = zeros(fdu.getShape(), dtype=float32)
+            cleanSkyData = np.zeros(fdu.getShape(), dtype=np.float32)
             for j in range(nslits):
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                     if (slitmask is not None):
@@ -264,7 +266,7 @@ class skySubtractSpecProcess(fatboyProcess):
             if (fdu.hasProperty("cleanFrame")):
                 fdu.tagDataAs("cleanFrame_preSkySubtracted", fdu.getProperty("cleanFrame"))
 
-        skyData = float32(masterSky.getData(tag="preSkySubtracted"))
+        skyData = masterSky.getData(tag="preSkySubtracted").astype(np.float32)
         cleanSkyData = None
         if (fdu.hasProperty("cleanFrame")):
             #If masterSky has tag cleanFrame_preSkySubtracted then use it.  This is an odd frame
@@ -280,7 +282,7 @@ class skySubtractSpecProcess(fatboyProcess):
                 self.applyResponseCurve(fdu, calibs, skyData, cleanSkyData)
 
         #subtract master sky and if "cleanFrame" exists, propagate it too
-        fdu.updateData(float32(fdu.getData())-float32(masterSky.getData(tag="preSkySubtracted")))
+        fdu.updateData(fdu.getData().astype(np.float32)-masterSky.getData(tag="preSkySubtracted").astype(np.float32))
         if (fdu.hasProperty("cleanFrame")):
             #If masterSky has tag cleanFrame_preSkySubtracted then use it.  This is an odd frame
             if (masterSky.hasProperty("cleanFrame_preSkySubtracted")):
@@ -535,7 +537,7 @@ class skySubtractSpecProcess(fatboyProcess):
             #Found skies associated with this fdu
             return skies
         #2) Check for individual sky frames matching filter/sky_subtract_method/etc to create master sky
-        #2A) Look for individual skies that match this object ID only - e.g. ABBA dither pattern where all are same identifier
+        #2A) Look for individual skies that match this object ID only - e.g. ABBA dither pattern np.where all are same identifier
         skies = self._fdb.getCalibs(ident=fdu._id, obstype=fatboyDataUnit.FDU_TYPE_SKY, filter=fdu.filter, section=fdu.section, tag=fdu.getTag(), properties=properties, headerVals=headerVals)
         if (len(skies) > 0):
             #Found skies associated with this fdu
@@ -990,7 +992,7 @@ class skySubtractSpecProcess(fatboyProcess):
                 #set property sky_subtract_match
                 skyfdus[idx].setProperty("sky_subtract_match", skyfdus[match].getFullId())
                 #set property for double subtraction
-                ds_guess = sqrt((skyfdus[idx].ra-skyfdus[match].ra)**2+(skyfdus[idx].dec-skyfdus[match].dec)**2)*3600/skyfdus[idx].pixscale
+                ds_guess = math.sqrt((skyfdus[idx].ra-skyfdus[match].ra)**2+(skyfdus[idx].dec-skyfdus[match].dec)**2)*3600/skyfdus[idx].pixscale
                 if ((skyfdus[idx].ra-skyfdus[match].ra+skyfdus[idx].dec-skyfdus[match].dec) < 0):
                     ds_guess = -1*ds_guess
                 skyfdus[idx].setProperty("double_subtract_guess", ds_guess)
@@ -1031,7 +1033,7 @@ class skySubtractSpecProcess(fatboyProcess):
                     #mark matched frame to be disabled in execute
                     skyfdus[match].setProperty("disable", True)
                     #set property for double subtraction
-                    ds_guess = sqrt((skyfdus[idx].ra-skyfdus[match].ra)**2+(skyfdus[idx].dec-skyfdus[match].dec)**2)*3600/skyfdus[idx].pixscale
+                    ds_guess = math.sqrt((skyfdus[idx].ra-skyfdus[match].ra)**2+(skyfdus[idx].dec-skyfdus[match].dec)**2)*3600/skyfdus[idx].pixscale
                     if ((skyfdus[idx].ra-skyfdus[match].ra+skyfdus[idx].dec-skyfdus[match].dec) < 0):
                         ds_guess = -1*ds_guess
                     skyfdus[idx].setProperty("double_subtract_guess", ds_guess)
@@ -1041,7 +1043,7 @@ class skySubtractSpecProcess(fatboyProcess):
                 else:
                     if (dsOddFrames):
                         #set property for double subtraction
-                        ds_guess = sqrt((skyfdus[idx].ra-skyfdus[match].ra)**2+(skyfdus[idx].dec-skyfdus[match].dec)**2)*3600/skyfdus[idx].pixscale
+                        ds_guess = math.sqrt((skyfdus[idx].ra-skyfdus[match].ra)**2+(skyfdus[idx].dec-skyfdus[match].dec)**2)*3600/skyfdus[idx].pixscale
                         if ((skyfdus[idx].ra-skyfdus[match].ra+skyfdus[idx].dec-skyfdus[match].dec) < 0):
                             ds_guess = -1*ds_guess
                         skyfdus[idx].setProperty("double_subtract_guess", ds_guess)
@@ -1208,7 +1210,7 @@ class skySubtractSpecProcess(fatboyProcess):
         else:
             yhis = [fdu.getShape()[1]]
         slitmask = None
-        currMask = ones(fdu.getShape(), dtype=bool)
+        currMask = np.ones(fdu.getShape(), dtype=bool)
         if (fdu._specmode != fdu.FDU_TYPE_LONGSLIT):
             ###MOS/IFU data -- get slitmask
             slitmask = self.findSlitmask(fdu, calibs, prevProc)
@@ -1216,7 +1218,7 @@ class skySubtractSpecProcess(fatboyProcess):
                 #FDU will be disabled in execute
                 return None
             if (not slitmask.hasProperty("nslits")):
-                slitmask.setProperty("nslits", slitmask.getData().max())
+                slitmask.setProperty("nslits", slitmask.getData(force_cpu=True).max())
             nslits = slitmask.getProperty("nslits")
             if (slitmask.hasProperty("regions")):
                 (ylos, yhis, slitx, slitw) = slitmask.getProperty("regions")
@@ -1231,7 +1233,7 @@ class skySubtractSpecProcess(fatboyProcess):
             #Use GPU for median filter
             medFilt2dFunc = gpumedianfilter2d
 
-        filtData = zeros(fdu.getShape(), dtype=float32)
+        filtData = np.zeros(fdu.getShape(), dtype=np.float32)
         for j in range(nslits):
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                 if (slitmask is not None):
@@ -1254,7 +1256,7 @@ class skySubtractSpecProcess(fatboyProcess):
 
         if (fdu.hasProperty("cleanFrame")):
             #create "cleanFrame" for master sky too
-            filtData = zeros(fdu.getShape(), dtype=float32)
+            filtData = np.zeros(fdu.getShape(), dtype=np.float32)
             for j in range(nslits):
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                     if (slitmask is not None):
@@ -1336,7 +1338,7 @@ class skySubtractSpecProcess(fatboyProcess):
         if (not masterSky.hasProperty("crmask")):
             #Hopefully we don't get here because this means we are reading a previous masterSky from disk with no corresponding crmask on disk
             #create tagged data "crmask"
-            crmask = ones(masterSky.getShape(), int16)
+            crmask = np.ones(masterSky.getShape(), int16)
             masterSky.tagDataAs("crmask", crmask)
         #Get this FDU's crmask
         crmask = fdu.getData(tag="crmask")
@@ -1364,11 +1366,11 @@ class skySubtractSpecProcess(fatboyProcess):
             if (self._fdb.getGPUMode()):
                 nm = createNoisemap(masterSky.getData(), ncomb)
             else:
-                nm = sqrt(abs(masterSky.getData())/ncomb)
+                nm = np.sqrt(np.abs(masterSky.getData())/ncomb)
             masterSky.tagDataAs("noisemap", nm)
         #Get this FDU's noisemap
         nm = fdu.getData(tag="noisemap")
-        #Propagate noisemaps.  For subtraction, dz = sqrt(dx^2 + dy^2)
+        #Propagate noisemaps.  For subtraction, dz = np.sqrt(dx^2 + dy^2)
         if (self._fdb.getGPUMode()):
             if (masterSky.hasProperty("noisemap_preSkySubtracted")):
                 nm = noisemaps_ds_gpu(fdu.getData(tag="noisemap"), masterSky.getData(tag="noisemap_preSkySubtracted"))
@@ -1376,9 +1378,9 @@ class skySubtractSpecProcess(fatboyProcess):
                 nm = noisemaps_ds_gpu(fdu.getData(tag="noisemap"), masterSky.getData(tag="noisemap"))
         else:
             if (masterSky.hasProperty("noisemap_preSkySubtracted")):
-                nm = sqrt(fdu.getData(tag="noisemap")**2+masterSky.getData(tag="noisemap_preSkySubtracted")**2)
+                nm = np.sqrt(fdu.getData(tag="noisemap")**2+masterSky.getData(tag="noisemap_preSkySubtracted")**2)
             else:
-                nm = sqrt(fdu.getData(tag="noisemap")**2+masterSky.getData(tag="noisemap")**2)
+                nm = np.sqrt(fdu.getData(tag="noisemap")**2+masterSky.getData(tag="noisemap")**2)
         fdu.tagDataAs("noisemap", nm)
     #end updateNoisemap
 

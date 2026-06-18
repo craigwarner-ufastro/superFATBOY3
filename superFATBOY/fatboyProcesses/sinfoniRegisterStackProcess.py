@@ -1,3 +1,4 @@
+import numpy as np
 from superFATBOY.fatboyCalib import fatboyCalib
 from superFATBOY.fatboyDataUnit import fatboyDataUnit
 from superFATBOY.fatboyImage import fatboyImage
@@ -129,7 +130,7 @@ class sinfoniRegisterStackProcess(fatboyProcess):
         frameList = calibs['frameList']
 
         if (self.getOption('use_only_selected_indices', fdu.getTag()) is not None):
-            #Check for special case where fdu is not in frameList
+            #Check for special case np.where fdu is not in frameList
             if (not fdu in frameList):
                 #Use new first frame as current FDU!
                 fdu = frameList[0]
@@ -277,9 +278,9 @@ class sinfoniRegisterStackProcess(fatboyProcess):
             os.mkdir(imgdir)
         xshifts = shifts[0]
         yshifts = shifts[1]
-        xshift0 = -1*int(max(xshifts)+min(xshifts))//2
-        yshift0 = -1*int(max(yshifts)+min(yshifts))//2
-        #goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("int32")
+        xshift0 = -1*int(np.max(xshifts)+np.min(xshifts))//2
+        yshift0 = -1*int(np.max(yshifts)+np.min(yshifts))//2
+        #goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("np.int32")
         for i in range(len(frameList)):
             xshifts[i]+=xshift0
             yshifts[i]+=yshift0

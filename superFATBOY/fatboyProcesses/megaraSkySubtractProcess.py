@@ -1,3 +1,4 @@
+import numpy as np
 from superFATBOY.fatboyDataUnit import fatboyDataUnit
 from superFATBOY.fatboyImage import fatboyImage
 from superFATBOY.fatboyLibs import *
@@ -5,6 +6,7 @@ from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
 from superFATBOY import gpu_imcombine, imcombine
+import math
 
 usePlot = True
 try:
@@ -93,7 +95,7 @@ class megaraSkySubtractProcess(fatboyProcess):
             for idx in fiberList:
                 j = idx-1 #index starts at 0 for ylos, yhis
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    #currMask = ones(fdu.getData(tag="resampled")[ylos[j]:yhis[j]+1,:].shape, dtype=bool)
+                    #currMask = np.ones(fdu.getData(tag="resampled")[ylos[j]:yhis[j]+1,:].shape, dtype=bool)
                     #fiber = (fdu.getData(tag="resampled")[ylos[j]:yhis[j]+1,:]).copy()*currMask
                     currMask = (slitmask.getData()[ylos[j]:yhis[j]+1,:] == idx)
                     fiber = (fdu.getData()[ylos[j]:yhis[j]+1,:]).copy()*currMask
@@ -111,7 +113,7 @@ class megaraSkySubtractProcess(fatboyProcess):
                         nm = nm.reshape((1, nm.size))
                         nms.append(nm)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    #currMask = ones(fdu.getData(tag="resampled")[ylos[j]:yhis[j]+1,:].shape, dtype=bool)
+                    #currMask = np.ones(fdu.getData(tag="resampled")[ylos[j]:yhis[j]+1,:].shape, dtype=bool)
                     #fiber = (fdu.getData(tag="resampled")[:,ylos[j]:yhis[j]+1]).copy()*currMask
                     currMask = (slitmask.getData()[:,ylos[j]:yhis[j]+1] == idx)
                     fiber = (fdu.getData()[:,ylos[j]:yhis[j]+1]).copy()*currMask
@@ -139,37 +141,37 @@ class megaraSkySubtractProcess(fatboyProcess):
             if (fdu.hasProperty("noisemap")):
                 if (combine_method == 'median'):
                     #For median, sqrt(sky/n)
-                    nmData.append(sqrt(skySection/len(fibers)))
+                    nmData.append(math.sqrt(skySection/len(fibers)))
                 else:
-                    #For mean, dz = sqrt(sum(dx_i^2)/n)
+                    #For mean, dz = math.sqrt(sum(dx_i^2)/n)
                     (nmSection, header) = imcombine_method(nms, outfile=None, method="sum", log=self._log, returnHeader=True, mode=gpu_imcombine.MODE_RAW)
-                    nmData.append(sqrt(nmSection/len(fibers)))
+                    nmData.append(math.sqrt(nmSection/len(fibers)))
 
         if (len(skyData) > 1):
-            #3D array
-            skyData = array(skyData)
+            #3D np.array
+            skyData = np.array(skyData)
         else:
-            #If only 1 sky created, make a 2d array
+            #If only 1 sky created, make a 2d np.array
             skyData = skyData[0]
 
         msname = "sky_"+fdu.getFullId()
         masterSky = fatboySpecCalib(self._pname, "master_sky", fdu, data=skyData, tagname=msname, log=self._log)
         if (fdu.hasProperty("cleanFrame")):
             if (len(cleanData) > 1):
-                #3D array
-                cleanData = array(cleanData)
+                #3D np.array
+                cleanData = np.array(cleanData)
             else:
-                #If only 1 sky created, make a 2d array
+                #If only 1 sky created, make a 2d np.array
                 cleanData = cleanData[0]
             #Tag noisemap
             masterSky.tagDataAs("cleanFrame", cleanData)
 
         if (fdu.hasProperty("noisemap")):
             if (len(nmData) > 1):
-                #3D array
-                nmData = array(nmData)
+                #3D np.array
+                nmData = np.array(nmData)
             else:
-                #If only 1 sky created, make a 2d array
+                #If only 1 sky created, make a 2d np.array
                 nmData = nmData[0]
             #Tag noisemap
             masterSky.tagDataAs("noisemap", nmData)
@@ -259,7 +261,7 @@ class megaraSkySubtractProcess(fatboyProcess):
 #      self.updateNoisemap(fdu, masterSky)
 #
 #    #subtract master sky and if "cleanFrame" exists, propagate it too
-#    fdu.updateData(float32(fdu.getData())-float32(masterSky.getData(tag="preSkySubtracted")))
+#    fdu.updateData(fdu.getData().astype(np.float32)-masterSky.getData(tag="preSkySubtracted").astype(np.float32))
 #    if (fdu.hasProperty("cleanFrame")):
 #      #If masterSky has tag cleanFrame_preSkySubtracted then use it.  This is an odd frame
 #      if (masterSky.hasProperty("cleanFrame_preSkySubtracted")):
@@ -537,12 +539,12 @@ class megaraSkySubtractProcess(fatboyProcess):
         else:
             print("megaraSkySubtractProcess::skySubtract> Sky subtracting "+str(len(fiberList))+" object fibers only...")
             self._log.writeLog(__name__, "Sky subtracting "+str(len(fiberList))+" object fibers only...")
-        ssData = zeros(fdu.getData().shape, dtype=float32)
-        outmask = zeros(fdu.getData().shape, dtype=int16)
+        ssData = np.zeros(fdu.getData().shape, dtype=np.float32)
+        outmask = np.zeros(fdu.getData().shape, dtype=int16)
         if (fdu.hasProperty("cleanFrame")):
-            cleanSSData = zeros(fdu.getData().shape, dtype=float32)
+            cleanSSData = np.zeros(fdu.getData().shape, dtype=np.float32)
         if (doNM):
-            nmSSData = zeros(fdu.getData().shape, dtype=float32)
+            nmSSData = np.zeros(fdu.getData().shape, dtype=np.float32)
         for idx in fiberList:
             j = idx-1 #index starts at 0 for ylos, yhis
             if (len(skyData.shape) == 3):
@@ -560,7 +562,7 @@ class megaraSkySubtractProcess(fatboyProcess):
                     if (doNM):
                         nmData = masterSky.getData(tag="noisemap")[1,:,:]
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                #currMask = ones(fdu.getData(tag="resampled")[ylos[j]:yhis[j]+1,:].shape, dtype=bool)
+                #currMask = np.ones(fdu.getData(tag="resampled")[ylos[j]:yhis[j]+1,:].shape, dtype=bool)
                 #fiber = (fdu.getData(tag="resampled")[ylos[j]:yhis[j]+1,:]).copy()
                 currMask = (slitmask.getData()[ylos[j]:yhis[j]+1,:] == idx)
                 fiber = (fdu.getData()[ylos[j]:yhis[j]+1,:]).copy()
@@ -585,7 +587,7 @@ class megaraSkySubtractProcess(fatboyProcess):
                 ssData[ylos[j]:yhis[j]+1,:] += (fiber-skyData*scale_factor)*currMask
                 cleanSSData[ylos[j]:yhis[j]+1,:] += (cleanFiber-cleanData*clean_factor)*currMask
                 if (doNM):
-                    nmSSData[ylos[j]:yhis[j]+1,:] += sqrt(nmFiber**2 + (nmData*scale_factor)**2)*currMask
+                    nmSSData[ylos[j]:yhis[j]+1,:] += np.sqrt(nmFiber**2 + (nmData*scale_factor)**2)*currMask
                 #update outmask
                 outmask[ylos[j]:yhis[j]+1,:][currMask] = idx
 
@@ -603,7 +605,7 @@ class megaraSkySubtractProcess(fatboyProcess):
                         plt.show()
                     plt.close()
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                #currMask = ones(fdu.getData(tag="resampled")[ylos[j]:yhis[j]+1,:].shape, dtype=bool)
+                #currMask = np.ones(fdu.getData(tag="resampled")[ylos[j]:yhis[j]+1,:].shape, dtype=bool)
                 #fiber = (fdu.getData(tag="resampled")[:,ylos[j]:yhis[j]+1]).copy()
                 currMask = (slitmask.getData()[:,ylos[j]:yhis[j]+1] == idx)
                 fiber = (fdu.getData()[:,ylos[j]:yhis[j]+1]).copy()
@@ -622,7 +624,7 @@ class megaraSkySubtractProcess(fatboyProcess):
                 ssData[:,ylos[j]:yhis[j]+1] += (fiber-skyData*scale_factor)*currMask
                 cleanSSData[:,ylos[j]:yhis[j]+1] += (cleanFiber-cleanData*clean_factor)*currMask
                 if (doNM):
-                    nmSSData[:,ylos[j]:yhis[j]+1] += sqrt(nmFiber**2 + (nmData*scale_factor)**2)*currMask
+                    nmSSData[:,ylos[j]:yhis[j]+1] += np.sqrt(nmFiber**2 + (nmData*scale_factor)**2)*currMask
                 #update outmask
                 outmask[:,ylos[j]:yhis[j]+1][currMask] = idx
 
@@ -665,11 +667,11 @@ class megaraSkySubtractProcess(fatboyProcess):
             if (self._fdb.getGPUMode()):
                 nm = createNoisemap(masterSky.getData(), ncomb)
             else:
-                nm = sqrt(masterSky.getData()/ncomb)
+                nm = np.sqrt(masterSky.getData()/ncomb)
             masterSky.tagDataAs("noisemap", nm)
         #Get this FDU's noisemap
         nm = fdu.getData(tag="noisemap")
-        #Propagate noisemaps.  For subtraction, dz = sqrt(dx^2 + dy^2)
+        #Propagate noisemaps.  For subtraction, dz = np.sqrt(dx^2 + dy^2)
         if (self._fdb.getGPUMode()):
             if (masterSky.hasProperty("noisemap_preSkySubtracted")):
                 nm = noisemaps_ds_gpu(fdu.getData(tag="noisemap"), masterSky.getData(tag="noisemap_preSkySubtracted"))
@@ -677,9 +679,9 @@ class megaraSkySubtractProcess(fatboyProcess):
                 nm = noisemaps_ds_gpu(fdu.getData(tag="noisemap"), masterSky.getData(tag="noisemap"))
         else:
             if (masterSky.hasProperty("noisemap_preSkySubtracted")):
-                nm = sqrt(fdu.getData(tag="noisemap")**2+masterSky.getData(tag="noisemap_preSkySubtracted")**2)
+                nm = np.sqrt(fdu.getData(tag="noisemap")**2+masterSky.getData(tag="noisemap_preSkySubtracted")**2)
             else:
-                nm = sqrt(fdu.getData(tag="noisemap")**2+masterSky.getData(tag="noisemap")**2)
+                nm = np.sqrt(fdu.getData(tag="noisemap")**2+masterSky.getData(tag="noisemap")**2)
         fdu.tagDataAs("noisemap", nm)
     #end updateNoisemap
 

@@ -28,7 +28,7 @@ class miradasCombineSlicesProcess(fatboyProcess):
         else:
             #Option not set, next check for slitlet_list
             if ('slitletList' in calibs):
-                nslits = max(calibs['slitletList'])
+                nslits = np.max(calibs['slitletList'])
                 islits = np.array(calibs['slitletList']).astype(np.int32)
             else:
                 #Check header info for SPEC_xx and find max slitlet
@@ -131,7 +131,7 @@ class miradasCombineSlicesProcess(fatboyProcess):
                 nmDen = np.zeros(xsize, dtype=np.float32)
             for i in range(nslices):
                 if (doNM):
-                    #Handle areas where noisemap is 0
+                    #Handle areas np.where noisemap is 0
                     b = (nmSlices[i] == 0)
                     nmSlices[i][b] = 1
                     if (weight_mode == "none"):
@@ -166,7 +166,7 @@ class miradasCombineSlicesProcess(fatboyProcess):
                         cleanDen += cleanWeights[i]
 
             #Divide to produce final weighted combined slices
-            #Handle zeros
+            #Handle np.zeros
             b = (den == 0)
             den[b] = 1
             combined_slices[j] = num/den
@@ -238,7 +238,7 @@ class miradasCombineSlicesProcess(fatboyProcess):
         if (slitletList is not None):
             #passed from XML with <calib> tag.
             if (isinstance(slitletList, list) or isinstance(slitletList, np.ndarray)):
-                #Passed as list or array
+                #Passed as list or np.array
                 print("miradasCombineSlicesProcess::getCalibs> Using slitlet list: "+str(slitletList))
                 self._log.writeLog(__name__, "Using slitlet list: "+str(slitletList))
                 calibs['slitletList'] = np.array(slitletList)

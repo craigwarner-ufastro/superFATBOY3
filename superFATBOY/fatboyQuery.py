@@ -1,3 +1,4 @@
+import numpy as np
 ## @package superFATBOY
 #  Documentation for pipeline.
 #
@@ -217,7 +218,7 @@ class fatboyQuery:
                     #loop over start to end index numbers and look for matching files
                     for j in range(startIdx, endIdx+1):
                         sindex = str(j)
-                        #pad index with left zeros to number of digits in endIdx
+                        #pad index with left np.zeros to number of digits in endIdx
                         while (len(sindex) < len(tokens[2])):
                             sindex = '0'+sindex
                         matches = glob.glob(pfix+'*'+sindex+'.fits')
@@ -239,8 +240,8 @@ class fatboyQuery:
                             if (len(tokens) > 4):
                                 #output prefix and start index both given
                                 sfileindex = str(int(tokens[4])-startIdx+int(sfileindex))
-                                zeros = '0000'
-                                sfileindx = zeros[len(sfileindex):]+sfileindex
+                                np.zeros = '0000'
+                                sfileindx = np.zeros[len(sfileindex):]+sfileindex
                                 ident = tokens[3]
                             elif (len(tokens) > 3):
                                 #output prefix given
@@ -500,7 +501,7 @@ class fatboyQuery:
                             if (j in excepts):
                                 continue
                             sindex = str(j)
-                            #pad index with left zeros to number of digits in stopIdx
+                            #pad index with left np.zeros to number of digits in stopIdx
                             while (len(sindex) < len(stopIdx)):
                                 sindex = '0'+sindex
                             matches = None

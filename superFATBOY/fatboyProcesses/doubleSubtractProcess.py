@@ -12,14 +12,13 @@ try:
     if (not superFATBOY.gpuEnabled()):
         hasCuda = False
     else:
-        import pycuda.driver as drv
-        if (not superFATBOY.threaded()):
-            #If not threaded mode, import autoinit.  Otherwise assume context exists.
-            #Code will crash if in threaded mode and context does not exist.
-            import pycuda.autoinit
-        from pycuda.compiler import SourceModule
+        import cupy as cp
+        #if (not superFATBOY.threaded()):
+        #    #If not threaded mode, import autoinit.  Otherwise assume context exists.
+        #    #Code will crash if in threaded mode and context does not exist.
+        #    pass
 except Exception:
-    print("doubleSubtractProcess> Warning: PyCUDA not installed")
+    print("doubleSubtractProcess> Warning: CuPy not installed")
     hasCuda = False
 
 block_size = 512
@@ -30,7 +29,7 @@ class doubleSubtractProcess(fatboyProcess):
     def get_dbs_mod(self):
         dbs_mod = None
         if (hasCuda):
-            dbs_mod = SourceModule("""
+            dbs_mod = cp.RawModule(code="""extern "C" {
           __global__ void getPosNegForDS_float(float *image, float *pos, float *neg, int size) {
             const int i = blockDim.x*blockIdx.x + threadIdx.x;
             if (i >= size) return;
@@ -180,7 +179,7 @@ class doubleSubtractProcess(fatboyProcess):
               if (doNM) nmOut[i] = sqrt(nmOut[i]);
             }
           }
-        """)
+          }""")
         return dbs_mod
     #end get_dbs_mod
 
@@ -188,8 +187,8 @@ class doubleSubtractProcess(fatboyProcess):
     def doDoubleSubtractGPU(self, fdu, calibs, shift):
         t = time.time()
         #Get negative and positive offsets
-        negOffset = 0 - min([0, shift])
-        posOffset = shift - min([0, shift])
+        negOffset = 0 - min([0,  shift])
+        posOffset = shift - min([0,  shift])
 
         inShape = fdu.getShape()
         rows = inShape[0]
@@ -202,7 +201,7 @@ class doubleSubtractProcess(fatboyProcess):
         #Input data
         imageIn = fdu.getData().copy()
         #Form output arrays
-        imageOut = np.empty(outShape, dtype=np.float32)
+        imageOut = cp.empty(outShape, dtype=np.float32)
 
         #Figure out slitmask options
         doSlitmask = False
@@ -210,65 +209,65 @@ class doubleSubtractProcess(fatboyProcess):
         ###Important: as of double subtraction, 'slitmask' will no longer be a calib for the
         ###entire object / data set but each frame will have its own slitmask as a property.
         ###This is because double subtract shifts can vary between frames!
-        slitmaskIn = np.empty(1, dtype=np.int32)
+        slitmaskIn = cp.empty(1, dtype=np.int32)
         if (fdu._specmode != fdu.FDU_TYPE_LONGSLIT and 'slitmask' in calibs):
             hasSlitmask = True
             #slitmaskIn will always be the calib
-            slitmaskIn = np.int32(calibs['slitmask'].getData().copy())
+            slitmaskIn = calibs['slitmask'].getData().astype(np.int32).copy()
             if (not fdu.hasProperty('slitmask')):
                 #Output will be tied to each individual frame
                 doSlitmask = True
-                slitmaskOut = np.empty(outShape, dtype=np.int32)
+                slitmaskOut = cp.empty(outShape, dtype=np.int32)
 
         #Figure out noisemap options
-        nmIn = np.empty(1, dtype=np.float32)
-        nmOut = np.empty(1, dtype=np.float32)
+        nmIn = cp.empty(1, dtype=np.float32)
+        nmOut = cp.empty(1, dtype=np.float32)
         doNM = False
         if (fdu.hasProperty("noisemap")):
             doNM = True
             nmIn = fdu.getProperty("noisemap").copy()
-            nmOut = np.empty(outShape, dtype=np.float32)
+            nmOut = cp.empty(outShape, dtype=np.float32)
 
         #Figure out cleanFrame options
-        cleanFrameIn = np.empty(1, dtype=np.float32)
-        cleanFrameOut = np.empty(1, dtype=np.float32)
+        cleanFrameIn = cp.empty(1, dtype=np.float32)
+        cleanFrameOut = cp.empty(1, dtype=np.float32)
         doCleanFrame = False
         if (fdu.hasProperty("cleanFrame")):
             doCleanFrame = True
             cleanFrameIn = fdu.getProperty("cleanFrame").copy()
-            cleanFrameOut = np.empty(outShape, dtype=np.float32)
+            cleanFrameOut = cp.empty(outShape, dtype=np.float32)
 
         #Figure out exposure map options
-        expmapIn = np.empty(1, dtype=np.float32)
-        expmapOut = np.empty(1, dtype=np.float32)
+        expmapIn = cp.empty(1, dtype=np.float32)
+        expmapOut = cp.empty(1, dtype=np.float32)
         doExpmap = False
         if (fdu.hasProperty("exposure_map")):
             doExpmap = True
             expmapIn = fdu.getProperty("exposure_map").copy()
-            expmapOut = np.empty(outShape, dtype=np.float32)
+            expmapOut = cp.empty(outShape, dtype=np.float32)
 
         blocks = imageOut.size // 512
         if (imageOut.size % 512 != 0):
             blocks += 1
         if (doSlitmask):
             kernel = self.get_dbs_mod().get_function("doubleSubtractImages")
-            kernel(drv.In(slitmaskIn), drv.In(imageIn), drv.In(expmapIn), drv.In(nmIn), drv.In(cleanFrameIn), drv.Out(slitmaskOut), drv.Out(imageOut), drv.Out(expmapOut), drv.Out(nmOut), drv.Out(cleanFrameOut), np.int32(doExpmap), np.int32(doNM), np.int32(doCleanFrame), np.int32(cols), np.int32(rows), np.int32(negOffset), np.int32(posOffset), np.int32(fdu.dispersion == fdu.DISPERSION_HORIZONTAL), grid=(blocks, 1), block=(block_size, 1, 1))
+            kernel((blocks, 1), (block_size, 1, 1), (cp.asarray(slitmaskIn), cp.asarray(imageIn), cp.asarray(expmapIn), cp.asarray(nmIn), cp.asarray(cleanFrameIn), slitmaskOut, imageOut, expmapOut, nmOut, cleanFrameOut, np.int32(doExpmap), np.int32(doNM), np.int32(doCleanFrame), np.int32(cols), np.int32(rows), np.int32(negOffset), np.int32(posOffset), fdu.dispersion == np.int32(fdu.DISPERSION_HORIZONTAL)))
             #Create new data tag "slitmask"
             #Use new fdu.setSlitmask
             fdu.setSlitmask(slitmaskOut, pname=self._pname)
         else:
             kernel = self.get_dbs_mod().get_function("doubleSubtractImages_noslit")
-            kernel(drv.In(slitmaskIn), drv.In(imageIn), drv.In(expmapIn), drv.In(nmIn), drv.In(cleanFrameIn), drv.Out(imageOut), drv.Out(expmapOut), drv.Out(nmOut), drv.Out(cleanFrameOut), np.int32(hasSlitmask), np.int32(doExpmap), np.int32(doNM), np.int32(doCleanFrame), np.int32(cols), np.int32(rows), np.int32(negOffset), np.int32(posOffset), np.int32(fdu.dispersion == fdu.DISPERSION_HORIZONTAL), grid=(blocks, 1), block=(block_size, 1, 1))
-        fdu.updateData(imageOut)
+            kernel((blocks, 1), (block_size, 1, 1), (cp.asarray(slitmaskIn), cp.asarray(imageIn), cp.asarray(expmapIn), cp.asarray(nmIn), cp.asarray(cleanFrameIn), imageOut, expmapOut, nmOut, cleanFrameOut, np.int32(hasSlitmask), np.int32(doExpmap), np.int32(doNM), np.int32(doCleanFrame), np.int32(cols), np.int32(rows), np.int32(negOffset), np.int32(posOffset), fdu.dispersion == np.int32(fdu.DISPERSION_HORIZONTAL)))
+        fdu.updateData(imageOut.get())
         if (doNM):
             #Update "noisemap" data tag
-            fdu.tagDataAs("noisemap", data=nmOut)
+            fdu.tagDataAs("noisemap", data=nmOut.get())
         if (doCleanFrame):
             #Update "cleanFrame" data tag
-            fdu.tagDataAs("cleanFrame", data=cleanFrameOut)
+            fdu.tagDataAs("cleanFrame", data=cleanFrameOut.get())
         if (doExpmap):
             #Update "exposure_map" data tag
-            fdu.tagDataAs("exposure_map", data=expmapOut)
+            fdu.tagDataAs("exposure_map", data=expmapOut.get())
         print(time.time() - t)
         #No need to return anything as fdu and calibs will be updated in place
     #end doDoubleSubtractionGPU
@@ -297,8 +296,8 @@ class doubleSubtractProcess(fatboyProcess):
             #Use GPU
             self.doDoubleSubtractGPU(fdu, calibs, shift)
         else:
-            negOffset = 0 - min([0, shift])
-            posOffset = shift - min([0, shift])
+            negOffset = 0 - min([0,  shift])
+            posOffset = shift - min([0,  shift])
             ###Important: as of double subtraction, 'slitmask' will no longer be a calib for the
             ###entire object / data set but each frame will have its own slitmask as a property.
             ###This is because double subtract shifts can vary between frames!
@@ -470,7 +469,7 @@ class doubleSubtractProcess(fatboyProcess):
         if (useHeader):
             #Use the RA, DEC, and pixscale - guess has already been calculated in sky subtract spec
             if (fdu.hasProperty("double_subtract_guess")):
-                dbs_guess = int(round(fdu.getProperty("double_subtract_guess")))
+                dbs_guess = int(np.round(fdu.getProperty("double_subtract_guess")))
                 print("doubleSubtractProcess::findDoubleSubtractShift> Using " + str(dbs_guess) + " as calculated from header info for " + fdu.getFullId() + "...")
                 self._log.writeLog(__name__, "Using " + str(dbs_guess) + " as calculated from header info for " + fdu.getFullId() + "...")
                 return dbs_guess
@@ -498,19 +497,19 @@ class doubleSubtractProcess(fatboyProcess):
         #Instead of taking median, sum so we get short spectra but do a
         #5 pixel boxcar median smoothing to get rid of hot pixels
         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-            posCut = mediansmooth1d(sum(pos[ylo:yhi, xlo:xhi], 1), 5)
-            negCut = mediansmooth1d(sum(neg[ylo:yhi, xlo:xhi], 1), 5)
+            posCut = mediansmooth1d(np.sum(pos[ylo:yhi, xlo:xhi], 1), 5)
+            negCut = mediansmooth1d(np.sum(neg[ylo:yhi, xlo:xhi], 1), 5)
         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-            posCut = mediansmooth1d(sum(pos[xlo:xhi, ylo:yhi], 0), 5)
-            negCut = mediansmooth1d(sum(neg[xlo:xhi, ylo:yhi], 0), 5)
-        ccor = correlate(posCut, negCut, mode='same')
+            posCut = mediansmooth1d(np.sum(pos[xlo:xhi, ylo:yhi], 0), 5)
+            negCut = mediansmooth1d(np.sum(neg[xlo:xhi, ylo:yhi], 0), 5)
+        ccor = np.correlate(posCut, negCut, mode='same')
         mcor = np.where(ccor == np.max(ccor))[0]
         if (constrain_boxsize is not None and fdu.hasProperty("double_subtract_guess")):
             print("doubleSubtractProcess::findDoubleSubtractShift> Using initial guess " + str(fdu.getProperty("double_subtract_guess")) + " pixels and boxsize " + str(constrain_boxsize) + " for " + fdu.getFullId() + "...")
             self._log.writeLog(__name__, "Using initial guess " + str(fdu.getProperty("double_subtract_guess")) + " pixels and boxsize " + str(constrain_boxsize) + " for " + fdu.getFullId() + "...")
             guess1 = int(len(ccor) // 2 - fdu.getProperty("double_subtract_guess"))
             guess2 = int(len(ccor) // 2 + fdu.getProperty("double_subtract_guess"))
-            maxVal = np.max([np.max(ccor[guess1 - constrain_boxsize // 2 : guess1 + constrain_boxsize // 2]), np.max(ccor[guess2 - constrain_boxsize // 2 : guess2 + constrain_boxsize // 2])])
+            maxVal = max([np.max(ccor[guess1 - constrain_boxsize // 2 : guess1 + constrain_boxsize // 2]), np.max(ccor[guess2 - constrain_boxsize // 2 : guess2 + constrain_boxsize // 2])])
             mcor = np.where(ccor == maxVal)[0]
         shift = len(ccor) // 2 - mcor[0]
         print("doubleSubtractProcess::findDoubleSubtractShift> Double subtract shift = " + str(shift) + " pixels for " + fdu.getFullId())
@@ -558,15 +557,15 @@ class doubleSubtractProcess(fatboyProcess):
 
     def getPosNegForDS(self, image):
         #Returns (pos, neg)
-        image = np.float32(image)
-        pos = np.empty(image.shape, dtype=np.float32)
-        neg = np.empty(image.shape, dtype=np.float32)
+        image = image.astype(np.float32)
+        pos = cp.empty(image.shape, dtype=np.float32)
+        neg = cp.empty(image.shape, dtype=np.float32)
         blocks = image.size // 512
         if (image.size % 512 != 0):
             blocks += 1
         kernel = self.get_dbs_mod().get_function("getPosNegForDS_float")
-        kernel(drv.In(image), drv.Out(pos), drv.Out(neg), np.int32(image.size), grid=(blocks, 1), block=(block_size, 1, 1))
-        return (pos, neg)
+        kernel((blocks, 1), (block_size, 1, 1), (cp.asarray(image), pos, neg, np.int32(image.size)))
+        return (pos.get(), neg.get())
     #end getPosNegForDS
 
     ## OVERRRIDE set default options here
@@ -603,7 +602,7 @@ class doubleSubtractProcess(fatboyProcess):
             masterFlat.tagDataAs("noisemap", nm)
         #Get this FDU's noisemap
         nm = fdu.getData(tag="noisemap")
-        #Propagate noisemaps.  For division dz/z = sqrt((dx/x)^2 + (dy/y)^2)
+        #Propagate noisemaps.  For division dz/z = np.sqrt((dx/x)^2 + (dy/y)^2)
         if (self._fdb.getGPUMode()):
             #noisemaps_dbs_gpu(dbs_image, pre-dbs_noisemap, pre-dbs_image, mflat noisemap, mflat
             nm = noisemaps_dbs_gpu(fdu.getData(), fdu.getData(tag="noisemap"), fdu.getData("cleanFrame"), masterFlat.getData("noisemap"), masterFlat.getData())

@@ -28,7 +28,7 @@ class osirisSpectrum(fatboySpectrum):
             t = time.time()
             image = pyfits.open(self.filename)
             try:
-                self._data = image[self.section].data.astype(int32)
+                self._data = image[self.section].data.astype(np.int32)
             except Exception:
                 self._data = None
                 print("osirisSpectrum::getData> Error: Could not find extension "+str(self.section)+" in "+self.filename+"!  Discarding this frame!")
@@ -38,8 +38,7 @@ class osirisSpectrum(fatboySpectrum):
             if (not self._data.dtype.isnative):
                 #Byteswap
                 self._data = self._data.byteswap()
-                self._data = self._data.newbyteorder('<')
-                self._data.dtype.newbyteorder('<')
+                self._data = self._data.view(self._data.dtype.newbyteorder('<'))
             self._shape = self._data.shape
             image.close()
             if (self._fdb is not None):
@@ -47,7 +46,7 @@ class osirisSpectrum(fatboySpectrum):
                 self._fdb.checkMemoryManagement(self) #check memory status
             if (self.getObsType(True) == self.FDU_TYPE_BAD_PIXEL_MASK):
                 #bad pixel masks should be type bool
-                if (self._data.dtype != dtype("bool")):
+                if (self._data.dtype != np.dtype("bool")):
                     self._data = self._data.astype("bool")
             return self._data
         else:
@@ -55,7 +54,7 @@ class osirisSpectrum(fatboySpectrum):
             return fatboySpectrum.getData(self, tag=tag)
     #end getData
 
-    ## Base class returns empty list.  Can be overridden to return a list of fatboyDataUnit (or subclass) representing multiple data extensions.
+    ## Base class returns np.empty list.  Can be overridden to return a list of fatboyDataUnit (or subclass) representing multiple data extensions.
     ## Each should have a different fdu.section value.  For instance, newfirm has 4 detectors or CIRCE has multiple nramps.
     def getMultipleExtensions(self):
         extendedImages = []

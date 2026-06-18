@@ -4,7 +4,7 @@ from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
 from superFATBOY import gpu_drihizzle, drihizzle
-from numpy import *
+import numpy as np
 from scipy.optimize import leastsq
 
 block_size = 512
@@ -352,7 +352,7 @@ class slitletAlignProcess(fatboyProcess):
             #Use 2 passes of quartile filter
             badpix = oned == 0 #First find bad pixels
             for i in range(2):
-                tempcut = zeros(len(oned))
+                tempcut = np.zeros(len(oned))
                 nh = 25-badpix[:51].sum()//2 #Instead of defaulting to 25 for quartile, use median of bottom half of *nonzero* pixels
                 for k in range(25):
                     #tempcut[k] = oned[k] - gpu_arraymedian(oned[:51],nonzero=True,nhigh=25)
@@ -366,7 +366,7 @@ class slitletAlignProcess(fatboyProcess):
                 #Set zero values to small positive number to avoid being flagged
                 tempcut[tempcut == 0] = 1.e-6
                 #Correct for big negative values
-                tempcut[where(tempcut < -100)] = 1.e-6
+                tempcut[np.where(tempcut < -100)] = 1.e-6
                 oned = tempcut
             #Set bad pixels back to 0
             oned[badpix] = 0
@@ -376,12 +376,12 @@ class slitletAlignProcess(fatboyProcess):
             xoffInit.append(sxmax-int(slitx[j]))
 
         #Select reference slit
-        xoffInit = array(xoffInit)
+        xoffInit = np.array(xoffInit)
         if (reference_slit is None):
             #Default option, choose middle xslit value
             #Don't use bottom or top slitlet so search for middle slitlet from [1:-1]
-            reference_slit = where(abs(xoffInit[1:-1]-gpu_arraymedian(xoffInit[1:-1])) == min(abs(xoffInit[1:-1]-gpu_arraymedian(xoffInit[1:-1]))))[0][0]+1
-            #Add 1 back to index since where searched [1:-1]
+            reference_slit = np.where(np.abs(xoffInit[1:-1]-gpu_arraymedian(xoffInit[1:-1])) == np.min(np.abs(xoffInit[1:-1]-gpu_arraymedian(xoffInit[1:-1]))))[0][0]+1
+            #Add 1 back to index since np.where searched [1:-1]
         else:
             if (isinstance(reference_slit, str) and reference_slit.lower() == "prompt"):
                 #Prompt user
@@ -393,11 +393,11 @@ class slitletAlignProcess(fatboyProcess):
                 if (reference_slit < 0 or reference_slit >= nslits):
                     print("slitletAlignProcess::slitletAlign> Warning: invalid reference slit "+str(reference_slit))
                     self._log.writeLog(__name__, "invalid reference slit "+str(reference_slit), type=fatboyLog.WARNING)
-                    reference_slit = where(abs(xoffInit[1:-1]-gpu_arraymedian(xoffInit[1:-1])) == min(abs(xoffInit[1:-1]-gpu_arraymedian(xoffInit[1:-1]))))[0][0]+1
+                    reference_slit = np.where(np.abs(xoffInit[1:-1]-gpu_arraymedian(xoffInit[1:-1])) == np.min(np.abs(xoffInit[1:-1]-gpu_arraymedian(xoffInit[1:-1]))))[0][0]+1
             except Exception as ex:
                 print("slitletAlignProcess::slitletAlign> Warning: invalid reference slit "+str(reference_slit)+" - "+str(ex))
                 self._log.writeLog(__name__, "invalid reference slit "+str(reference_slit)+" - "+str(ex), type=fatboyLog.WARNING)
-                reference_slit = where(abs(xoffInit[1:-1]-gpu_arraymedian(xoffInit[1:-1])) == min(abs(xoffInit[1:-1]-gpu_arraymedian(xoffInit[1:-1]))))[0][0]+1
+                reference_slit = np.where(np.abs(xoffInit[1:-1]-gpu_arraymedian(xoffInit[1:-1])) == np.min(np.abs(xoffInit[1:-1]-gpu_arraymedian(xoffInit[1:-1]))))[0][0]+1
         print("slitletAlignProcess::slitletAlign> Using slit "+str(reference_slit)+" ["+str(sylo[reference_slit])+":"+str(syhi[reference_slit])+"] as reference slit to align slitlets in "+skyFDU.getFullId())
         self._log.writeLog(__name__, "Using slit "+str(reference_slit)+" ["+str(sylo[reference_slit])+":"+str(syhi[reference_slit])+"] as reference slit to align slitlets in "+skyFDU.getFullId())
 
@@ -424,7 +424,7 @@ class slitletAlignProcess(fatboyProcess):
 
         #Loop over segments
         for i in range(seg1, seg2, seginc):
-            #Find min, max x in ref slit where all slits overlap
+            #Find min, max x in ref slit np.where all slits overlap
             searchxmin = xoffInit.max()-xoffInit[reference_slit]+25
             searchxmax = xoffInit.min()-xoffInit[reference_slit]+xsize-25
             #Update max_lines, min_thresh for this segment
@@ -447,28 +447,28 @@ class slitletAlignProcess(fatboyProcess):
             xlo = int(searchxmin+(searchxmax-searchxmin)*i//n_segments)
             xhi = int(searchxmin+(searchxmax-searchxmin)*(i+1)//n_segments)
             #x indices for current segment in reference slit
-            validxs = arange(xhi-xlo+1)+xlo
+            validxs = np.arange(xhi-xlo+1)+xlo
             #Find brightest line in segment
             #blref = x index of brightest line with respect to 0
-            blref = validxs[where(onedcuts[reference_slit][validxs] == max(onedcuts[reference_slit][validxs]))[0][0]]+xoffInit[reference_slit]
+            blref = validxs[np.where(onedcuts[reference_slit][validxs] == np.max(onedcuts[reference_slit][validxs]))[0][0]]+xoffInit[reference_slit]
             #Fit a Gaussian to find center to sub-pixel accuracy
             #Square data first to ensure that bright line dominates fit
             refCut = onedcuts[reference_slit][blref-10-xoffInit[reference_slit]:blref+11-xoffInit[reference_slit]]**2
-            p = zeros(4, dtype=float64)
-            p[0] = max(refCut)
+            p = np.zeros(4, dtype=np.float64)
+            p[0] = np.max(refCut)
             p[1] = 10
             p[2] = 2
             p[3] = gpu_arraymedian(refCut, nonzero=True)
-            lsq = leastsq(gaussResiduals, p, args=(arange(len(refCut), dtype=float64), refCut))
+            lsq = leastsq(gaussResiduals, p, args=(np.arange(len(refCut), dtype=np.float64), refCut))
             fracOffset = lsq[0][1]-10
-            #Multiply by sqrt(2) because we fit squared data.  This will
+            #Multiply by np.sqrt(2) because we fit squared data.  This will
             #give us the width of the emission lines.
-            gaussWidth = abs(lsq[0][2]*sqrt(2))
+            gaussWidth = abs(lsq[0][2]*np.sqrt(2))
             if (gaussWidth > 2):
                 #If its a broad line for some reason, use 1.5 as default
                 gaussWidth = 1.5
             #Max peak - take sqrt because we squared the data
-            maxPeak = sqrt(abs(lsq[0][0]))
+            maxPeak = np.sqrt(abs(lsq[0][0]))
             nlines = 1
             print("\tBrightest line found at "+str(blref+fracOffset-xoffInit[reference_slit])+" in slitlet "+str(reference_slit))
             self._log.writeLog(__name__, "Brightest line found at "+str(blref+fracOffset-xoffInit[reference_slit])+" in slitlet "+str(reference_slit), printCaller=False, tabLevel=1)
@@ -477,10 +477,10 @@ class slitletAlignProcess(fatboyProcess):
             bline = []
             for j in range(nslits):
                 #Define 101 pixel wide box (less if near either end of segment)
-                bxlo = max(blref-xoffGuess[j]-50,0)
-                bxhi = min(bxlo+101,xhi+xoffGuess[reference_slit]-xoffGuess[j])
+                bxlo = max(blref-xoffGuess[j]-50, 0)
+                bxhi = min(bxlo+101, xhi+xoffGuess[reference_slit]-xoffGuess[j])
                 #Find brightest line in box for this slitlet
-                bline.append(where(onedcuts[j][bxlo:bxhi] == max(onedcuts[j][bxlo:bxhi]))[0][0]+bxlo+xoffGuess[j])
+                bline.append(np.where(onedcuts[j][bxlo:bxhi] == np.max(onedcuts[j][bxlo:bxhi]))[0][0]+bxlo+xoffGuess[j])
                 #Continue to next iteration if first segment
                 #OR if not doing the nebular emission check.
                 if (len(reflines) == 0 or not nebularEmission):
@@ -489,27 +489,27 @@ class slitletAlignProcess(fatboyProcess):
                 #This is not the first segment.
                 #Find reference line index -- closest line in another segment.
                 #Line must be valid for all slitlets
-                xDiff = array(reflines-blref) #xDiff = difference in pixel space from this line
-                refline = where(abs(xDiff) == min(abs(xDiff[array(validlines)])))[0][0]
+                xDiff = np.array(reflines-blref) #xDiff = difference in pixel space from this line
+                refline = np.where(np.abs(xDiff) == np.min(np.abs(xDiff[np.array(validlines)])))[0][0]
                 #Use only valid lines for each slit, do linear fit
-                b = where(array(validOffsets)[:,j])
-                if (len(reflines[b]) < 2):
+                b = np.where(np.array(validOffsets)[:,j])
+                if (len(np.array(reflines)[b]) < 2):
                     print("slitletAlignProcess::slitletAlign> Warning: slitlet "+str(j)+" - unable to find at least 2 valid lines for nebular emission check!")
                     self._log.writeLog(__name__, "slitlet "+str(j)+" - unable to find at least 2 valid lines for nebular emission check!", type=fatboyLog.WARNING)
                     continue
                 #Do linear least squares fit x = refslit X, y = currSlit X
-                lsq = leastsq(linResiduals, [0.,0.], args=(array(reflines)[b],(array(xoffsets)[:,j])[b]))
+                lsq = leastsq(linResiduals, [0.,0.], args=(np.array(reflines)[b],(np.array(xoffsets)[:,j])[b]))
                 #create a temp list = [reflines, blref]
-                tempLines = (array(reflines)[b]).tolist()+[blref]
+                tempLines = (np.array(reflines)[b]).tolist()+[blref]
                 #Iterate over three brightest lines in the 101 pixel box in this slitlet
                 for z in range(3):
                     #Find brightest remaining line
-                    tmppeak = where(currCut == max(currCut))[0][0]
+                    tmppeak = np.where(currCut == np.max(currCut))[0][0]
                     #Apply offset and box lo to get actual index
                     tmpbline = tmppeak+bxlo+xoffGuess[j]
                     diff = abs(xoffsets[refline][j]-(xoffGuess[j]+blref-tmpbline))
-                    tempxoff = ((array(xoffsets)[:,j])[b]).tolist()+[xoffGuess[j]+blref-tmpbline]
-                    tmpsigma = (array(tempxoff)-(lsq[0][0]+lsq[0][1]*array(tempLines))).std()
+                    tempxoff = ((np.array(xoffsets)[:,j])[b]).tolist()+[xoffGuess[j]+blref-tmpbline]
+                    tmpsigma = (np.array(tempxoff)-(lsq[0][0]+lsq[0][1]*np.array(tempLines))).std()
                     if (z == 0):
                         minsigma = tmpsigma
                         mindiff = diff
@@ -520,13 +520,13 @@ class slitletAlignProcess(fatboyProcess):
                         self._log.writeLog(__name__, "Slit "+str(j)+": Using line at "+str(tmppeak+bxlo)+" instead of "+str(bline[j]-xoffGuess[j]), printCaller=False, tabLevel=1)
                         bline[j] = tmpbline
                     #Zero out this line in currCut
-                    currCut[max(0,tmppeak-10):min(tmppeak+11,101)] = 0
+                    currCut[max(0, tmppeak-10):min(tmppeak+11, 101)] = 0
             #Find difference between 1st and 2nd initial guesses
             #Do a sigma clipping to find sigma then set all >4*sigma to mean
-            bline = array(bline)
+            bline = np.array(bline)
             xprime = bline-blref
             meanMedSig = sigmaFromClipping(xprime, 2, 3)
-            bline[where(abs(xprime-meanMedSig[0]) > 4*meanMedSig[2])] = xprime.mean()+blref
+            bline[np.where(np.abs(xprime-meanMedSig[0]) > 4*meanMedSig[2])] = xprime.mean()+blref
             #print bline-xoffGuess
 
             #Use 21-px box around line in ref frame for x-corr
@@ -538,13 +538,13 @@ class slitletAlignProcess(fatboyProcess):
             #Cross-correlate ref with 21-px search box in each slit
             for j in range(len(bline)):
                 xlo = bline[j]-xoffGuess[j]-10
-                ccor = correlate(refCut, onedcuts[j][xlo:xlo+21]-arraymedian(onedcuts[j][xlo:xlo+21], nonzero=True),mode='same')
-                p = zeros(4, dtype=float64)
-                p[0] = max(ccor)
+                ccor = np.correlate(refCut, onedcuts[j][xlo:xlo+21]-arraymedian(onedcuts[j][xlo:xlo+21], nonzero=True),mode='same')
+                p = np.zeros(4, dtype=np.float64)
+                p[0] = np.max(ccor)
                 p[1] = 10
                 p[2] = gaussWidth
                 p[3] = gpu_arraymedian(ccor)
-                lsq = leastsq(gaussResiduals, p, args=(arange(len(ccor), dtype=float64), ccor))
+                lsq = leastsq(gaussResiduals, p, args=(np.arange(len(ccor), dtype=np.float64), ccor))
                 if (lsq[1] == 5):
                     #exceeded max number of calls
                     print("slitletAlignProcess::slitletAlign> Warning: Could not match up line "+str(blref)+" in slit "+str(j)+". Using initial default guess instead for fit anchoring purposes.")
@@ -559,53 +559,53 @@ class slitletAlignProcess(fatboyProcess):
                 currValid.append(True)
 
             #Store offsets, line, update validxs, blank out line
-            xoffsets.append(array(currXoff))
-            validOffsets.append(array(currValid))
+            xoffsets.append(np.array(currXoff))
+            validOffsets.append(np.array(currValid))
             #Round off to nearest pixel for indexing purposes
-            currXoff = (array(currXoff)+0.5).astype(int32)
+            currXoff = (np.array(currXoff)+0.5).astype(np.int32)
             #Blank out 11 pixel box in 1-d cuts
             for j in range(len(onedcuts)):
                 onedcuts[j][blref-5-currXoff[j]:blref+6-currXoff[j]] = 0
             reflines.append(blref)
             validlines.append(True)
             #Expand search area to include entire reference slit
-            #and not just region where all slits overlap
+            #and not just region np.where all slits overlap
             searchxmin = 25
             searchxmax = len(onedcuts[reference_slit])-25
             xlo = int(searchxmin+(searchxmax-searchxmin)*i//n_segments)
             xhi = int(searchxmin+(searchxmax-searchxmin)*(i+1)//n_segments)
-            validxs = arange(xhi-xlo+1)+xlo
-            validxs = concatenate((validxs[where(validxs < blref-5-xoffGuess[reference_slit])], validxs[where(validxs > blref+5-xoffGuess[reference_slit])]))
+            validxs = np.arange(xhi-xlo+1)+xlo
+            validxs = np.concatenate((validxs[np.where(validxs < blref-5-xoffGuess[reference_slit])], validxs[np.where(validxs > blref+5-xoffGuess[reference_slit])]))
             #Loop over other lines until NLINES and < SIGMA are reached
             inloop = 0
             findLines = True
             while (findLines and inloop < 10):
-                #If peak in resid array is <= 1% of peak of brightest line, break out of loop
+                #If peak in resid np.array is <= 1% of peak of brightest line, break out of loop
                 if (onedcuts[reference_slit][validxs].max() <= maxPeak/100):
                     findLines = False
                     break
                 #Find next brightest line
-                blref = validxs[where(onedcuts[reference_slit][validxs] == max(onedcuts[reference_slit][validxs]))[0][0]]+xoffInit[reference_slit]
+                blref = validxs[np.where(onedcuts[reference_slit][validxs] == np.max(onedcuts[reference_slit][validxs]))[0][0]]+xoffInit[reference_slit]
                 #Setup box sizes
                 refbox = 25
                 searchbox = 25
                 currXoff = []
                 currValid = []
-                xDiff = array(reflines-blref)
-                refline = where(abs(xDiff) == min(abs(xDiff[array(validlines)])))[0][0]
+                xDiff = np.array(reflines-blref)
+                refline = np.where(np.abs(xDiff) == np.min(np.abs(xDiff[np.array(validlines)])))[0][0]
                 #New initial guess for offset based on nearest aligned line.
-                xoffGuess = (xoffsets[refline]+0.5).astype(int32)
+                xoffGuess = (xoffsets[refline]+0.5).astype(np.int32)
                 blref += xoffGuess[reference_slit]-xoffInit[reference_slit]
 
                 #Fit a Gaussian to find center to sub-pixel accuracy
-                #Copy so that zeros do not get applied to onedcut
+                #Copy so that np.zeros do not get applied to onedcut
                 refCut = onedcuts[reference_slit][blref-10-xoffGuess[reference_slit]:blref+11-xoffGuess[reference_slit]]**2
-                p = zeros(4, dtype=float64)
-                p[0] = max(refCut)
+                p = np.zeros(4, dtype=np.float64)
+                p[0] = np.max(refCut)
                 p[1] = 10
-                p[2] = gaussWidth/sqrt(2)
+                p[2] = gaussWidth/np.sqrt(2)
                 p[3] = gpu_arraymedian(refCut)
-                lsq = leastsq(gaussResiduals, p, args=(arange(len(refCut), dtype=float64), refCut))
+                lsq = leastsq(gaussResiduals, p, args=(np.arange(len(refCut), dtype=np.float64), refCut))
                 fracOffset = lsq[0][1]-10
 
                 #Rejection 1: If current line is within 12 pixels of a previous line
@@ -624,7 +624,7 @@ class slitletAlignProcess(fatboyProcess):
                 refCutMed = arraymedian(refCut,nonzero=True)
                 #Rejection 2: If there is more than one zeroed out value
                 #within +/- 7 pixels of line's center
-                if (len(where(refCut[refbox-7:refbox+8] == 0)[0]) > 1):
+                if (len(np.where(refCut[refbox-7:refbox+8] == 0)[0]) > 1):
                     onedcuts[reference_slit][blref-1-xoffGuess[reference_slit]:blref+2-xoffGuess[reference_slit]] = 0
                     if (nlines > 5):
                         inloop+=1
@@ -632,11 +632,11 @@ class slitletAlignProcess(fatboyProcess):
                         inloop+=0.1
                     continue
                 #Find nonzero points within +/- 2*search box but excluding +/- 5 points from line center
-                leftpts = where(onedcuts[reference_slit][blref-xoffGuess[reference_slit]-2*searchbox:blref-xoffGuess[reference_slit]-5] != 0)[0]+blref-xoffGuess[reference_slit]-2*searchbox
-                rightpts = where(onedcuts[reference_slit][blref-xoffGuess[reference_slit]+6:blref-xoffGuess[reference_slit]+2*searchbox+1] != 0)[0]+blref-xoffGuess[reference_slit]+6
-                sigpts = concatenate((leftpts, rightpts))
+                leftpts = np.where(onedcuts[reference_slit][blref-xoffGuess[reference_slit]-2*searchbox:blref-xoffGuess[reference_slit]-5] != 0)[0]+blref-xoffGuess[reference_slit]-2*searchbox
+                rightpts = np.where(onedcuts[reference_slit][blref-xoffGuess[reference_slit]+6:blref-xoffGuess[reference_slit]+2*searchbox+1] != 0)[0]+blref-xoffGuess[reference_slit]+6
+                sigpts = np.concatenate((leftpts, rightpts))
                 #Rejection 3: If there are 3 or less such nonzero points on either the left or right side
-                if (len(where(sigpts+xoffGuess[reference_slit] < blref)[0]) <= 3 or len(where(sigpts+xoffGuess[reference_slit] > blref)[0]) <= 3):
+                if (len(np.where(sigpts+xoffGuess[reference_slit] < blref)[0]) <= 3 or len(np.where(sigpts+xoffGuess[reference_slit] > blref)[0]) <= 3):
                     onedcuts[reference_slit][blref-1-xoffGuess[reference_slit]:blref+2-xoffGuess[reference_slit]] = 0
                     if (nlines > 5):
                         inloop+=1
@@ -663,13 +663,13 @@ class slitletAlignProcess(fatboyProcess):
                         xlo = blref-xoffGuess[j]-25
                         if (xlo < 25 or xlo > len(onedcuts[j])-75):
                             continue
-                        bline = where(onedcuts[j][xlo:xlo+51] == max(onedcuts[j][xlo:xlo+51]))[0][0]
+                        bline = np.where(onedcuts[j][xlo:xlo+51] == np.max(onedcuts[j][xlo:xlo+51]))[0][0]
                         xoffGuess[j]=xoffGuess[j]+25-bline
                 #Cross correlate refbox with searchbox in ref slit for sanity check
                 xlo = blref-searchbox-xoffGuess[reference_slit]
-                ccor = correlate(refCut,onedcuts[reference_slit][xlo:xlo+searchbox*2+1], mode='same')
-                ccor = array(ccor)
-                mcor = where(ccor == max(ccor))[0][0]
+                ccor = np.correlate(refCut,onedcuts[reference_slit][xlo:xlo+searchbox*2+1], mode='same')
+                ccor = np.array(ccor)
+                mcor = np.where(ccor == np.max(ccor))[0][0]
                 #Rejection 5: If ccor breaks (?) skip this line.  It would make no sense
                 #for this to be more than 1 pixel away from zero.
                 if (abs(searchbox-mcor) > 1):
@@ -690,15 +690,15 @@ class slitletAlignProcess(fatboyProcess):
                         tempmcors.append(0)
                         continue
                     temp = onedcuts[j][xlo:xlo+searchbox*2+1]
-                    ccor = correlate(temp-arraymedian(temp),refCut-refCutMed,mode='same')
-                    p = zeros(4, dtype=float64)
-                    p[0] = max(ccor)
-                    p[1] = where(ccor == max(ccor))[0][0]
+                    ccor = np.correlate(temp-arraymedian(temp),refCut-refCutMed,mode='same')
+                    p = np.zeros(4, dtype=np.float64)
+                    p[0] = np.max(ccor)
+                    p[1] = np.where(ccor == np.max(ccor))[0][0]
                     p[2] = gaussWidth
                     p[3] = gpu_arraymedian(ccor)
                     llo = max(0, int(p[1]-5))
                     lhi = min(len(ccor), int(p[1]+6))
-                    lsq = leastsq(gaussResiduals, p, args=(arange(lhi-llo, dtype=float64)+llo, ccor[llo:lhi]))
+                    lsq = leastsq(gaussResiduals, p, args=(np.arange(lhi-llo, dtype=np.float64)+llo, ccor[llo:lhi]))
                     if (lsq[1] == 5):
                         #exceeded max number of calls
                         print("slitletAlignProcess::slitletAlign> Warning: Could not match up line "+str(blref)+" in slit "+str(j))
@@ -707,7 +707,7 @@ class slitletAlignProcess(fatboyProcess):
                         currValid.append(False)
                         tempmcors.append(0)
                         continue
-                    if (abs(where(ccor == max(ccor))[0][0] - lsq[0][1]) > 2):
+                    if (np.abs(np.where(ccor == np.max(ccor))[0][0] - lsq[0][1]) > 2):
                         #should be within +/- 2 pixels from guess
                         print("slitletAlignProcess::slitletAlign> Warning: Could not match up line "+str(blref)+" in slit "+str(j))
                         self._log.writeLog(__name__, "Could not match up line "+str(blref)+" in slit "+str(j), type=fatboyLog.WARNING)
@@ -720,7 +720,7 @@ class slitletAlignProcess(fatboyProcess):
                     currXoff.append(xoffGuess[j]-fracOffset-mcor+searchbox)
                     currValid.append(True)
                 #If ccor unsuccessful for any one slit, skip line
-                b = where(array(currValid))
+                b = np.where(np.array(currValid))
                 if (len(b[0]) == 1):
                     #Rejecton 6: Only found in one slit!
                     onedcuts[reference_slit][blref-5-xoffGuess[reference_slit]:blref+6-xoffGuess[reference_slit]] = 0
@@ -729,7 +729,7 @@ class slitletAlignProcess(fatboyProcess):
                     self._log.writeLog(__name__, "Warning: Line "+str(blref)+" thrown out because only found in one slit!", type=fatboyLog.WARNING)
                     continue
 
-                if (max(abs(array(currXoff)[b]-array(xoffGuess)[b])) > abs(reflines[refline]-blref)/10.):
+                if (np.max(np.abs(np.array(currXoff)[b]-np.array(xoffGuess)[b])) > abs(reflines[refline]-blref)/10.):
                     #Rejection 7: Max difference between initial guess and fitted
                     #value is greater than 10% of the distance between this line and
                     #the reference line in the reference slitlet.
@@ -739,9 +739,9 @@ class slitletAlignProcess(fatboyProcess):
                     self._log.writeLog(__name__, "Warning: Line "+str(blref)+" thrown out because one or more slitlets do not match.", type=fatboyLog.WARNING)
                     continue
                 #Fit expected vs actual offsets with line, find outliers
-                lsq = leastsq(linResiduals, [0.,0.], args=(array(currXoff)[b], array(tempmcors)[b]))
+                lsq = leastsq(linResiduals, [0.,0.], args=(np.array(currXoff)[b], np.array(tempmcors)[b]))
                 #Calculate residuals -- offsets - fit
-                offresid = abs(array(tempmcors)[b]-(lsq[0][0]+lsq[0][1]*array(currXoff)[b]))
+                offresid = np.abs(np.array(tempmcors)[b]-(lsq[0][0]+lsq[0][1]*np.array(currXoff)[b]))
                 for j in range(len(offresid)):
                     if (offresid[j] > 5):
                         currXoff[b[0][j]] = 0
@@ -750,23 +750,23 @@ class slitletAlignProcess(fatboyProcess):
                 inloop=0
                 #print blref-currXoff
                 #Blank out line, update xoffsets, reflines, validxs
-                xoffsets.append(array(currXoff))
-                validOffsets.append(array(currValid))
+                xoffsets.append(np.array(currXoff))
+                validOffsets.append(np.array(currValid))
                 reflines.append(blref)
                 #Round off to nearest pixel for indexing purposes
-                currXoff = (array(currXoff)+0.5).astype(int32)
+                currXoff = (np.array(currXoff)+0.5).astype(np.int32)
                 for j in range(len(onedcuts)):
                     if (currValid[j]):
                         onedcuts[j][blref-5-currXoff[j]:blref+6-currXoff[j]] = 0
-                if (sum(currValid) == len(currXoff)):
+                if (np.sum(currValid) == len(currXoff)):
                     validlines.append(True)
                 else:
                     validlines.append(False)
-                validxs = concatenate((validxs[where(validxs < blref-5-xoffGuess[reference_slit])], validxs[where(validxs > blref+5-xoffGuess[reference_slit])]))
+                validxs = np.concatenate((validxs[np.where(validxs < blref-5-xoffGuess[reference_slit])], validxs[np.where(validxs > blref+5-xoffGuess[reference_slit])]))
                 #Break out of loop if max_lines hit
                 if (seg_max_lines >= 0 and nlines >= seg_max_lines):
                     findLines = False
-                #If peak in resid array is <= 1% of peak of brightest line, break out of loop
+                #If peak in resid np.array is <= 1% of peak of brightest line, break out of loop
                 if (onedcuts[reference_slit][validxs].max() <= maxPeak/100):
                     findLines = False
                     break
@@ -774,7 +774,7 @@ class slitletAlignProcess(fatboyProcess):
         #end for i
 
         #Setup xin, xout (refxs)
-        #print array(reflines)[where(validlines)]
+        #print np.array(reflines)[np.where(validlines)]
         print("slitletAlignProcess::slitletAlign> Found "+str(len(reflines))+" lines.  Calculating Transformation...")
         self._log.writeLog(__name__, "Found "+str(len(reflines))+" lines.  Calculating Transformation...")
         refxs = []
@@ -782,21 +782,21 @@ class slitletAlignProcess(fatboyProcess):
         for j in range(len(reflines)):
             #refxs = input x centroids of lines in reference slitlet
             refxs.append(reflines[j]-xoffsets[j][reference_slit]+xoffsets[0][reference_slit]-reflines[0])
-        refxs = array(refxs)
+        refxs = np.array(refxs)
         for j in range(nslits):
             temp = []
-            #xin = list of array of x centroids of lines in each slitlet
+            #xin = list of np.array of x centroids of lines in each slitlet
             for k in range(len(reflines)):
                 temp.append(reflines[k]-xoffsets[k][j]+xoffsets[0][j]-reflines[0])
-            xin.append(array(temp))
+            xin.append(np.array(temp))
 
         #Loop over slitlets
         #Take 1-d cuts (spectra), find initial guesses for offsets
         for j in range(nslits):
             #Fit polynomial of order fit_order to lines
-            p = zeros(fit_order+1, dtype=float32)
+            p = np.zeros(fit_order+1, dtype=np.float32)
             p[1] = 1
-            v = where(array(validOffsets)[:,j]) #only use lines where validOffsets = True
+            v = np.where(np.array(validOffsets)[:,j]) #only use lines np.where validOffsets = True
             if (len(refxs[v]) > 3):
                 #Use leastsq to fit transform between xout = refxs and xin for this slitlet
                 lsq = leastsq(polyResiduals, p, args=(xin[j][v], refxs[v], fit_order))
@@ -819,14 +819,14 @@ class slitletAlignProcess(fatboyProcess):
                 sigThresh = 2
                 niter = 0
                 norig = len(residLines)
-                bad = where(abs(residLines-residLines.mean())/residLines.std() > sigThresh)
-                good = where(abs(residLines-residLines.mean())/residLines.std() <= sigThresh)
+                bad = np.where(np.abs(residLines-residLines.mean())/residLines.std() > sigThresh)
+                good = np.where(np.abs(residLines-residLines.mean())/residLines.std() <= sigThresh)
                 print("\t\tPerforming iterative sigma clipping to throw away outliers...")
                 self._log.writeLog(__name__, "Performing iterative sigma clipping to throw away outliers...", printCaller=False, tabLevel=2)
                 #Iterative sigma clipping
                 while (len(bad[0]) > 0):
                     niter += 1
-                    good = where(abs(residLines-residLines.mean())/residLines.std() <= sigThresh)
+                    good = np.where(np.abs(residLines-residLines.mean())/residLines.std() <= sigThresh)
                     #Refit, use last actual fit coordinates as input guess
                     p = lsq[0]
                     lsq = leastsq(polyResiduals, p, args=(xin[j][v][good], refxs[v][good], fit_order))
@@ -835,7 +835,7 @@ class slitletAlignProcess(fatboyProcess):
                     if (niter > 1):
                         #Gradually increase sigma threshold
                         sigThresh += 0.25
-                    bad = where(abs(residLines[good]-residLines[good].mean())/residLines[good].std() > sigThresh)
+                    bad = np.where(np.abs(residLines[good]-residLines[good].mean())/residLines[good].std() > sigThresh)
                 print("\t\tAfter "+str(niter)+" passes, kept "+str(len(residLines[good]))+" of "+str(norig)+" datapoints.  Fit: "+str(lsq[0]))
                 print("\t\tData - fit mean: "+str(residLines[good].mean())+"\tsigma: "+str(residLines[good].std()))
                 self._log.writeLog(__name__, "After "+str(niter)+" passes, kept "+str(len(residLines[good]))+" of "+str(norig)+" datapoints.  Fit: "+str(lsq[0]), printCaller=False, tabLevel=2)
@@ -858,12 +858,12 @@ class slitletAlignProcess(fatboyProcess):
 
 
         #Output x-pixels
-        xout = zeros(skyFDU.getShape(), dtype=float32)
-        xout_data = zeros(fdu.getShape(), dtype=float32)
+        xout = np.zeros(skyFDU.getShape(), dtype=np.float32)
+        xout_data = np.zeros(fdu.getShape(), dtype=np.float32)
         for j in range(nslits):
-            xs = arange(xsize, dtype=float32)+xoffsets[0][j]-reflines[0]
+            xs = np.arange(xsize, dtype=np.float32)+xoffsets[0][j]-reflines[0]
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                #MOS data - add to xout array, mutiply input by currMask
+                #MOS data - add to xout np.array, mutiply input by currMask
                 currMask = slitmask.getData()[sylo[j]:syhi[j]+1,:] == (j+1)
                 xout[sylo[j]:syhi[j]+1,:] += polyFunction(fitParams[j], xs, len(fitParams[j])-1)*currMask
                 if (fdu.hasProperty("slitmask")):
@@ -872,7 +872,7 @@ class slitletAlignProcess(fatboyProcess):
                 xout_data[sylo_data[j]:syhi_data[j]+1,:] += polyFunction(fitParams[j], xs, len(fitParams[j])-1)*currMask
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                 currMask = slitmask.getData()[:,sylo[j]:syhi[j]+1] == (j+1)
-                #Use reshape to broadcast 1-d array to (n, 1) shape
+                #Use reshape to broadcast 1-d np.array to (n, 1) shape
                 xout[:,sylo[j]:syhi[j]+1] += (polyFunction(fitParams[j], xs, len(fitParams[j])-1)).reshape((len(xs), 1))*currMask
                 if (fdu.hasProperty("slitmask")):
                     #Use this FDU's slitmask to calculate currMask for xout_data
@@ -898,7 +898,7 @@ class slitletAlignProcess(fatboyProcess):
             drihizzle_method = drihizzle.drihizzle
         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
             #Use drihizzle to resample with xtrans=xout_data
-            inMask = (xout_data != 0).astype(int32)
+            inMask = (xout_data != 0).astype(np.int32)
 
             #First update properties cleanFrame, noisemap, slitmask
             if (fdu.hasProperty("cleanFrame")):
@@ -913,7 +913,7 @@ class slitletAlignProcess(fatboyProcess):
                 fdu.tagDataAs("noisemap", nmData)
                 (nmData, header, expmap, pixmap) = drihizzle_method(fdu, None, None, inmask=inMask, kernel="turbo", dropsize=1, xtrans=xout_data, inunits="counts", outunits="counts", log=self._log, mode=gpu_drihizzle.MODE_FDU_TAG, dataTag="noisemap")
                 #Update "noisemap" data tag
-                fdu.tagDataAs("noisemap", data=sqrt(nmData))
+                fdu.tagDataAs("noisemap", data=np.sqrt(nmData))
             #Rectify slitmask
             if (fdu.hasProperty("slitmask")):
                 (smData, header, expmap, pixmap) = drihizzle_method(fdu.getSlitmask(), None, None, inmask=inMask, kernel="uniform", dropsize=1, xtrans=xout_data, inunits="counts", outunits="counts", log=self._log, mode=gpu_drihizzle.MODE_FDU)
@@ -940,7 +940,7 @@ class slitletAlignProcess(fatboyProcess):
             if ('cleanSky' in calibs and not calibs['cleanSky'].hasProperty("slitletAligned")):
                 cleanSky = calibs['cleanSky']
                 #Use drihizzle to resample "sky" with xtrans=xout
-                inMask = (xout != 0).astype(int32)
+                inMask = (xout != 0).astype(np.int32)
                 (data, header, expmap, pixmap) = drihizzle_method(cleanSky, None, None, inmask=inMask, kernel="turbo", dropsize=1, xtrans=xout, inunits="counts", outunits="counts", log=self._log, mode=gpu_drihizzle.MODE_FDU)
                 expmap[expmap == 0] = 1
                 cleanSky.updateData(data)
@@ -959,7 +959,7 @@ class slitletAlignProcess(fatboyProcess):
             if ('masterLamp' in calibs and not calibs['masterLamp'].hasProperty("slitletAligned")):
                 masterLamp = calibs['masterLamp']
                 #Use drihizzle to resample lamp with xtrans=xout
-                inMask = (xout != 0).astype(int32)
+                inMask = (xout != 0).astype(np.int32)
                 (data, header, expmap, pixmap) = drihizzle_method(masterLamp, None, None, inmask=inMask, kernel="turbo", dropsize=1, xtrans=xout, inunits="counts", outunits="counts", log=self._log, mode=gpu_drihizzle.MODE_FDU)
                 expmap[expmap == 0] = 1
                 masterLamp.updateData(data)
@@ -995,7 +995,7 @@ class slitletAlignProcess(fatboyProcess):
 
         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
             #ytrans = xout_data
-            inMask = (xout_data != 0).astype(int32)
+            inMask = (xout_data != 0).astype(np.int32)
             #First update properties cleanFrame, noisemap, slitmask
 
             if (fdu.hasProperty("cleanFrame")):
@@ -1010,7 +1010,7 @@ class slitletAlignProcess(fatboyProcess):
                 fdu.tagDataAs("noisemap", nmData)
                 (nmData, header, expmap, pixmap) = drihizzle_method(fdu, None, None, inmask=inMask, kernel="turbo", dropsize=1, ytrans=xout_data, inunits="counts", outunits="counts", log=self._log, mode=gpu_drihizzle.MODE_FDU_TAG, dataTag="noisemap")
                 #Update "noisemap" data tag
-                fdu.tagDataAs("noisemap", data=sqrt(nmData))
+                fdu.tagDataAs("noisemap", data=np.sqrt(nmData))
             #Rectify slitmask
             if (fdu.hasProperty("slitmask")):
                 (smData, header, expmap, pixmap) = drihizzle_method(slitmask, None, None, inmask=inMask, kernel="uniform", dropsize=1, ytrans=xout_data, inunits="counts", outunits="counts", log=self._log, mode=gpu_drihizzle.MODE_FDU)
@@ -1038,7 +1038,7 @@ class slitletAlignProcess(fatboyProcess):
             if ('cleanSky' in calibs and not calibs['cleanSky'].hasProperty("slitletAligned")):
                 cleanSky = calibs['cleanSky']
                 #Use drihizzle to resample "sky" with ytrans=xout
-                inMask = (xout != 0).astype(int32)
+                inMask = (xout != 0).astype(np.int32)
                 (data, header, expmap, pixmap) = drihizzle_method(cleanSky, None, None, inmask=inMask, kernel="turbo", dropsize=1, ytrans=xout, inunits="counts", outunits="counts", log=self._log, mode=gpu_drihizzle.MODE_FDU)
                 expmap[expmap == 0] = 1
                 cleanSky.updateData(data)
@@ -1057,7 +1057,7 @@ class slitletAlignProcess(fatboyProcess):
             if ('masterLamp' in calibs and not calibs['masterLamp'].hasProperty("slitletAligned")):
                 masterLamp = calibs['masterLamp']
                 #Use drihizzle to resample lamp with ytrans=xout
-                inMask = (xout != 0).astype(int32)
+                inMask = (xout != 0).astype(np.int32)
                 (data, header, expmap, pixmap) = drihizzle_method(masterLamp, None, None, inmask=inMask, kernel="turbo", dropsize=1, ytrans=xout, inunits="counts", outunits="counts", log=self._log, mode=gpu_drihizzle.MODE_FDU)
                 expmap[expmap == 0] = 1
                 masterLamp.updateData(data)

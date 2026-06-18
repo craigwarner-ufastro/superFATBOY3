@@ -1,3 +1,4 @@
+import numpy as np
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
@@ -12,7 +13,7 @@ except Exception as ex:
     usePlot = False
 
 class sinfoniCreate3dDatacubesProcess(fatboyProcess):
-    """ Create a 3-d datacube where each "cut" is a monochromatic image at a given wavelength """
+    """ Create a 3-d datacube np.where each "cut" is a monochromatic image at a given wavelength """
     _modeTags = ["sinfoni"]
 
     def calculateShiftsBetweenSlitlets(self, fdu, calibs, lampkey):
@@ -49,7 +50,7 @@ class sinfoniCreate3dDatacubesProcess(fatboyProcess):
             slitmask.setProperty("regions", (ylos, yhis, slitx, slitw))
 
         maxWidth = (yhis-ylos).max()+1
-        image2d = zeros((nslits, maxWidth), float32)
+        image2d = np.zeros((nslits, maxWidth), np.float32)
         #Loop over slitlets (could be one pass or nslits passes)
         for j in range(nslits):
             #Take 1-d cut of arclamp in each slitlet
@@ -88,17 +89,17 @@ class sinfoniCreate3dDatacubesProcess(fatboyProcess):
                 xsh.append(0)
                 continue
             slitCut = image2d[j,:]
-            ccor = correlate(refCut, slitCut, mode='same')
+            ccor = np.correlate(refCut, slitCut, mode='same')
             ccor = medianfilterCPU(ccor) #median filter
             if (usePlot and (debug or writePlots)):
                 plt.plot(ccor)
-            mcor = where(ccor == max(ccor))[0]
+            mcor = np.where(ccor == np.max(ccor))[0]
             shift = -1*(len(ccor)//2-mcor[0])
             if (integerShifts):
                 xsh.append(shift)
                 xsh.append(shift)
             else:
-                p = zeros(4, float64)
+                p = np.zeros(4, np.float64)
                 p[0] = ccor.max()
                 p[1] = mcor[0]
                 p[2] = 2.0
@@ -111,7 +112,7 @@ class sinfoniCreate3dDatacubesProcess(fatboyProcess):
                     xsh.append(-1*(len(ccor)//2-lsq[0][1])) #SINFONI data => double rows
             print("\tRow "+str(j)+": integer shift = "+str(shift)+"; actual shift = "+str(xsh[-1]))
             self._log.writeLog(__name__, "Row "+str(j)+": integer shift = "+str(shift)+"; actual shift = "+str(xsh[-1]), printCaller=False, tabLevel=1)
-        xsh = array(xsh)
+        xsh = np.array(xsh)
         #debug/write plots
         if (usePlot and (debug or writePlots)):
             plt.xlabel('Pixel')
@@ -125,11 +126,11 @@ class sinfoniCreate3dDatacubesProcess(fatboyProcess):
         widths = []
         for j in range(nslits):
             widths.append(yhis[j]-ylos[j]+xsh[2*j])
-        widths = array(widths)
+        widths = np.array(widths)
         maxWidth = widths.max()+1
 
         if (integerShifts):
-            image2d = zeros((2*nslits, maxWidth), float32)
+            image2d = np.zeros((2*nslits, maxWidth), np.float32)
             for j in range(2*nslits):
                 image2d[j, xsh[j]:xsh[j]+images[j].size] = images[j]
         else:
@@ -224,21 +225,21 @@ class sinfoniCreate3dDatacubesProcess(fatboyProcess):
         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
             xsize = data.shape[1]
             for j in range(nslits-1,-1,-1):
-                slit = zeros((xsize, maxWidthInit), float32)
+                slit = np.zeros((xsize, maxWidthInit), np.float32)
                 slit[:,:swidths[j]+1] = (data[ylos[j]:yhis[j]+1,:]*(smdata[ylos[j]:yhis[j]+1,:] == j+1)).transpose()
                 images.append(slit)
                 images.append(slit) #Append this row twice
         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
             xsize = data.shape[0]
             for j in range(nslits-1,-1,-1):
-                slit = zeros((xsize, maxWidthInit), float32)
+                slit = np.zeros((xsize, maxWidthInit), np.float32)
                 slit[:,:swidths[j]+1] = data[:, ylos[j]:yhis[j]+1]*(smdata[:, ylos[j]:yhis[j]+1] == j+1)
                 images.append(slit)
                 images.append(slit) #Append this row twice
 
-        #Create yind array of indices to layer slits in a xsize*nslits x maxWidth 2-d array
+        #Create yind np.array of indices to layer slits in a xsize*nslits x maxWidth 2-d np.array
         #This will later be reshaped to xsize x nslits x maxWidth 3-d cube
-        yind = (arange(images[0].size).reshape(images[0].shape) // maxWidthInit).astype(float32)*nslits*2
+        yind = (np.arange(images[0].size).reshape(images[0].shape) // maxWidthInit).astype(np.float32)*nslits*2
 
         #Select cpu/gpu option
         drihizzle_method = gpu_drihizzle.drihizzle

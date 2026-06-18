@@ -1,3 +1,4 @@
+import numpy as np
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
@@ -27,7 +28,7 @@ class remergeCirceProcess(fatboyProcess):
 
         #get framelist
         frameList = calibs['frameList']
-        zeros = '0000'
+        np.zeros = '0000'
         for image in frameList:
             if (image.inUse and image.section is not None and image.section >= 0):
                 spos = -1-len(str(image.section)) #-2 for 1 digit sections but allow multiple digits
@@ -37,7 +38,7 @@ class remergeCirceProcess(fatboyProcess):
                     if (image._expmode == image.EXPMODE_URG):
                         #trailing index should be section number not ramp number for URG data
                         sramp = str(image.section)
-                    sramp = zeros[len(sramp):]+sramp
+                    sramp = np.zeros[len(sramp):]+sramp
                     image._identFull = image._id+'.'+image._index+sramp+'.fits'
                     image.section = -1
                     updateHeaderEntry(image._header, 'SECTION', -1)

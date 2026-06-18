@@ -116,12 +116,12 @@ class fatboyImage(fatboyDataUnit):
                         else:
                             #shape = (y, x) = (NAXIS2, NAXIS1)
                             self._shape = (self._header['NAXIS2'], self._header['NAXIS1'])
-                if (shape is None):
+                if (self._shape is None):
                     #Not found in header, now use data
                     temp = pyfits.open(self.filename)
                     self._shape = temp[self._mef].data.shape
                     temp.close()
-            except Exception:
+            except Exception as ex:
                 self.disable()
                 #File has been disabled due to bad data
                 print("fatboyImage::initialize> WARNING: File "+self.filename+" is misformatted.  Skipping!")

@@ -1,3 +1,4 @@
+import numpy as np
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
@@ -5,7 +6,7 @@ from superFATBOY import gpu_drihizzle, drihizzle
 import os, time
 
 class miradasCreate3dDatacubesProcess(fatboyProcess):
-    """ Create a 3-d datacube where each "cut" is a 3xn monochromatic image at a given wavelength """
+    """ Create a 3-d datacube np.where each "cut" is a 3xn monochromatic image at a given wavelength """
     _modeTags = ["miradas"]
 
     def createDatacubes(self, fdu, calibs):
@@ -39,7 +40,7 @@ class miradasCreate3dDatacubesProcess(fatboyProcess):
             fdu.setProperty("nslits", nslits)
 
         if (doAllSlitlets):
-            slitlets = arange(1, nslits+1)
+            slitlets = np.arange(1, nslits+1)
         else:
             slitlets = [slitlet_number]
 
@@ -77,21 +78,21 @@ class miradasCreate3dDatacubesProcess(fatboyProcess):
             else:
                 #Rerun same calcs as in miradasCollapseSpaxels
                 #Take 1-d cut of arclamp in each slitlet
-                #b = where(calibs['slitmask'].getData() == islit)
+                #b = np.where(calibs['slitmask'].getData() == islit)
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    b = where(calibs['slitmask'].getData()[:,box_lo:box_hi] == islit)
-                    ylo = min(b[0])
-                    yhi = max(b[0])
+                    b = np.where(calibs['slitmask'].getData()[:,box_lo:box_hi] == islit)
+                    ylo = np.min(b[0])
+                    yhi = np.max(b[0])
                     lamp1d = (calibs[lampkey].getData()[ylo:yhi,box_lo:box_hi]*(calibs['slitmask'].getData()[ylo:yhi,box_lo:box_hi] == islit)).sum(1)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    b = where(calibs['slitmask'].getData()[box_lo:box_hi,:] == islit)
-                    ylo = min(b[1])
-                    yhi = max(b[1])
+                    b = np.where(calibs['slitmask'].getData()[box_lo:box_hi,:] == islit)
+                    ylo = np.min(b[1])
+                    yhi = np.max(b[1])
                     lamp1d = (calibs[lampkey].getData()[box_lo:box_hi,ylo:yhi]*(calibs['slitmask'].getData()[box_lo:box_hi,ylo:yhi] == islit)).sum(0)
                 #Median filter 1-d cut and invert so that "gaps" between slices turn into peaks
                 z = medianfilterCPU(lamp1d)
                 #Correct for values on the edges of the slitlet which will now be very negative
-                b = where(z > 0)
+                b = np.where(z > 0)
                 z[:b[0][0]] = 0
                 z[b[0][-1]:] = 0
                 if (findSliceWidth):
@@ -103,8 +104,8 @@ class miradasCreate3dDatacubesProcess(fatboyProcess):
                 else:
                     zx = len(z)//2-offset//2
                 z = -1*z[zx-offset:zx+offset+1]
-                slo = where(z == max(z[:offset]))[0][0]
-                shi = where(z == max(z[offset:]))[0][0]
+                slo = np.where(z == np.max(z[:offset]))[0][0]
+                shi = np.where(z == np.max(z[offset:]))[0][0]
                 #Try fitting Gaussians to "peaks"
                 lsq_lo = fitGaussian(z[:offset])
                 lsq_hi = fitGaussian(z[offset:])
@@ -119,8 +120,8 @@ class miradasCreate3dDatacubesProcess(fatboyProcess):
                 if (abs(fit_slo-slo) <= 1 and abs(fit_shi-shi) <= 1):
                     #Use fits
                     if (findSliceWidth):
-                        slice_width = int(ceil(fit_shi - fit_slo))
-                    yinit = ylo+zx-offset+int(round(fit_slo))
+                        slice_width = int(np.ceil(fit_shi - fit_slo))
+                    yinit = ylo+zx-offset+int(np.round(fit_slo))
                 else:
                     if (findSliceWidth):
                         slice_width = shi - slo
@@ -133,7 +134,7 @@ class miradasCreate3dDatacubesProcess(fatboyProcess):
 
                 #Always compute integer shifts first in case non integer fails
                 #Concat string below
-                image2d = zeros((nslices, slice_width), float32)
+                image2d = np.zeros((nslices, slice_width), np.float32)
                 for j in range(nslices):
                     image2d[j,:] = data1d[yinit+j*slice_width:yinit+(j+1)*slice_width]
                     ys.append(yinit+j*slice_width)
@@ -160,7 +161,7 @@ class miradasCreate3dDatacubesProcess(fatboyProcess):
 
             image3d = []
             data = fdu.getData()
-            ysh = arange(nslices, dtype=float32)
+            ysh = np.arange(nslices, dtype=np.float32)
             yinit = int(ys[0])
             xsh = yinit+ysh*slice_width-ys
             images = []
@@ -170,9 +171,9 @@ class miradasCreate3dDatacubesProcess(fatboyProcess):
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                 for j in range(nslices):
                     images.append(data[:, yinit+j*slice_width:yinit+(j+1)*slice_width])
-            #Create yind array of indices to layer slices in a xsize*nslices x slice_width 2-d array
+            #Create yind np.array of indices to layer slices in a xsize*nslices x slice_width 2-d np.array
             #This will later be reshaped to xsize x nslices x slice_width 3-d cube
-            yind = (arange(images[0].size).reshape(images[0].shape) // slice_width).astype(float32)*nslices
+            yind = (np.arange(images[0].size).reshape(images[0].shape) // slice_width).astype(np.float32)*nslices
 
             #Select cpu/gpu option
             drihizzle_method = gpu_drihizzle.drihizzle
@@ -195,9 +196,9 @@ class miradasCreate3dDatacubesProcess(fatboyProcess):
 #          image2d = image2d[:-1,:] #Remove blank last row
 #          image3d.append(image2d)
 #       else:
-#         image3d.append(zeros((nslices, slice_width), float32))
+#         image3d.append(np.zeros((nslices, slice_width), np.float32))
 #         image3d[-1][j,:] = data[z, yinit+j*slice_width:yinit+(j+1)*slice_width]
-#      image3d = array(image3d)
+#      image3d = np.array(image3d)
 
             #Tag data
             fdu.tagDataAs("datacube_"+str(islit), image3d)
@@ -216,18 +217,18 @@ class miradasCreate3dDatacubesProcess(fatboyProcess):
         ys = []
         cen = 0
         #Use all slices to come up with initial guess
-        oned = zeros(slice_width, float32)
+        oned = np.zeros(slice_width, np.float32)
         for j in range(nslices):
             oned += clean1d[yinit+j*slice_width:yinit+(j+1)*slice_width]
         if (not hasCleanFrame):
-            b = where(oned == oned.max())[0][0]
+            b = np.where(oned == oned.max())[0][0]
             if (b <= 2 or b >= len(oned)-3):
                 #Set edges to min value (not zero in case negative)
                 oned[:3] = oned.min()
                 oned[-3:] = oned.min()
-        p = zeros(4, float32)
+        p = np.zeros(4, np.float32)
         p[0] = oned.max()
-        p[1] = where(oned == oned.max())[0][0]
+        p[1] = np.where(oned == oned.max())[0][0]
         p[2] = 2.0
         p[3] = arraymedian(oned)
         lsq = fitGaussian(oned, guess=p)
@@ -239,7 +240,7 @@ class miradasCreate3dDatacubesProcess(fatboyProcess):
             images.append(data1d[yinit+j*slice_width:yinit+(j+1)*slice_width])
             clean_images.append(clean1d[yinit+j*slice_width:yinit+(j+1)*slice_width])
             if (not hasCleanFrame):
-                b = where(clean_images[j] == clean_images[j].max())[0][0]
+                b = np.where(clean_images[j] == clean_images[j].max())[0][0]
                 if (b <= 2 or b >= len(oned)-3):
                     #Blank out edges with min value not 0 in case all values are negative
                     clean_images[j][:3] = clean_images[j].min()

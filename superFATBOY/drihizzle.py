@@ -1,5 +1,6 @@
 #!/usr/bin/python -u
 from math import *
+import numpy as np
 import numpy.version
 from .fatboyLibs import *
 from .fatboyDataUnit import *
@@ -17,12 +18,12 @@ def unique1d_wrap(z):
     ver = versiontuple(numpy.version.version)
     if (ver < versiontuple("1.2")):
     #old style
-        return unique1d(z,True)[0]
+        return np.unique(z,True)[0]
     elif (ver < versiontuple("1.5")):
         #new style
-        return unique1d(z,return_index=True)[1]
+        return np.unique(z,return_index=True)[1]
     else:
-        return unique(z,return_index=True)[1]
+        return np.unique(z,return_index=True)[1]
 
 blocks = 2048*4
 block_size = 512
@@ -36,7 +37,7 @@ MODE_FDU_TAG = 4 #tagged data from a specific step, e.g. preSkySubtraction
 MODE_FDU_USE_INDIVIDUAL_GPMS = 5 #Use individual GPMs (inverse of BPMs) for input masks
 
 def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptime', kernel='point', dropsize=1, geomDist=None, xsh=None, ysh=None, inunits='counts', outunits='cps', expkey='EXP_TIME', keepImages='no', imgdir='', log=None, gui=None, xtrans=None, ytrans=None, mef=0, inmef=None, pixfile=None, doPix=True, scale=1, mode=None, returnHeader=False, dataTag=None, pixscale_keyword='PIXSCALE', rotpa_keyword='ROT_PA', inport_keyword='INPORT', updateFDUs=False, expmaps=None):
-    #frames = input data -- filename, list of filenames, or array
+    #frames = input data -- filename, list of filenames, or np.array
     #outfile = output data
     #weightfile = output exposure map
     #inmask = input good pixel mask
@@ -85,7 +86,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
     #Filelist
     if (isinstance(frames, str) and os.access(frames, os.F_OK)):
         frames = readFileIntoList(frames)
-    elif (isinstance(frames, ndarray)):
+    elif (isinstance(frames, np.ndarray)):
         frames = [frames]
     elif (not isinstance(frames, list)):
         frames = [frames]
@@ -99,7 +100,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
         mode = MODE_FITS
         if (isinstance(frames[0], str)):
             mode = MODE_FITS
-        elif (isinstance(frames[0], ndarray)):
+        elif (isinstance(frames[0], np.ndarray)):
             mode = MODE_RAW
         elif (isinstance(frames[0], fatboyDataUnit)):
             mode = MODE_FDU
@@ -142,7 +143,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
         del temp
     elif (isinstance(inmask, fatboyDataUnit)):
         inmask = inmask.getData()
-    elif (not isinstance(inmask, ndarray)):
+    elif (not isinstance(inmask, np.ndarray)):
         inmask = None
 
     if (dropsize <= 0.01 and kernel != 'point'):
@@ -153,10 +154,10 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
         dropsize = 1
         print("drihizzle> Dropsize > 1 not allowed for "+kernel+" kernel.  Using dropsize = 1.")
         write_fatboy_log(log, logtype, "Dropsize > 1 not allowed for "+kernel+" kernel.  Using dropsize = 1.", __name__)
-    if (dropsize < sqrt(2) and kernel == 'tophat'):
-        print("Dropsize < sqrt(2) should not be used for the tophat kernel.  Using dropsize = sqrt(2).")
-        write_fatboy_log(log, logtype, "Dropsize < sqrt(2) should not be used for the tophat kernel.  Using dropsize = sqrt(2).", __name__)
-        dropsize = sqrt(2)
+    if (dropsize < np.sqrt(2) and kernel == 'tophat'):
+        print("Dropsize < np.sqrt(2) should not be used for the tophat kernel.  Using dropsize = np.sqrt(2).")
+        write_fatboy_log(log, logtype, "Dropsize < np.sqrt(2) should not be used for the tophat kernel.  Using dropsize = np.sqrt(2).", __name__)
+        dropsize = np.sqrt(2)
 
     xcoeffs = []
     ycoeffs = []
@@ -188,8 +189,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
         xcoeffs = [0,1,0]
         ycoeffs = [0,0,1]
 
-    xcoeffs = array(xcoeffs).astype(float32)
-    ycoeffs = array(ycoeffs).astype(float32)
+    xcoeffs = np.array(xcoeffs).astype(np.float32)
+    ycoeffs = np.array(ycoeffs).astype(np.float32)
 
     ncoeff = len(xcoeffs)
     order = 0
@@ -199,13 +200,13 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
 
     #Shifts
     if (xsh is None):
-        xsh = zeros(nframes)
-    elif (not isinstance(xsh, list) and not isinstance(xsh, ndarray)):
+        xsh = np.zeros(nframes)
+    elif (not isinstance(xsh, list) and not isinstance(xsh, np.ndarray)):
         xsh = [xsh]
 
     if (ysh is None):
-        ysh = zeros(nframes)
-    elif (not isinstance(ysh, list) and not isinstance(ysh, ndarray)):
+        ysh = np.zeros(nframes)
+    elif (not isinstance(ysh, list) and not isinstance(ysh, np.ndarray)):
         ysh = [ysh]
 
     if (_verbosity == fatboyLog.VERBOSE):
@@ -302,7 +303,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
         if (mode == MODE_FITS):
             name = frames[j]
             temp = pyfits.open(frames[j])
-            data = temp[mef].data.astype(float32)
+            data = temp[mef].data.astype(np.float32)
             if (expkey in temp[0].header):
                 exptime = float(temp[0].header[expkey])
             if ('CRPIX1' in temp[0].header):
@@ -344,7 +345,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             data = frames[j].getData(tag=dataTag)
         if (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG):
             if (doIndividualMasks):
-                inmask = (1-frames[j].getBadPixelMask().getData()).astype("int32")
+                inmask = (1-frames[j].getBadPixelMask().getData()).astype("np.int32")
             exptime = frames[j].exptime
             if (frames[j].hasHeaderValue('CRPIX1')):
                 xrefin = float(frames[j].getHeaderValue('CRPIX1'))
@@ -440,14 +441,14 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     data*=exptime
             else:
                 data*=exptime
-            data = data.astype(float32)
+            data = data.astype(np.float32)
 
         if (j == 0):
             #Setup input mask if not given already
             if (inmask is None):
-                inmask = ones(data.shape, int32)
+                inmask = np.ones(data.shape, np.int32)
             else:
-                inmask = inmask.astype(int32)
+                inmask = inmask.astype(np.int32)
 
             #Setup input arrays to calculate transformation
             #Do this for the first pass only
@@ -460,17 +461,17 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             tt = time.time()
 
             if (kernel == 'tophat' or kernel.find('gauss') != -1 or kernel == 'lanczos'):
-                xin = arange(ny*nx).reshape(ny,nx) % nx+0.5 - nx//2
-                yin = arange(ny*nx).reshape(ny,nx) // nx+0.5 - ny//2
-                xout = zeros((ny,nx),float32)+0.5
-                yout = zeros((ny,nx),float32)+0.5
+                xin = np.arange(ny*nx).reshape(ny,nx) % nx+0.5 - nx//2
+                yin = np.arange(ny*nx).reshape(ny,nx) // nx+0.5 - ny//2
+                xout = np.zeros((ny,nx),np.float32)+0.5
+                yout = np.zeros((ny,nx),np.float32)+0.5
             else:
-                xin = arange(ny*nx).reshape(ny,nx) % nx+0. - nx//2
-                yin = arange(ny*nx).reshape(ny,nx) // nx+0. - ny//2
-                xout = zeros((ny,nx),float32)
-                yout = zeros((ny,nx),float32)
-            xin = xin.astype(float32)
-            yin = yin.astype(float32)
+                xin = np.arange(ny*nx).reshape(ny,nx) % nx+0. - nx//2
+                yin = np.arange(ny*nx).reshape(ny,nx) // nx+0. - ny//2
+                xout = np.zeros((ny,nx),np.float32)
+                yout = np.zeros((ny,nx),np.float32)
+            xin = xin.astype(np.float32)
+            yin = yin.astype(np.float32)
 
             #Reference pixels for CRPIX
             if (xrefin == -1):
@@ -515,9 +516,9 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             tt = time.time()
 
             if (xtrans is not None):
-                xout = xtrans.astype(float64)
+                xout = xtrans.astype(np.float64)
             if (ytrans is not None):
-                yout = ytrans.astype(float64)
+                yout = ytrans.astype(np.float64)
 
             #Release memory
             del xin
@@ -527,24 +528,24 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             if (scale != 1):
                 xout *= scale
                 yout *= scale
-                xsh = array(xsh)*scale
-                ysh = array(ysh)*scale
+                xsh = np.array(xsh)*scale
+                ysh = np.array(ysh)*scale
                 xrefout *= scale
                 yrefout *= scale
 
             #Calculate mins, maxes
-            #xmin = int(floor(xout[:,0].min()))
-            #xmax = int(floor(xout[:,-1].max()))+2
-            #ymin = int(floor(yout[0,:].min()))
-            #ymax = int(floor(yout[-1,:].max()))+2
-            xmin = int(floor(xout.min()))
-            xmax = int(floor(xout.max()))+2
-            ymin = int(floor(yout.min()))
-            ymax = int(floor(yout.max()))+2
-            #xmin = int(floor(xout[inmask != 0].min()))
-            #xmax = int(floor(xout[inmask != 0].max()))+2
-            #ymin = int(floor(yout[inmask != 0].min()))
-            #ymax = int(floor(yout[inmask != 0].max()))+2
+            #xmin = int(np.floor(xout[:,0].min()))
+            #xmax = int(np.floor(xout[:,-1].max()))+2
+            #ymin = int(np.floor(yout[0,:].min()))
+            #ymax = int(np.floor(yout[-1,:].max()))+2
+            xmin = int(np.floor(xout.min()))
+            xmax = int(np.floor(xout.max()))+2
+            ymin = int(np.floor(yout.min()))
+            ymax = int(np.floor(yout.max()))+2
+            #xmin = int(np.floor(xout[inmask != 0].min()))
+            #xmax = int(np.floor(xout[inmask != 0].max()))+2
+            #ymin = int(np.floor(yout[inmask != 0].min()))
+            #ymax = int(np.floor(yout[inmask != 0].max()))+2
 
             if (kernel == 'tophat' or kernel.find('gauss') != -1 or kernel == 'lanczos'):
                 xmin -= int(dropsize)
@@ -552,10 +553,10 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 ymin -= int(dropsize)
                 ymax += int(dropsize)
 
-            xshmin = min(xsh)
-            yshmin = min(ysh)
-            xshrange = int(ceil(max(xsh)-min(xsh)))
-            yshrange = int(ceil(max(ysh)-min(ysh)))
+            xshmin = np.min(xsh)
+            yshmin = np.min(ysh)
+            xshrange = int(np.ceil(np.max(xsh)-np.min(xsh)))
+            yshrange = int(np.ceil(np.max(ysh)-np.min(ysh)))
             if (_verbosity == fatboyLog.VERBOSE):
                 print("\tCalc min/max output: ",time.time()-tt,"; Total: ",time.time()-t)
             tt = time.time()
@@ -571,15 +572,15 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 print("\tSubtract min/maxes: ",time.time()-tt,"; Total: ",time.time()-t)
             tt = time.time()
 
-            #Create new image array only the first time through
+            #Create new image np.array only the first time through
             #Take into account max shifts
-            newdata = zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), float32)
-            expmap = zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), float32)
+            newdata = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.float32)
+            expmap = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.float32)
             if (doPix):
-                pixmap = zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), int32)
+                pixmap = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.int32)
 
             if (_verbosity == fatboyLog.VERBOSE):
-                print("\tCreate new image array: ",time.time()-tt,"; Total: ",time.time()-t)
+                print("\tCreate new image np.array: ",time.time()-tt,"; Total: ",time.time()-t)
             tt = time.time()
             #Handle existing data
             if (outExists):
@@ -592,41 +593,41 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 xrefout = float(outimage[0].header['CRPIX1'])
                 yrefout = float(outimage[0].header['CRPIX2'])
                 #Case exisiting image is as large or larger than needed
-                if (outxsh <= xshmin and outysh <= yshmin and outimage[mef].data.shape[1]+outxsh >= xmax-xmin+max(xsh) and outimage[mef].data.shape[0] >= ymax-ymin+max(ysh)):
-                    newdata = outimage[mef].data.astype(float32)
-                    expmap = outexp[mef].data.astype(float32)
+                if (outxsh <= xshmin and outysh <= yshmin and outimage[mef].data.shape[1]+outxsh >= xmax-xmin+np.max(xsh) and outimage[mef].data.shape[0] >= ymax-ymin+np.max(ysh)):
+                    newdata = outimage[mef].data.astype(np.float32)
+                    expmap = outexp[mef].data.astype(np.float32)
                     if (doPix):
-                        pixmap = outpix[mef].data.astype(int32)
-                    xsh = array(xsh)-outxsh
-                    ysh = array(ysh)-outysh
+                        pixmap = outpix[mef].data.astype(np.int32)
+                    xsh = np.array(xsh)-outxsh
+                    ysh = np.array(ysh)-outysh
                     xshmin -= outxsh
                     yshmin -= outysh
                 else:
                     #Need to enlarge image
                     xshmin = min(xshmin, outxsh)
                     yshmin = min(yshmin, outysh)
-                    xmax = max(max(xsh)+xmax-xmin, outxsh+outimage[mef].data.shape[1])
-                    ymax = max(max(ysh)+ymax-ymin, outysh+outimage[mef].data.shape[0])
-                    x_range = int(ceil(xmax-xshmin))
-                    y_range = int(ceil(ymax-yshmin))
-                    newdata = zeros((y_range, x_range), float32)
-                    expmap = zeros((y_range, x_range), float32)
+                    xmax = max(np.max(xsh)+xmax-xmin, outxsh+outimage[mef].data.shape[1])
+                    ymax = max(np.max(ysh)+ymax-ymin, outysh+outimage[mef].data.shape[0])
+                    x_range = int(np.ceil(xmax-xshmin))
+                    y_range = int(np.ceil(ymax-yshmin))
+                    newdata = np.zeros((y_range, x_range), np.float32)
+                    expmap = np.zeros((y_range, x_range), np.float32)
                     if (doPix):
-                        pixmap = zeros((y_range, x_range), int32)
+                        pixmap = np.zeros((y_range, x_range), np.int32)
                     if (outxsh != xshmin):
-                        xshmin = floor(xshmin)
+                        xshmin = np.floor(xshmin)
                     x1 = int(outxsh - xshmin)
                     x2 = x1+outimage[mef].data.shape[1]
                     xrefout += x1
                     if (outysh != yshmin):
-                        yshmin = floor(yshmin)
+                        yshmin = np.floor(yshmin)
                     y1 = int(outysh - yshmin)
                     y2 = y1+outimage[mef].data.shape[0]
                     yrefout += y1
-                    newdata[y1:y2,x1:x2] = outimage[mef].data.astype(float32)
-                    expmap[y1:y2,x1:x2] = outexp[mef].data.astype(float32)
+                    newdata[y1:y2,x1:x2] = outimage[mef].data.astype(np.float32)
+                    expmap[y1:y2,x1:x2] = outexp[mef].data.astype(np.float32)
                     if (doPix):
-                        pixmap[y1:y2,x1:x2] = outpix[mef].data.asytpe(int32)
+                        pixmap[y1:y2,x1:x2] = outpix[mef].data.asytpe(np.int32)
 
             #Update reference min shifts, ref pixels in image header
             newHeader['DHZMINXS'] = xshmin
@@ -636,28 +637,28 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
 
             #Copy over to pyfits ojects
             if (outExists):
-                outimage[mef].data = newdata.astype(float32)
-                outexp[mef].data = expmap.astype(float32)
+                outimage[mef].data = newdata.astype(np.float32)
+                outexp[mef].data = expmap.astype(np.float32)
                 if (doPix):
-                    outpix[mef].data = pixmap.astype(int32)
+                    outpix[mef].data = pixmap.astype(np.int32)
             else:
                 #Create output arrays
-                imagedata = zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), float32)
-                expdata = zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), float32)
+                imagedata = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.float32)
+                expdata = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.float32)
                 if (doPix):
-                    pixdata = zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), int32)
+                    pixdata = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.int32)
 
         if (_verbosity == fatboyLog.VERBOSE):
             print("\tCopy over to pyfits and update: ",time.time()-tt,"; Total: ",time.time()-t)
         tt = time.time()
 
         #Scale data by inmask and weight factor
-        if (data.dtype == uint8):
-            data = int32(data) #Convert uint8 data to int32
+        if (data.dtype == np.uint8):
+            data = data.astype(np.int32) #Convert uint8 data to np.int32
         data = data*(inmask*(scalefac/exptime)) #Don't use *= because of stupid numpy "feature" throwing exception
         if (tmpexp is None):
             #Exposure map should be exposure time * good pixel mask unless a previous exposure map has been loaded for inunits = cps
-            tmpexp = float32(inmask*scalefac)
+            tmpexp = (inmask*scalefac).astype(np.float32)
         totexp+=exptime
         if (_verbosity == fatboyLog.VERBOSE):
             print("Scale data and expmask: ",time.time()-tt,"; Total: ",time.time()-t)
@@ -665,7 +666,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
 
         #handle inmasks here universally if input frames are all same size, save time
         if (inmask is not None and sameSize):
-            b = where(inmask != 0)
+            b = np.where(inmask != 0)
             data = data[b]
             if (j == 0):
                 #Only update xout and yout once.  Data changes every iteration, xout and yout don't
@@ -675,10 +676,10 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
 
         if (kernel == 'turbo'):
             #Find int, fractional xs, ys
-            intx = floor(xout+xsh[j]-xshmin).astype(int32)
-            inty = floor(yout+ysh[j]-yshmin).astype(int32)
-            fracx = (xout+xsh[j]-xshmin-intx).ravel().astype(float32)
-            fracy = (yout+ysh[j]-yshmin-inty).ravel().astype(float32)
+            intx = np.floor(xout+xsh[j]-xshmin).astype(np.int32)
+            inty = np.floor(yout+ysh[j]-yshmin).astype(np.int32)
+            fracx = (xout+xsh[j]-xshmin-intx).ravel().astype(np.float32)
+            fracy = (yout+ysh[j]-yshmin-inty).ravel().astype(np.float32)
             #Case of different sized images
             if (intx.shape != data.shape):
                 intx = intx[:data.shape[0], :data.shape[1]]
@@ -687,7 +688,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 fracy = fracy[:data.shape[0], :data.shape[1]]
             #handle inmasks here after intx etc have been created
             if (inmask is not None and not sameSize):
-                b = where(inmask != 0)
+                b = np.where(inmask != 0)
                 data = data[b]
                 tmpexp = tmpexp[b]
                 intx = intx[b]
@@ -696,8 +697,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 fracy = fracy[b]
             intx = intx.ravel()
             inty = inty.ravel()
-            data = data.ravel().astype(float32)
-            tmpexp = tmpexp.ravel().astype(float32)
+            data = data.ravel().astype(np.float32)
+            tmpexp = tmpexp.ravel().astype(np.float32)
             b = [[0]]
             z = (ymax-ymin)*intx+inty
             #Process all data with unique output pixel simultaneously
@@ -712,7 +713,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     tmpexpu = tmpexp[u]
                 else:
                     #Special case no geom distortion correction
-                    u = arange(z.size)
+                    u = np.arange(z.size)
                     intyu = inty+0
                     intxu = intx+0
                     fracyu = fracy+0
@@ -722,10 +723,10 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
 
                 #linearly interpolate
                 if (dropsize < 1):
-                    fy1 = minimum(((1.0+dropsize)/2-fracyu)*(1./dropsize),1)
-                    fx1 = minimum(((1.0+dropsize)/2-fracxu)*(1./dropsize),1)
-                    fracyu = maximum((fracyu-(1.0-dropsize)/2)*(1./dropsize),0)
-                    fracxu = maximum((fracxu-(1.0-dropsize)/2)*(1./dropsize),0)
+                    fy1 = np.minimum(((1.0+dropsize)/2-fracyu)*(1./dropsize),1)
+                    fx1 = np.minimum(((1.0+dropsize)/2-fracxu)*(1./dropsize),1)
+                    fracyu = np.maximum((fracyu-(1.0-dropsize)/2)*(1./dropsize),0)
+                    fracxu = np.maximum((fracxu-(1.0-dropsize)/2)*(1./dropsize),0)
                     newdata[intyu, intxu] += d2u*fy1*fx1
                     newdata[intyu, intxu+1] += d2u*fy1*fracxu
                     newdata[intyu+1, intxu] += d2u*fracyu*fx1
@@ -759,7 +760,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
 
                 #Throw out processed pixels and continue loop
                 z[u] = -1
-                b = where(z > -1)
+                b = np.where(z > -1)
                 intx = intx[b]
                 inty = inty[b]
                 fracx = fracx[b]
@@ -769,15 +770,15 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 z = z[b]
         elif (kernel == 'point'):
             #Dump all flux into neareast pixel
-            intx = floor(xout+xsh[j]-xshmin+0.5).astype(int32)
-            inty = floor(yout+ysh[j]-yshmin+0.5).astype(int32)
+            intx = np.floor(xout+xsh[j]-xshmin+0.5).astype(np.int32)
+            inty = np.floor(yout+ysh[j]-yshmin+0.5).astype(np.int32)
             #Case of different sized images
             if (intx.shape != data.shape):
                 intx = intx[:data.shape[0], :data.shape[1]]
                 inty = inty[:data.shape[0], :data.shape[1]]
             #handle inmasks here after intx etc have been created
             if (inmask is not None and not sameSize):
-                b = where(inmask != 0)
+                b = np.where(inmask != 0)
                 data = data[b]
                 tmpexp = tmpexp[b]
                 intx = intx[b]
@@ -797,7 +798,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     tmpexpu = tmpexp[u]
                 else:
                     #Special case no geom distortion correction
-                    u = arange(z.size)
+                    u = np.arange(z.size)
                     intyu = inty+0
                     intxu = intx+0
                     d2u = data+0
@@ -809,7 +810,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     pixmap[intyu, intxu] += 1
 
                 z[u] = -1
-                b = where(z > -1)
+                b = np.where(z > -1)
                 intx = intx[b]
                 inty = inty[b]
                 data = data[b]
@@ -817,8 +818,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 z = z[b]
         elif (kernel == 'tophat'):
             #Flux spread equally among pixels whose centers lie inside circle with r = dropsize/2
-            intx = floor(xout+xsh[j]-xshmin).astype(int32).ravel()
-            inty = floor(yout+ysh[j]-yshmin).astype(int32).ravel()
+            intx = np.floor(xout+xsh[j]-xshmin).astype(np.int32).ravel()
+            inty = np.floor(yout+ysh[j]-yshmin).astype(np.int32).ravel()
             ox2 = (xout+xsh[j]-xshmin).ravel()
             oy2 = (yout+ysh[j]-yshmin).ravel()
             #Case of different sized images
@@ -829,15 +830,15 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 oy2 = oy2[:data.shape[0], :data.shape[1]]
             #handle inmasks here after intx etc have been created
             if (inmask is not None and not sameSize):
-                b = where(inmask != 0)
+                b = np.where(inmask != 0)
                 data = data[b]
                 tmpexp = tmpexp[b]
                 intx = intx[b]
                 inty = inty[b]
                 ox2 = ox2[b]
                 oy2 = oy2[b]
-            rnddrop = int(round(dropsize/2.))
-            ceildrop = int(ceil(dropsize/2.))
+            rnddrop = int(np.round(dropsize/2.))
+            ceildrop = int(np.ceil(dropsize/2.))
             data = data.ravel()
             tmpexp = tmpexp.ravel()
             b = [[0]]
@@ -853,7 +854,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     tmpexpu = tmpexp[u]
                 else:
                     #Special case no geom distortion correction
-                    u = arange(z.size)
+                    u = np.arange(z.size)
                     intyu = inty+0
                     intxu = intx+0
                     ox2u = ox2+0
@@ -862,7 +863,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     tmpexpu = tmpexp+0
 
                 r = []
-                counts = zeros(u.shape)
+                counts = np.zeros(u.shape)
                 i = 0
                 #Loop over box containing circle
                 #Count how many output pixels each input pixel contributes to
@@ -871,7 +872,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                         if (l**2+k**2 > ceildrop**2):
                             #Pixel outside radius
                             continue
-                        r.append(sqrt((intxu+l+0.5-ox2u)**2+(intyu+k+0.5-oy2u)**2) <= dropsize/2.)
+                        r.append(np.sqrt((intxu+l+0.5-ox2u)**2+(intyu+k+0.5-oy2u)**2) <= dropsize/2.)
                         counts += 1*r[i]
                         i+=1
                 #Normalize input data to conserve flux
@@ -890,7 +891,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                             pixmap[intyu+k, intxu+l] += 1
                         i+=1
                 z[u] = -1
-                b = where(z > -1)
+                b = np.where(z > -1)
                 intx = intx[b]
                 inty = inty[b]
                 ox2 = ox2[b]
@@ -901,8 +902,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
         elif (kernel == 'gaussian'):
             #Flux weighted by 2-D gaussian with FWHM dropsize
             #Cutoff at 2.5 sigma for time considerations (same as in IRAF's drizzle)
-            intx = floor(xout+xsh[j]-xshmin).astype(int32).ravel()
-            inty = floor(yout+ysh[j]-yshmin).astype(int32).ravel()
+            intx = np.floor(xout+xsh[j]-xshmin).astype(np.int32).ravel()
+            inty = np.floor(yout+ysh[j]-yshmin).astype(np.int32).ravel()
             ox2 = (xout+xsh[j]-xshmin).ravel()
             oy2 = (yout+ysh[j]-yshmin).ravel()
             #Case of different sized images
@@ -913,15 +914,15 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 oy2 = oy2[:data.shape[0], :data.shape[1]]
             #handle inmasks here after intx etc have been created
             if (inmask is not None and not sameSize):
-                b = where(inmask != 0)
+                b = np.where(inmask != 0)
                 data = data[b]
                 tmpexp = tmpexp[b]
                 intx = intx[b]
                 inty = inty[b]
                 ox2 = ox2[b]
                 oy2 = oy2[b]
-            rndsig = int(round(dropsize*2.5/2.3548))
-            ceilsig = int(ceil(dropsize*2.5/2.3548))
+            rndsig = int(np.round(dropsize*2.5/2.3548))
+            ceilsig = int(np.ceil(dropsize*2.5/2.3548))
             data = data.ravel()
             tmpexp = tmpexp.ravel()
             b = [[0]]
@@ -937,7 +938,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     tmpexpu = tmpexp[u]
                 else:
                     #Special case no geom distortion correction
-                    u = arange(z.size)
+                    u = np.arange(z.size)
                     intyu = inty+0
                     intxu = intx+0
                     ox2u = ox2+0
@@ -945,7 +946,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     d2u = data+0
                     tmpexpu = tmpexp+0
 
-                counts = zeros(u.shape)
+                counts = np.zeros(u.shape)
                 #Loop over box containing Gaussian
                 #Count up total weight given to each input pixel in output grid
                 for l in range(-rndsig, rndsig+1):
@@ -954,7 +955,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                             continue
                         zx = 2.3548/dropsize*(intxu+(l+0.5)-ox2u)
                         zy = 2.3548/dropsize*(intyu+(k+0.5)-oy2u)
-                        gauss = exp(-0.5*(zx*zx+zy*zy))
+                        gauss = np.exp(-0.5*(zx*zx+zy*zy))
                         counts += gauss
                 #Normalize input data to conserve flux
                 counts[counts == 0] = 1
@@ -968,13 +969,13 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                             continue
                         zx = 2.3548/dropsize*(intxu+(l+0.5)-ox2u)
                         zy = 2.3548/dropsize*(intyu+(k+0.5)-oy2u)
-                        gauss = exp(-0.5*(zx*zx+zy*zy))
+                        gauss = np.exp(-0.5*(zx*zx+zy*zy))
                         newdata[intyu+k, intxu+l] += d2u*gauss
                         expmap[intyu+k, intxu+l] += tmpexpu*gauss
                         if (doPix):
                             pixmap[intyu+k, intxu+l] += 1
                 z[u] = -1
-                b = where(z > -1)
+                b = np.where(z > -1)
                 intx = intx[b]
                 inty = inty[b]
                 ox2 = ox2[b]
@@ -988,8 +989,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             #1D lookup table with points every 0.001 pixels used to estimate Gaussian
             #rather than calculating for every pixel.  Results in an overall
             #25% increase in speed versus 'gaussian' with nearly identical results
-            intx = floor(xout+xsh[j]-xshmin).astype(int32).ravel()
-            inty = floor(yout+ysh[j]-yshmin).astype(int32).ravel()
+            intx = np.floor(xout+xsh[j]-xshmin).astype(np.int32).ravel()
+            inty = np.floor(yout+ysh[j]-yshmin).astype(np.int32).ravel()
             ox2 = (xout+xsh[j]-xshmin).ravel()
             oy2 = (yout+ysh[j]-yshmin).ravel()
             #Case of different sized images
@@ -1000,15 +1001,15 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 oy2 = oy2[:data.shape[0], :data.shape[1]]
             #handle inmasks here after intx etc have been created
             if (inmask is not None and not sameSize):
-                b = where(inmask != 0)
+                b = np.where(inmask != 0)
                 data = data[b]
                 tmpexp = tmpexp[b]
                 intx = intx[b]
                 inty = inty[b]
                 ox2 = ox2[b]
                 oy2 = oy2[b]
-            rndsig = int(round(dropsize*2.5/2.3548))
-            ceilsig = int(ceil(dropsize*2.5/2.3548))
+            rndsig = int(np.round(dropsize*2.5/2.3548))
+            ceilsig = int(np.ceil(dropsize*2.5/2.3548))
             data = data.ravel()
             tmpexp = tmpexp.ravel()
             b = [[0]]
@@ -1024,7 +1025,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     tmpexpu = tmpexp[u]
                 else:
                     #Special case no geom distortion correction
-                    u = arange(z.size)
+                    u = np.arange(z.size)
                     intyu = inty+0
                     intxu = intx+0
                     ox2u = ox2+0
@@ -1032,10 +1033,10 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     d2u = data+0
                     tmpexpu = tmpexp+0
 
-                counts = zeros(u.shape)
+                counts = np.zeros(u.shape)
                 #Calculate indices in Gaussian look up tables rather than actual Gaussians
-                indx = (gausscen+1000*(intxu+0.5-ox2u)).astype(int32)
-                indy = (gausscen+1000*(intyu+0.5-oy2u)).astype(int32)
+                indx = (gausscen+1000*(intxu+0.5-ox2u)).astype(np.int32)
+                indy = (gausscen+1000*(intyu+0.5-oy2u)).astype(np.int32)
                 #Loop over box containing Gaussian
                 #Count up total weight given to each input pixel in output grid
                 for l in range(-rndsig, rndsig+1):
@@ -1060,7 +1061,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                         if (doPix):
                             pixmap[intyu+k, intxu+l] += 1
                 z[u] = -1
-                b = where(z > -1)
+                b = np.where(z > -1)
                 intx = intx[b]
                 inty = inty[b]
                 ox2 = ox2[b]
@@ -1074,8 +1075,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             #1D lookup table with points every 0.001 pixels used to estimate function
             #(same as in IRAF's drizzle but IRAF only uses 0.01 pixel accuracy)
             #rather than calculating function for every pixel.
-            intx = floor(xout+xsh[j]-xshmin).astype(int32).ravel()
-            inty = floor(yout+ysh[j]-yshmin).astype(int32).ravel()
+            intx = np.floor(xout+xsh[j]-xshmin).astype(np.int32).ravel()
+            inty = np.floor(yout+ysh[j]-yshmin).astype(np.int32).ravel()
             ox2 = (xout+xsh[j]-xshmin).ravel()
             oy2 = (yout+ysh[j]-yshmin).ravel()
             #Case of different sized images
@@ -1086,15 +1087,15 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 oy2 = oy2[:data.shape[0], :data.shape[1]]
             #handle inmasks here after intx etc have been created
             if (inmask is not None and not sameSize):
-                b = where(inmask != 0)
+                b = np.where(inmask != 0)
                 data = data[b]
                 tmpexp = tmpexp[b]
                 intx = intx[b]
                 inty = inty[b]
                 ox2 = ox2[b]
                 oy2 = oy2[b]
-            rnddrop = int(round(dropsize))
-            ceildrop = int(ceil(dropsize))
+            rnddrop = int(np.round(dropsize))
+            ceildrop = int(np.ceil(dropsize))
             data = data.ravel()
             tmpexp = tmpexp.ravel()
             b = [[0]]
@@ -1110,7 +1111,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     tmpexpu = tmpexp[u]
                 else:
                     #Special case no geom distortion correction
-                    u = arange(z.size)
+                    u = np.arange(z.size)
                     intyu = inty+0
                     intxu = intx+0
                     ox2u = ox2+0
@@ -1118,10 +1119,10 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     d2u = data+0
                     tmpexpu = tmpexp+0
 
-                counts = zeros(u.shape)
+                counts = np.zeros(u.shape)
                 #Calculate indices in Gaussian look up tables rather than actual Gaussians
-                indx = (lanccen+1000*(intxu+0.5-ox2u)).astype(int32)
-                indy = (lanccen+1000*(intyu+0.5-oy2u)).astype(int32)
+                indx = (lanccen+1000*(intxu+0.5-ox2u)).astype(np.int32)
+                indy = (lanccen+1000*(intyu+0.5-oy2u)).astype(np.int32)
                 #Loop over box containing Lanczos function
                 #Count up total weight given to each input pixel in output grid
                 for l in range(-rnddrop, rnddrop+1):
@@ -1146,7 +1147,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                         if (doPix):
                             pixmap[intyu+k, intxu+l] += 1
                 z[u] = -1
-                b = where(z > -1)
+                b = np.where(z > -1)
                 intx = intx[b]
                 inty = inty[b]
                 ox2 = ox2[b]
@@ -1155,13 +1156,13 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 tmpexp = tmpexp[b]
                 z = z[b]
         elif (kernel == 'uniform'):
-            newdata = newdata.astype(int32)
-            imagedata = imagedata.astype(int32)
+            newdata = newdata.astype(np.int32)
+            imagedata = imagedata.astype(np.int32)
             #Find int xs, ys
-            intx = floor(xout+xsh[j]-xshmin).astype(int32)
-            inty = floor(yout+ysh[j]-yshmin).astype(int32)
-            fracx = (xout+xsh[j]-xshmin-intx).ravel().astype(float32)
-            fracy = (yout+ysh[j]-yshmin-inty).ravel().astype(float32)
+            intx = np.floor(xout+xsh[j]-xshmin).astype(np.int32)
+            inty = np.floor(yout+ysh[j]-yshmin).astype(np.int32)
+            fracx = (xout+xsh[j]-xshmin-intx).ravel().astype(np.float32)
+            fracy = (yout+ysh[j]-yshmin-inty).ravel().astype(np.float32)
             isXInt = False
             isYInt = False
             if ((fracx == 0).sum() == fracx.size):
@@ -1174,7 +1175,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 inty = inty[:data.shape[0], :data.shape[1]]
             #handle inmasks here after intx etc have been created
             if (inmask is not None and not sameSize):
-                b = where(inmask != 0)
+                b = np.where(inmask != 0)
                 data = data[b]
                 tmpexp = tmpexp[b]
                 intx = intx[b]
@@ -1182,7 +1183,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             intx = intx.ravel()
             inty = inty.ravel()
             #inmask already applied to data
-            data = data.ravel().astype(int32)
+            data = data.ravel().astype(np.int32)
             b = [[0]]
             z = (ymax-ymin)*intx+inty
             #Process all data with unique output pixel simultaneously
@@ -1194,21 +1195,21 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     d2u = data[u]
                 else:
                     #Special case no geom distortion correction
-                    u = arange(z.size)
+                    u = np.arange(z.size)
                     intyu = inty+0
                     intxu = intx+0
                     d2u = data+0
                 #Uniform kernel - d2u is already multiplied by inmask
-                newdata[intyu, intxu] = maximum(newdata[intyu, intxu], d2u)
+                newdata[intyu, intxu] = np.maximum(newdata[intyu, intxu], d2u)
                 if (not isXInt):
-                    newdata[intyu, intxu+1] = maximum(newdata[intyu, intxu+1], d2u)
+                    newdata[intyu, intxu+1] = np.maximum(newdata[intyu, intxu+1], d2u)
                 if (not isYInt):
-                    newdata[intyu+1, intxu] = maximum(newdata[intyu+1, intxu], d2u)
+                    newdata[intyu+1, intxu] = np.maximum(newdata[intyu+1, intxu], d2u)
                 if (not isXInt and not isYInt):
-                    newdata[intyu+1, intxu+1] = maximum(newdata[intyu+1, intxu+1], d2u)
+                    newdata[intyu+1, intxu+1] = np.maximum(newdata[intyu+1, intxu+1], d2u)
                 #Throw out processed pixels and continue loop
                 z[u] = -1
-                b = where(z > -1)
+                b = np.where(z > -1)
                 intx = intx[b]
                 inty = inty[b]
                 data = data[b]
@@ -1235,8 +1236,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
         #If requested, update FDUs here
         if (updateFDUs and (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG)):
             #Make copies with astype()
-            drihizzled_data = newdata.astype(float32)
-            expmap_data = expmap.astype(float32)
+            drihizzled_data = newdata.astype(np.float32)
+            expmap_data = expmap.astype(np.float32)
             #Apply weighting
             if (weight == 'exptime'):
                 if (outunits == 'cps'):
@@ -1276,8 +1277,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             elif (mode == MODE_FDU_TAG):
                 shortfn = frames[j]._id+"_"+dataTag+frames[j]._index+".fits"
                 temp = pyfits.open(frames[j].getFilename())
-            temp[mef].data = newdata.astype(float32)
-            tempexpmap = expmap.astype(float32)
+            temp[mef].data = newdata.astype(np.float32)
+            tempexpmap = expmap.astype(np.float32)
             #Apply weighting
             if (weight == 'exptime'):
                 if (outunits == 'cps'):
@@ -1325,7 +1326,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
         ##Update overall images
         if (outExists):
             if (kernel == 'uniform'):
-                outimage[mef].data = maximum(outimage[mef].data, newdata)
+                outimage[mef].data = np.maximum(outimage[mef].data, newdata)
             else:
                 outimage[mef].data += newdata
             outexp[mef].data += expmap
@@ -1333,7 +1334,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 outpix[mef].data += pixmap
         else:
             if (kernel == 'uniform'):
-                imagedata = maximum(imagedata, newdata)
+                imagedata = np.maximum(imagedata, newdata)
             else:
                 imagedata += newdata
             expdata += expmap
@@ -1473,7 +1474,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
 #end drihizzle
 
 def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='exptime', kernel='point', dropsize=1, geomDist=None, xsh=None, ysh=None, zsh=None, inunits='counts', outunits='cps', expkey='EXP_TIME', keepImages='no', imgdir='', log=None, gui=None, xtrans=None, ytrans=None, ztrans=None, mef=0, inmef=None, pixfile=None, doPix=True, scale=1, mode=None, returnHeader=False, dataTag=None, pixscale_keyword='PIXSCALE', rotpa_keyword='ROT_PA', inport_keyword='INPORT', updateFDUs=False, expmaps=None):
-    #frames = input data -- filename, list of filenames, or array
+    #frames = input data -- filename, list of filenames, or np.array
     #outfile = output data
     #weightfile = output exposure map
     #inmask = input good pixel mask
@@ -1524,7 +1525,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
     #Filelist
     if (isinstance(frames, str) and os.access(frames, os.F_OK)):
         frames = readFileIntoList(frames)
-    elif (isinstance(frames, ndarray)):
+    elif (isinstance(frames, np.ndarray)):
         frames = [frames]
     elif (not isinstance(frames, list)):
         frames = [frames]
@@ -1538,7 +1539,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
         mode = MODE_FITS
         if (isinstance(frames[0], str)):
             mode = MODE_FITS
-        elif (isinstance(frames[0], ndarray)):
+        elif (isinstance(frames[0], np.ndarray)):
             mode = MODE_RAW
         elif (isinstance(frames[0], fatboyDataUnit)):
             mode = MODE_FDU
@@ -1581,7 +1582,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
         del temp
     elif (isinstance(inmask, fatboyDataUnit)):
         inmask = inmask.getData()
-    elif (not isinstance(inmask, ndarray)):
+    elif (not isinstance(inmask, np.ndarray)):
         inmask = None
 
     if (dropsize <= 0.01 and kernel != 'point'):
@@ -1631,9 +1632,9 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
         ycoeffs = [0,0,1,0]
         zcoeffs = [0,0,0,1]
 
-    xcoeffs = array(xcoeffs).astype(float32)
-    ycoeffs = array(ycoeffs).astype(float32)
-    zcoeffs = array(zcoeffs).astype(float32)
+    xcoeffs = np.array(xcoeffs).astype(np.float32)
+    ycoeffs = np.array(ycoeffs).astype(np.float32)
+    zcoeffs = np.array(zcoeffs).astype(np.float32)
 
     ncoeff = len(xcoeffs)
     order = 0
@@ -1643,18 +1644,18 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
 
     #Shifts
     if (xsh is None):
-        xsh = zeros(nframes)
-    elif (not isinstance(xsh, list) and not isinstance(xsh, ndarray)):
+        xsh = np.zeros(nframes)
+    elif (not isinstance(xsh, list) and not isinstance(xsh, np.ndarray)):
         xsh = [xsh]
 
     if (ysh is None):
-        ysh = zeros(nframes)
-    elif (not isinstance(ysh, list) and not isinstance(ysh, ndarray)):
+        ysh = np.zeros(nframes)
+    elif (not isinstance(ysh, list) and not isinstance(ysh, np.ndarray)):
         ysh = [ysh]
 
     if (zsh is None):
-        zsh = zeros(nframes)
-    elif (not isinstance(zsh, list) and not isinstance(zsh, ndarray)):
+        zsh = np.zeros(nframes)
+    elif (not isinstance(zsh, list) and not isinstance(zsh, np.ndarray)):
         zsh = [zsh]
 
     if (_verbosity == fatboyLog.VERBOSE):
@@ -1755,7 +1756,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
         if (mode == MODE_FITS):
             name = frames[j]
             temp = pyfits.open(frames[j])
-            data = temp[mef].data.astype(float32)
+            data = temp[mef].data.astype(np.float32)
             if (expkey in temp[0].header):
                 exptime = float(temp[0].header[expkey])
             if ('CRPIX1' in temp[0].header):
@@ -1785,19 +1786,19 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             temp.close()
         elif (mode == MODE_RAW):
             name = "frame number "+str(j)
-            data = frames[j].astype(float32)
+            data = frames[j].astype(np.float32)
         elif (mode == MODE_FDU):
             name = frames[j].getFullId()
-            data = frames[j].getData().astype(float32)
+            data = frames[j].getData().astype(np.float32)
         elif (mode == MODE_FDU_DIFFERENCE):
             name = frames[j+1].getFullId()+"-"+frames[j].getFullId()
             data = frames[j+1].getData()-frames[j].getData()
         elif (mode == MODE_FDU_TAG):
             name = frames[j].getFullId()+":"+dataTag
-            data = frames[j].getData(tag=dataTag).astype(float32)
+            data = frames[j].getData(tag=dataTag).astype(np.float32)
         if (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG):
             if (doIndividualMasks):
-                inmask = (1-frames[j].getBadPixelMask().getData()).astype("int32")
+                inmask = (1-frames[j].getBadPixelMask().getData()).astype("np.int32")
             exptime = frames[j].exptime
             if (frames[j].hasHeaderValue('CRPIX1')):
                 xrefin = float(frames[j].getHeaderValue('CRPIX1'))
@@ -1870,14 +1871,14 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                     data*=exptime
             else:
                 data*=exptime
-            data = data.astype(float32)
+            data = data.astype(np.float32)
 
         if (j == 0):
             #Setup input mask if not given already
             if (inmask is None):
-                inmask = ones(data.shape, int32)
+                inmask = np.ones(data.shape, np.int32)
             else:
-                inmask = inmask.astype(int32)
+                inmask = inmask.astype(np.int32)
 
             #Setup input arrays to calculate transformation
             #Do this for the first pass only
@@ -1890,15 +1891,15 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             tt = time.time()
 
             #Only point/turbo kernels for 3d right now
-            xin = arange(nz*ny*nx).reshape(nz,ny,nx) % nx+0. - nx//2
-            yin = (arange(nz*ny*nx).reshape(nz,ny,nx) % (nx*ny)) // nx+0. - ny//2
-            zin = arange(nz*ny*nx).reshape(nz,ny,nx) // (nx*ny)+0. - nz//2
-            xout = zeros((nz,ny,nx),float32)
-            yout = zeros((nz,ny,nx),float32)
-            zout = zeros((nz,ny,nx),float32)
-            xin = xin.astype(float32)
-            yin = yin.astype(float32)
-            zin = zin.astype(float32)
+            xin = np.arange(nz*ny*nx).reshape(nz,ny,nx) % nx+0. - nx//2
+            yin = (np.arange(nz*ny*nx).reshape(nz,ny,nx) % (nx*ny)) // nx+0. - ny//2
+            zin = np.arange(nz*ny*nx).reshape(nz,ny,nx) // (nx*ny)+0. - nz//2
+            xout = np.zeros((nz,ny,nx),np.float32)
+            yout = np.zeros((nz,ny,nx),np.float32)
+            zout = np.zeros((nz,ny,nx),np.float32)
+            xin = xin.astype(np.float32)
+            yin = yin.astype(np.float32)
+            zin = zin.astype(np.float32)
 
             #Reference pixels for CRPIX
             if (xrefin == -1):
@@ -1950,11 +1951,11 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             tt = time.time()
 
             if (xtrans is not None):
-                xout = xtrans.astype(float64)
+                xout = xtrans.astype(np.float64)
             if (ytrans is not None):
-                yout = ytrans.astype(float64)
+                yout = ytrans.astype(np.float64)
             if (ztrans is not None):
-                zout = ztrans.astype(float32)
+                zout = ztrans.astype(np.float32)
 
             #Release memory
             del xin
@@ -1966,27 +1967,27 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                 xout *= scale
                 yout *= scale
                 zout *= scale
-                xsh = array(xsh)*scale
-                ysh = array(ysh)*scale
-                zsh = array(zsh)*scale
+                xsh = np.array(xsh)*scale
+                ysh = np.array(ysh)*scale
+                zsh = np.array(zsh)*scale
                 xrefout *= scale
                 yrefout *= scale
                 zrefout *= scale
 
             #Calculate mins, maxes
-            xmin = int(floor(xout.min()))
-            xmax = int(floor(xout.max()))+2
-            ymin = int(floor(yout.min()))
-            ymax = int(floor(yout.max()))+2
-            zmin = int(floor(zout.min()))
-            zmax = int(floor(zout.max()))+2
+            xmin = int(np.floor(xout.min()))
+            xmax = int(np.floor(xout.max()))+2
+            ymin = int(np.floor(yout.min()))
+            ymax = int(np.floor(yout.max()))+2
+            zmin = int(np.floor(zout.min()))
+            zmax = int(np.floor(zout.max()))+2
 
-            xshmin = min(xsh)
-            yshmin = min(ysh)
-            zshmin = min(zsh)
-            xshrange = int(ceil(max(xsh)-min(xsh)))
-            yshrange = int(ceil(max(ysh)-min(ysh)))
-            zshrange = int(ceil(max(zsh)-min(zsh)))
+            xshmin = np.min(xsh)
+            yshmin = np.min(ysh)
+            zshmin = np.min(zsh)
+            xshrange = int(np.ceil(np.max(xsh)-np.min(xsh)))
+            yshrange = int(np.ceil(np.max(ysh)-np.min(ysh)))
+            zshrange = int(np.ceil(np.max(zsh)-np.min(zsh)))
             if (_verbosity == fatboyLog.VERBOSE):
                 print("\tCalc min/max output: ",time.time()-tt,"; Total: ",time.time()-t)
             tt = time.time()
@@ -2004,15 +2005,15 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                 print("\tSubtract min/maxes: ",time.time()-tt,"; Total: ",time.time()-t)
             tt = time.time()
 
-            #Create new image array only the first time through
+            #Create new image np.array only the first time through
             #Take into account max shifts
-            newdata = zeros((zmax-zmin+zshrange, ymax-ymin+yshrange, xmax-xmin+xshrange), float32)
-            expmap = zeros((zmax-zmin+zshrange, ymax-ymin+yshrange, xmax-xmin+xshrange), float32)
+            newdata = np.zeros((zmax-zmin+zshrange, ymax-ymin+yshrange, xmax-xmin+xshrange), np.float32)
+            expmap = np.zeros((zmax-zmin+zshrange, ymax-ymin+yshrange, xmax-xmin+xshrange), np.float32)
             if (doPix):
-                pixmap = zeros((zmax-zmin+zshrange, ymax-ymin+yshrange, xmax-xmin+xshrange), int32)
+                pixmap = np.zeros((zmax-zmin+zshrange, ymax-ymin+yshrange, xmax-xmin+xshrange), np.int32)
 
             if (_verbosity == fatboyLog.VERBOSE):
-                print("\tCreate new image array: ",time.time()-tt,"; Total: ",time.time()-t)
+                print("\tCreate new image np.array: ",time.time()-tt,"; Total: ",time.time()-t)
             tt = time.time()
             #Handle existing data
             if (outExists):
@@ -2029,14 +2030,14 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                 yrefout = float(outimage[0].header['CRPIX2'])
                 zrefout = float(outimage[0].header['CRPIX3'])
                 #Case exisiting image is as large or larger than needed
-                if (outxsh <= xshmin and outysh <= yshmin and outzsh <= zshmin and outimage[mef].data.shape[2]+outxsh >= xmax-xmin+max(xsh) and outimage[mef].data.shape[1] >= ymax-ymin+max(ysh) and outimage[mef].data.shape[0] >= zmax-zmin+max(zsh)):
-                    newdata = outimage[mef].data.astype(float32)
-                    expmap = outexp[mef].data.astype(float32)
+                if (outxsh <= xshmin and outysh <= yshmin and outzsh <= zshmin and outimage[mef].data.shape[2]+outxsh >= xmax-xmin+np.max(xsh) and outimage[mef].data.shape[1] >= ymax-ymin+np.max(ysh) and outimage[mef].data.shape[0] >= zmax-zmin+np.max(zsh)):
+                    newdata = outimage[mef].data.astype(np.float32)
+                    expmap = outexp[mef].data.astype(np.float32)
                     if (doPix):
-                        pixmap = outpix[mef].data.astype(int32)
-                    xsh = array(xsh)-outxsh
-                    ysh = array(ysh)-outysh
-                    zsh = array(zsh)-outzsh
+                        pixmap = outpix[mef].data.astype(np.int32)
+                    xsh = np.array(xsh)-outxsh
+                    ysh = np.array(ysh)-outysh
+                    zsh = np.array(zsh)-outzsh
                     xshmin -= outxsh
                     yshmin -= outysh
                     zshmin -= outzsh
@@ -2045,35 +2046,35 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                     xshmin = min(xshmin, outxsh)
                     yshmin = min(yshmin, outysh)
                     zshmin = min(zshmin, outzsh)
-                    xmax = max(max(xsh)+xmax-xmin, outxsh+outimage[mef].data.shape[2])
-                    ymax = max(max(ysh)+ymax-ymin, outysh+outimage[mef].data.shape[1])
-                    zmax = max(max(zsh)+zmax-zmin, outzsh+outimage[mef].data.shape[0])
-                    x_range = int(ceil(xmax-xshmin))
-                    y_range = int(ceil(ymax-yshmin))
-                    z_range = int(ceil(zmax-zshmin))
-                    newdata = zeros((z_range, y_range, x_range), float32)
-                    expmap = zeros((z_range, y_range, x_range), float32)
+                    xmax = max(np.max(xsh)+xmax-xmin, outxsh+outimage[mef].data.shape[2])
+                    ymax = max(np.max(ysh)+ymax-ymin, outysh+outimage[mef].data.shape[1])
+                    zmax = max(np.max(zsh)+zmax-zmin, outzsh+outimage[mef].data.shape[0])
+                    x_range = int(np.ceil(xmax-xshmin))
+                    y_range = int(np.ceil(ymax-yshmin))
+                    z_range = int(np.ceil(zmax-zshmin))
+                    newdata = np.zeros((z_range, y_range, x_range), np.float32)
+                    expmap = np.zeros((z_range, y_range, x_range), np.float32)
                     if (doPix):
-                        pixmap = zeros((z_range, y_range, x_range), int32)
+                        pixmap = np.zeros((z_range, y_range, x_range), np.int32)
                     if (outxsh != xshmin):
-                        xshmin = floor(xshmin)
+                        xshmin = np.floor(xshmin)
                     x1 = int(outxsh - xshmin)
                     x2 = x1+outimage[mef].data.shape[1]
                     xrefout += x1
                     if (outysh != yshmin):
-                        yshmin = floor(yshmin)
+                        yshmin = np.floor(yshmin)
                     y1 = int(outysh - yshmin)
                     y2 = y1+outimage[mef].data.shape[0]
                     yrefout += y1
                     if (outzsh != zshmin):
-                        zshmin = floor(zshmin)
+                        zshmin = np.floor(zshmin)
                     z1 = int(outzsh - zshmin)
                     z2 = z1+outimage[mef].data.shape[0]
                     zrefout += z1
-                    newdata[z1:z2,y1:y2,x1:x2] = outimage[mef].data.astype(float32)
-                    expmap[z1:z2,y1:y2,x1:x2] = outexp[mef].data.astype(float32)
+                    newdata[z1:z2,y1:y2,x1:x2] = outimage[mef].data.astype(np.float32)
+                    expmap[z1:z2,y1:y2,x1:x2] = outexp[mef].data.astype(np.float32)
                     if (doPix):
-                        pixmap[z1:z2,y1:y2,x1:x2] = outpix[mef].data.asytpe(int32)
+                        pixmap[z1:z2,y1:y2,x1:x2] = outpix[mef].data.asytpe(np.int32)
 
             #Update reference min shifts, ref pixels in image header
             newHeader['DHZMINXS'] = xshmin
@@ -2085,16 +2086,16 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
 
             #Copy over to pyfits ojects
             if (outExists):
-                outimage[mef].data = newdata.astype(float32)
-                outexp[mef].data = expmap.astype(float32)
+                outimage[mef].data = newdata.astype(np.float32)
+                outexp[mef].data = expmap.astype(np.float32)
                 if (doPix):
-                    outpix[mef].data = pixmap.astype(int32)
+                    outpix[mef].data = pixmap.astype(np.int32)
             else:
                 #Create output arrays
-                imagedata = zeros((zmax-zmin+zshrange, ymax-ymin+yshrange, xmax-xmin+xshrange), float32)
-                expdata = zeros((zmax-zmin+zshrange, ymax-ymin+yshrange, xmax-xmin+xshrange), float32)
+                imagedata = np.zeros((zmax-zmin+zshrange, ymax-ymin+yshrange, xmax-xmin+xshrange), np.float32)
+                expdata = np.zeros((zmax-zmin+zshrange, ymax-ymin+yshrange, xmax-xmin+xshrange), np.float32)
                 if (doPix):
-                    pixdata = zeros((zmax-zmin+zshrange, ymax-ymin+yshrange, xmax-xmin+xshrange), int32)
+                    pixdata = np.zeros((zmax-zmin+zshrange, ymax-ymin+yshrange, xmax-xmin+xshrange), np.int32)
 
         if (_verbosity == fatboyLog.VERBOSE):
             print("\tCopy over to pyfits and update: ",time.time()-tt,"; Total: ",time.time()-t)
@@ -2102,11 +2103,11 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
 
         #Scale data by inmask and weight factor
         if (data.dtype == uint8):
-            data = int32(data) #Convert uint8 data to int32
+            data = data.astype(np.int32) #Convert uint8 data to np.int32
         data = data*(inmask*(scalefac/exptime)) #Don't use *= because of stupid numpy "feature" throwing exception
         if (tmpexp is None):
             #Exposure map should be exposure time * good pixel mask unless a previous exposure map has been loaded for inunits = cps
-            tmpexp = float32(inmask*scalefac)
+            tmpexp = inmask*scalefac.astype(np.float32)
         totexp+=exptime
         if (_verbosity == fatboyLog.VERBOSE):
             print("Scale data and expmask: ",time.time()-tt,"; Total: ",time.time()-t)
@@ -2114,7 +2115,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
 
         #handle inmasks here universally if input frames are all same size, save time
         if (inmask is not None and sameSize):
-            b = where(inmask != 0)
+            b = np.where(inmask != 0)
             data = data[b]
             if (j == 0):
                 #Only update xout and yout once.  Data changes every iteration, xout and yout don't
@@ -2125,12 +2126,12 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
 
         if (kernel == 'turbo'):
             #Find int, fractional xs, ys
-            intx = floor(xout+xsh[j]-xshmin).astype(int32)
-            inty = floor(yout+ysh[j]-yshmin).astype(int32)
-            intz = floor(zout+zsh[j]-zshmin).astype(int32)
-            fracx = (xout+xsh[j]-xshmin-intx).ravel().astype(float32)
-            fracy = (yout+ysh[j]-yshmin-inty).ravel().astype(float32)
-            fracz = (zout+zsh[j]-zshmin-intz).ravel().astype(float32)
+            intx = np.floor(xout+xsh[j]-xshmin).astype(np.int32)
+            inty = np.floor(yout+ysh[j]-yshmin).astype(np.int32)
+            intz = np.floor(zout+zsh[j]-zshmin).astype(np.int32)
+            fracx = (xout+xsh[j]-xshmin-intx).ravel().astype(np.float32)
+            fracy = (yout+ysh[j]-yshmin-inty).ravel().astype(np.float32)
+            fracz = (zout+zsh[j]-zshmin-intz).ravel().astype(np.float32)
             #Case of different sized images
             if (intx.shape != data.shape):
                 intx = intx[:data.shape[0], :data.shape[1], :data.shape[2]]
@@ -2141,7 +2142,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                 fracz = fracz[:data.shape[0], :data.shape[1], :data.shape[2]]
             #handle inmasks here after intx etc have been created
             if (inmask is not None and not sameSize):
-                b = where(inmask != 0)
+                b = np.where(inmask != 0)
                 data = data[b]
                 tmpexp = tmpexp[b]
                 intx = intx[b]
@@ -2154,8 +2155,8 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             inty = inty.ravel()
             intz = intz.ravel()
 
-            data = data.ravel().astype(float32)
-            tmpexp = tmpexp.ravel().astype(float32)
+            data = data.ravel().astype(np.float32)
+            tmpexp = tmpexp.ravel().astype(np.float32)
             b = [[0]]
             zy = (ymax-ymin)*intx+inty
             z = (zmax-zmin)*zy+intz
@@ -2173,7 +2174,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                     tmpexpu = tmpexp[u]
                 else:
                     #Special case no geom distortion correction
-                    u = arange(z.size)
+                    u = np.arange(z.size)
                     intzu = intz+0
                     intyu = inty+0
                     intxu = intx+0
@@ -2185,12 +2186,12 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
 
                 #linearly interpolate
                 if (dropsize < 1):
-                    fz1 = minimum(((1.0+dropsize)/2-fraczu)*(1./dropsize),1)
-                    fy1 = minimum(((1.0+dropsize)/2-fracyu)*(1./dropsize),1)
-                    fx1 = minimum(((1.0+dropsize)/2-fracxu)*(1./dropsize),1)
-                    fraczu = maximum((fraczu-(1.0-dropsize)/2)*(1./dropsize),0)
-                    fracyu = maximum((fracyu-(1.0-dropsize)/2)*(1./dropsize),0)
-                    fracxu = maximum((fracxu-(1.0-dropsize)/2)*(1./dropsize),0)
+                    fz1 = np.minimum(((1.0+dropsize)/2-fraczu)*(1./dropsize),1)
+                    fy1 = np.minimum(((1.0+dropsize)/2-fracyu)*(1./dropsize),1)
+                    fx1 = np.minimum(((1.0+dropsize)/2-fracxu)*(1./dropsize),1)
+                    fraczu = np.maximum((fraczu-(1.0-dropsize)/2)*(1./dropsize),0)
+                    fracyu = np.maximum((fracyu-(1.0-dropsize)/2)*(1./dropsize),0)
+                    fracxu = np.maximum((fracxu-(1.0-dropsize)/2)*(1./dropsize),0)
 
                     newdata[intzu, intyu, intxu] += d2u*fz1*fy1*fx1
                     newdata[intzu, intyu, intxu+1] += d2u*fz1*fy1*fracxu
@@ -2257,7 +2258,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
 
                 #Throw out processed pixels and continue loop
                 z[u] = -1
-                b = where(z > -1)
+                b = np.where(z > -1)
                 intx = intx[b]
                 inty = inty[b]
                 intz = intz[b]
@@ -2269,9 +2270,9 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                 z = z[b]
         elif (kernel == 'point'):
             #Dump all flux into neareast pixel
-            intx = floor(xout+xsh[j]-xshmin+0.5).astype(int32)
-            inty = floor(yout+ysh[j]-yshmin+0.5).astype(int32)
-            intz = floor(zout+zsh[j]-zshmin+0.5).astype(int32)
+            intx = np.floor(xout+xsh[j]-xshmin+0.5).astype(np.int32)
+            inty = np.floor(yout+ysh[j]-yshmin+0.5).astype(np.int32)
+            intz = np.floor(zout+zsh[j]-zshmin+0.5).astype(np.int32)
             #Case of different sized images
             if (intx.shape != data.shape):
                 intx = intx[:data.shape[0], :data.shape[1], :data.shape[2]]
@@ -2279,7 +2280,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                 intz = intz[:data.shape[0], :data.shape[1], :data.shape[2]]
             #handle inmasks here after intx etc have been created
             if (inmask is not None and not sameSize):
-                b = where(inmask != 0)
+                b = np.where(inmask != 0)
                 data = data[b]
                 tmpexp = tmpexp[b]
                 intx = intx[b]
@@ -2303,7 +2304,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                     tmpexpu = tmpexp[u]
                 else:
                     #Special case no geom distortion correction
-                    u = arange(z.size)
+                    u = np.arange(z.size)
                     intzu = intz+0
                     intyu = inty+0
                     intxu = intx+0
@@ -2316,7 +2317,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                     pixmap[intzu, intyu, intxu] += 1
 
                 z[u] = -1
-                b = where(z > -1)
+                b = np.where(z > -1)
                 intx = intx[b]
                 inty = inty[b]
                 intz = intz[b]
@@ -2346,8 +2347,8 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
         #If requested, update FDUs here
         if (updateFDUs and (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG)):
             #Make copies with astype()
-            drihizzled_data = newdata.astype(float32)
-            expmap_data = expmap.astype(float32)
+            drihizzled_data = newdata.astype(np.float32)
+            expmap_data = expmap.astype(np.float32)
             #Apply weighting
             if (weight == 'exptime'):
                 if (outunits == 'cps'):
@@ -2387,8 +2388,8 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             elif (mode == MODE_FDU_TAG):
                 shortfn = frames[j]._id+"_"+dataTag+frames[j]._index+".fits"
                 temp = pyfits.open(frames[j].getFilename())
-            temp[mef].data = newdata.astype(float32)
-            tempexpmap = expmap.astype(float32)
+            temp[mef].data = newdata.astype(np.float32)
+            tempexpmap = expmap.astype(np.float32)
             #Apply weighting
             if (weight == 'exptime'):
                 if (outunits == 'cps'):
@@ -2436,7 +2437,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
         ##Update overall images
         if (outExists):
             if (kernel == 'uniform'):
-                outimage[mef].data = maximum(outimage[mef].data, newdata)
+                outimage[mef].data = np.maximum(outimage[mef].data, newdata)
             else:
                 outimage[mef].data += newdata
             outexp[mef].data += expmap
@@ -2444,7 +2445,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                 outpix[mef].data += pixmap
         else:
             if (kernel == 'uniform'):
-                imagedata = maximum(imagedata, newdata)
+                imagedata = np.maximum(imagedata, newdata)
             else:
                 imagedata += newdata
             expdata += expmap
@@ -2585,19 +2586,19 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
 
 def getGaussLut(fwhm, nsig, inc):
     endx = fwhm*nsig*2/2.3548
-    sz = int(ceil(endx/inc))*2
-    x = (arange(sz)-sz//2)*inc
+    sz = int(np.ceil(endx/inc))*2
+    x = (np.arange(sz)-sz//2)*inc
     z = 2.3548/fwhm*x
-    y = exp(-0.5*z*z)
+    y = np.exp(-0.5*z*z)
     y[x > endx/2] = 0.
     y[x < -endx/2] = 0.
     return y
 
 def getLanczosLut(order, inc):
     endx = order*2
-    sz = int(ceil(endx/inc))*2
-    x = (arange(sz,dtype=float32)-sz//2)*inc
-    y = zeros(x.shape, float32)
+    sz = int(np.ceil(endx/inc))*2
+    x = (np.arange(sz,dtype=np.float32)-sz//2)*inc
+    y = np.zeros(x.shape, np.float32)
     y[x == 0] = 1
     b = (x != 0)
     y[b] = order*sin(pi*x[b]) * sin(pi*x[b]/order) / (pi**2*x[b]*x[b])

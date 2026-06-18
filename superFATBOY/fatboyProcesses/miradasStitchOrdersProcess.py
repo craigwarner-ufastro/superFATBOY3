@@ -26,7 +26,7 @@ class miradasStitchOrdersProcess(fatboyProcess):
         xsize = combined_slices.shape[1]
 
         if ('slitletList' in calibs):
-            nslits = max(calibs['slitletList'])
+            nslits = np.max(calibs['slitletList'])
             islits = np.array(calibs['slitletList']).astype(np.int32)
         else:
             #Start with slitlet 1
@@ -59,8 +59,8 @@ class miradasStitchOrdersProcess(fatboyProcess):
                 minWave = wave.min()
                 maxWave = wave.max()
             else:
-                minWave = min(minWave, wave.min())
-                maxWave = max(maxWave, wave.max())
+                minWave = np.min(minWave, wave.min())
+                maxWave = np.max(maxWave, wave.max())
 
         scale = (maxWave-minWave)/(rows*xsize)
         outwave = np.arange(rows*xsize, dtype=np.float32)*scale+minWave
@@ -109,7 +109,7 @@ class miradasStitchOrdersProcess(fatboyProcess):
                 currCleanSlice = np.interp(outwave, wave, clean_slices[j])
             if (doNM):
                 currNMslice = np.interp(outwave, wave, nm_slices[j])
-                #Handle areas where noisemap is 0
+                #Handle areas np.where noisemap is 0
                 b = (currNMslice == 0)
                 currNMslice[b] = 1
                 if (weight_mode == "none"):
@@ -144,7 +144,7 @@ class miradasStitchOrdersProcess(fatboyProcess):
                     cleanDen += weights[j]
 
         #Divide to produce final weighted combined slices
-        #Handle zeros
+        #Handle np.zeros
         b = (den == 0)
         den[b] = 1
         stitched_orders = num/den
@@ -226,7 +226,7 @@ class miradasStitchOrdersProcess(fatboyProcess):
         if (slitletList is not None):
             #passed from XML with <calib> tag.
             if (isinstance(slitletList, list) or isinstance(slitletList, np.ndarray)):
-                #Passed as list or array
+                #Passed as list or np.array
                 print("miradasStitchOrdersProcess::getCalibs> Using slitlet list: "+str(slitletList))
                 self._log.writeLog(__name__, "Using slitlet list: "+str(slitletList))
                 calibs['slitletList'] = np.array(slitletList)

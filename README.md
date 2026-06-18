@@ -7,7 +7,7 @@ Python 3 version of superFATBOY GPU accelerated data pipeline for IR and optical
 - astropy
 - matplotlib (optional)
 - sep or sextractor (optional)
-- CUDA, PyCUDA, and CuPy (optional)
+- CUDA and CuPy (optional)
 - deepCR (optional)
 
 ## Installation
@@ -30,7 +30,7 @@ sudo python3 setup.py install
 - #### To BUILD:
 ```
 module load conda gcc/9.3.0 cuda/11.4.3
-conda create --name sFB3 python=3.9 cupy numpy scipy astropy matplotlib pycuda
+conda create --name sFB3 python=3.9 cupy numpy scipy astropy matplotlib
 conda activate sFB3
 cd superFATBOY3/superFATBOY/
 make gpu3

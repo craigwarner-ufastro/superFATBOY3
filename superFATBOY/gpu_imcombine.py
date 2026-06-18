@@ -11,8 +11,8 @@ except Exception:
     hasCuda = False
     superFATBOY.setGPUEnabled(False)
 
-# frames = array of fits filenames or one ASCII file containing a list of
-#       filenames or an array of FDUs
+# frames = np.array of fits filenames or one ASCII file containing a list of
+#       filenames or an np.array of FDUs
 # method = 'median', 'mean', 'max', 'min', or 'sum'
 # outfile = filename of output FITS file
 # reject = rejection type if using method = 'mean'
@@ -106,7 +106,7 @@ def space(x):
 
 nx = 64
 
-def imcombine(frames, outfile=None, expmask=None, method='median', reject='none', lsigma=3, hsigma=3, weight='none', lthreshold=None, hthreshold=None, scale='none', zero='none', nlow=0, nhigh=0, mclip='mean', qsfile=None, nonzero=False, even=True, inmask=None, expkey='EXP_TIME', niter=5, log=None, mef=0, outtype=float32, mode=None, returnHeader=False, dataTag=None):
+def imcombine(frames, outfile=None, expmask=None, method='median', reject='none', lsigma=3, hsigma=3, weight='none', lthreshold=None, hthreshold=None, scale='none', zero='none', nlow=0, nhigh=0, mclip='mean', qsfile=None, nonzero=False, even=True, inmask=None, expkey='EXP_TIME', niter=5, log=None, mef=0, outtype=np.float32, mode=None, returnHeader=False, dataTag=None):
     t = time.time()
     _verbosity = fatboyLog.NORMAL
     if (isinstance(frames, str) and os.access(frames, os.F_OK)):
@@ -139,7 +139,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
         mode = MODE_FITS
         if (isinstance(frames[0], str)):
             mode = MODE_FITS
-        elif (isinstance(frames[0], ndarray)):
+        elif (isinstance(frames[0], np.ndarray)):
             mode = MODE_RAW
         elif (isinstance(frames[0], fatboyDataUnit)):
             mode = MODE_FDU
@@ -214,7 +214,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
         nonzero = True
     elif (isinstance(inmask, fatboyDataUnit)):
         inmask = inmask.getData()
-    elif (not isinstance(inmask, ndarray)):
+    elif (not isinstance(inmask, np.ndarray)):
         inmask = None
     else:
         nonzero = True
@@ -284,7 +284,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
         if (j == chunks-1 and chunks*csize != totcols):
             endpos = totcols
             startpos = j*csize
-            inp = empty((endpos-j*csize, origsz[1], nframes), outtype)
+            inp = np.empty((endpos-j*csize, origsz[1], nframes), outtype)
             csize = endpos-startpos
         else:
             endpos = (j+1)*csize
@@ -486,15 +486,15 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
 
             ttt = time.time()
             if (mode == MODE_FITS):
-                inp[:,:,l] = mm[l][mef].data[startpos:endpos,:]
+                inp[:,:,l] = cp.asarray(mm[l][mef].data[startpos:endpos,:])
             elif (mode == MODE_RAW):
-                inp[:,:,l] = frames[l][startpos:endpos,:]
+                inp[:,:,l] = cp.asarray(frames[l][startpos:endpos,:])
             elif (mode == MODE_FDU):
-                inp[:,:,l] = frames[l].getMaskedData()[startpos:endpos,:]
+                inp[:,:,l] = cp.asarray(frames[l].getMaskedData()[startpos:endpos,:])
             elif (mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_DIFF_PAIRING):
-                inp[:,:,l] = diffFrame[startpos:endpos, :]
+                inp[:,:,l] = cp.asarray(diffFrame[startpos:endpos, :])
             elif (mode == MODE_FDU_TAG):
-                inp[:,:,l] = frames[l].getMaskedData(tag=dataTag)[startpos:endpos,:]
+                inp[:,:,l] = cp.asarray(frames[l].getMaskedData(tag=dataTag)[startpos:endpos,:])
             #print "------------",time.time()-ttt
 
         if (_verbosity == fatboyLog.VERBOSE):
@@ -514,7 +514,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             if (zero != 'none'):
                 fac = (zpts-zpts[0])
                 subArrVector = mod.get_function("subArrVector_float")
-                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
+                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, nfint.astype(np.int32)))
             if (scale != 'none' or weight != 'none'):
                 fac = cp.ones(nfint, outtype)
                 if (scale != 'none'):
@@ -522,9 +522,11 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                 if (weight != 'none'):
                     fac *= (w/w[0])
                 multArrVector = mod.get_function("multArrVector_float")
-                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
+                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, nfint.astype(np.int32)))
 
             if (_verbosity == fatboyLog.VERBOSE):
+                print("Scaling: ", time.time()-tt,"; Total: ",time.time()-t)
+                tt = time.time()
 
             if (reject == 'none'):
                 if (dothresh):
@@ -575,7 +577,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             if (zero != 'none'):
                 fac = (zpts-zpts[0])
                 subArrVector = mod.get_function("subArrVector_float")
-                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
+                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, nfint.astype(np.int32)))
             if (scale != 'none' or weight != 'none'):
                 fac = cp.ones(nfint, outtype)
                 if (scale != 'none'):
@@ -583,10 +585,10 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                 if (weight != 'none'):
                     fac *= (w/w[0])
                 multArrVector = mod.get_function("multArrVector_float")
-                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
+                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, nfint.astype(np.int32)))
             if (_verbosity == fatboyLog.VERBOSE):
                 print("Scaling: ", time.time()-tt,"; Total: ",time.time()-t)
-            tt = time.time()
+                tt = time.time()
 
             if (reject == 'none'):
                 if (weight != 'none'):
@@ -681,7 +683,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             if (zero != 'none'):
                 fac = (zpts-zpts[0])
                 subArrVector = mod.get_function("subArrVector_float")
-                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
+                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, nfint.astype(np.int32)))
             if (scale != 'none' or weight != 'none'):
                 fac = cp.ones(nfint, outtype)
                 if (scale != 'none'):
@@ -689,11 +691,11 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                 if (weight != 'none'):
                     fac *= (w/w[0])
                 multArrVector = mod.get_function("multArrVector_float")
-                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
+                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, nfint.astype(np.int32)))
 
             if (_verbosity == fatboyLog.VERBOSE):
                 print("Scaling: ", time.time()-tt,"; Total: ",time.time()-t)
-            tt = time.time()
+                tt = time.time()
 
             if (reject == 'none'):
                 if (dothresh):
@@ -768,7 +770,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             hdulist = pyfits.open(frames[0])
         elif (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG or mode == MODE_FDU_DIFF_PAIRING):
             header = frames[0]._header
-        write_fits_file(expfile, exp, dtype="float32", header=header, headerExt=newHeader, fitsobj=hdulist, mef=mef, log=log)
+        write_fits_file(expfile, exp, dtype="np.float32", header=header, headerExt=newHeader, fitsobj=hdulist, mef=mef, log=log)
         del exp
     if (_verbosity == fatboyLog.VERBOSE):
         print("Write data: ",time.time()-tt,"; Total: ",time.time()-t)

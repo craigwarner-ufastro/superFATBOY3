@@ -1,3 +1,4 @@
+import numpy as np
 ## @package superFATBOY.datatypeExtensions
 from superFATBOY.fatboyImage import *
 
@@ -31,12 +32,12 @@ class circeImage(fatboyImage):
             if (self._expmode == self.EXPMODE_FS):
                 try:
                     #CIRCE data has nramps sets of 2x nreads frames
-                    self._data = image[(self.ramp-1)*2*self.nreads+self.nreads+1].data.astype(int32) - image[(self.ramp-1)*2*self.nreads+1].data.astype(int32)
+                    self._data = image[(self.ramp-1)*2*self.nreads+self.nreads+1].data.astype(np.int32) - image[(self.ramp-1)*2*self.nreads+1].data.astype(np.int32)
                     if (self.nreads > 1):
                         for read in range(2, self.nreads+1):
-                            self._data += image[(self.ramp-1)*2*self.nreads+self.nreads+read].data.astype(int32) - image[(self.ramp-1)*2*self.nreads+read].data.astype(int32)
+                            self._data += image[(self.ramp-1)*2*self.nreads+self.nreads+read].data.astype(np.int32) - image[(self.ramp-1)*2*self.nreads+read].data.astype(np.int32)
                     #self._data = image[self.ramp*2].data-image[self.ramp*2-1].data
-                    self._data = self._data.astype(int32)
+                    self._data = self._data.astype(np.int32)
                 except Exception:
                     self._data = None
                     print("circeImage::getData> Error: Could not find ramp "+str(self.ramp)+" in "+self.filename+"!  Discarding this frame!")
@@ -48,8 +49,8 @@ class circeImage(fatboyImage):
                     #CIRCE URG data has nreads = 1, nramps sets of ngroups frames
                     #E.g., ngroups=4, nramps = 2 => [1,1], [2,1], [3,1], [4,1], RESET, [1,2], [2,2], [3,2], [4,2]
                     #Final output is nramps * (ngroups-1) frames, [2,1]-[1,1]; [3,1]-[2,1]; [4,1]-[3,1]; [2,2]-[1,2]; [3,2]-[2,2], [4,2]-[3,2]
-                    self._data = image[(self.ramp-1)*self.getNGroups()+self.group+1].data.astype(int32) - image[(self.ramp-1)*self.getNGroups()+self.group].data.astype(int32)
-                    self._data = self._data.astype(int32)
+                    self._data = image[(self.ramp-1)*self.getNGroups()+self.group+1].data.astype(np.int32) - image[(self.ramp-1)*self.getNGroups()+self.group].data.astype(np.int32)
+                    self._data = self._data.astype(np.int32)
                 except Exception:
                     self._data = None
                     print("circeImage::getData> Error: Could not find ramp "+str(self.ramp)+", group "+str(self.group)+" in "+self.filename+"!  Discarding this frame!")
@@ -61,8 +62,8 @@ class circeImage(fatboyImage):
                     #CIRCE URG BYPASS mode has nreads = 1, nramps sets of ngroups frames, but only returns read(final)-read(first) for each ramp
                     #E.g., ngroups=4, nramps = 2 => [1,1], [2,1], [3,1], [4,1], RESET, [1,2], [2,2], [3,2], [4,2]
                     #Final output is nramps frames, [4,1]-[1,1]; [4,2]-[1,2]
-                    self._data = image[self.ramp*self.getNGroups()].data.astype(int32) - image[(self.ramp-1)*self.getNGroups()+1].data.astype(int32)
-                    self._data = self._data.astype(int32)
+                    self._data = image[self.ramp*self.getNGroups()].data.astype(np.int32) - image[(self.ramp-1)*self.getNGroups()+1].data.astype(np.int32)
+                    self._data = self._data.astype(np.int32)
                 except Exception:
                     self._data = None
                     print("circeImage::getData> Error: Could not find ramp "+str(self.ramp)+" in "+self.filename+"!  Discarding this frame!")
@@ -78,8 +79,7 @@ class circeImage(fatboyImage):
             if (not self._data.dtype.isnative):
                 #Byteswap
                 self._data = self._data.byteswap()
-                self._data = self._data.newbyteorder('<')
-                self._data.dtype.newbyteorder('<')
+                self._data = self._data.view(self._data.dtype.newbyteorder('<'))
             self._shape = self._data.shape
             image.close()
             if (self._fdb is not None):
@@ -104,7 +104,7 @@ class circeImage(fatboyImage):
             print("circeImage::getIndividualRead> Error: Read "+str(n)+" does not exist!")
             self._log.writeLog(__name__, "Read "+str(n)+" does not exist!", type=fatboyLog.ERROR)
             return None
-        data = image[n].data.astype(int32)
+        data = image[n].data.astype(np.int32)
         image.close()
         if (self._fdb is not None):
             self._fdb.totalReadDataTime += (time.time()-t)
@@ -112,7 +112,7 @@ class circeImage(fatboyImage):
         return data
     #end getIndividual Read
 
-    ## Base class returns empty list.  Can be overridden to return a list of fatboyDataUnit (or subclass) representing multiple data extensions.
+    ## Base class returns np.empty list.  Can be overridden to return a list of fatboyDataUnit (or subclass) representing multiple data extensions.
     ## Each should have a different fdu.section value.  For instance, newfirm has 4 detectors or CIRCE has multiple nramps.
     def getMultipleExtensions(self):
         extendedImages = []
@@ -232,12 +232,12 @@ class circeImage(fatboyImage):
         fatboyImage.setIdentifier(self, groupType, fileprefix, sindex=sindex, keyword=keyword)
         ##CIRCE specific
         sramp = str(self.ramp)
-        zeros = '0000'
-        sramp = zeros[len(sramp):]+sramp
+        np.zeros = '0000'
+        sramp = np.zeros[len(sramp):]+sramp
         if (self._expmode == self.EXPMODE_URG):
             #trailing index should be section number not ramp number for URG data
             sramp = str(self.section)
-            sramp = zeros[len(sramp):]+sramp
+            sramp = np.zeros[len(sramp):]+sramp
         self._identFull = self._id+'.'+self._index+sramp+'.fits'
         self._identFull = self._identFull.replace('..','.') #for case of blank index in calibs
     #end setIdentifier

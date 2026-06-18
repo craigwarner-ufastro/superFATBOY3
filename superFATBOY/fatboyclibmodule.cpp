@@ -768,7 +768,7 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
   npy_intp dims[2] = {array->dimensions[0], array->dimensions[1]};
   //if (PyArray_ISBYTESWAPPED(array)) PyArray_Byteswap(array, true);
 
-  if (array->descr->type_num == PyArray_FLOAT) {
+  if (array->descr->type_num == NPY_FLOAT) {
     float* data = (float*)PyArray_DATA(array);
     float* medVals = new float[ny];
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
@@ -921,7 +921,7 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
       }
     }
     medArray = PyArray_SimpleNewFromData(2, dims, NPY_FLOAT, medVals);
-  } else if (array->descr->type_num == PyArray_DOUBLE) {
+  } else if (array->descr->type_num == NPY_DOUBLE) {
     double* data = (double*)PyArray_DATA(array);
     double* medVals = new double[ny];
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
@@ -1074,7 +1074,7 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
       }
     }
     medArray = PyArray_SimpleNewFromData(2, dims, NPY_DOUBLE, medVals);
-  } else if (array->descr->type_num == PyArray_INT32) {
+  } else if (array->descr->type_num == NPY_INT32) {
     int* data = (int*)PyArray_DATA(array);
     float* medVals = new float[ny];
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
@@ -1227,7 +1227,7 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
       }
     }
     medArray = PyArray_SimpleNewFromData(2, dims, NPY_FLOAT, medVals);
-  } else if (array->descr->type_num == PyArray_INT64) {
+  } else if (array->descr->type_num == NPY_INT64) {
     long* data = (long*)PyArray_DATA(array);
     float* medVals = new float[ny];
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
@@ -1404,7 +1404,7 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
   npy_intp dims[1] = {ny};
   //if (PyArray_ISBYTESWAPPED(array)) PyArray_Byteswap(array, true);
 
-  if (array->descr->type_num == PyArray_FLOAT) {
+  if (array->descr->type_num == NPY_FLOAT) {
     float* data = (float*)PyArray_DATA(array);
     float* medVals = new float[ny];
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
@@ -1608,7 +1608,7 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
       }
     }
     medArray = PyArray_SimpleNewFromData(1, dims, NPY_FLOAT, medVals);
-  } else if (array->descr->type_num == PyArray_DOUBLE) {
+  } else if (array->descr->type_num == NPY_DOUBLE) {
     double* data = (double*)PyArray_DATA(array);
     double* medVals = new double[ny];
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
@@ -1811,7 +1811,7 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
       }
     }
     medArray = PyArray_SimpleNewFromData(1, dims, NPY_DOUBLE, medVals);
-  } else if (array->descr->type_num == PyArray_INT32) {
+  } else if (array->descr->type_num == NPY_INT32) {
     int* data = (int*)PyArray_DATA(array);
     float* medVals = new float[ny];
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
@@ -2014,7 +2014,7 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
       }
     }
     medArray = PyArray_SimpleNewFromData(1, dims, NPY_FLOAT, medVals);
-  } else if (array->descr->type_num == PyArray_INT64) {
+  } else if (array->descr->type_num == NPY_INT64) {
     long* data = (long*)PyArray_DATA(array);
     float* medVals = new float[ny];
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
@@ -2240,7 +2240,7 @@ static PyObject * median(PyObject *self, PyObject *args, PyObject *keywds) {
   k = n/2; 
   //if (PyArray_ISBYTESWAPPED(array)) PyArray_Byteswap(array, true);
 
-  if (array->descr->type_num == PyArray_FLOAT) {
+  if (array->descr->type_num == NPY_FLOAT) {
     float* data = (float*)PyArray_DATA(array);
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX || sigclip) {
       float *temp = data;
@@ -2323,7 +2323,7 @@ static PyObject * median(PyObject *self, PyObject *args, PyObject *keywds) {
       med = (double)(quickselect(data, n, k) + (double)quickselect(data, n, k-1))/2;
     }
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX || sigclip) delete data; 
-  } else if (array->descr->type_num == PyArray_DOUBLE) {
+  } else if (array->descr->type_num == NPY_DOUBLE) {
     double* data = (double*)PyArray_DATA(array);
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX || sigclip) {
       double* temp = data;
@@ -2406,7 +2406,7 @@ static PyObject * median(PyObject *self, PyObject *args, PyObject *keywds) {
       med = (double)(quickselect(data, n, k) + (double)quickselect(data, n, k-1))/2;
     }
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX || sigclip) delete data;
-  } else if (array->descr->type_num == PyArray_INT32) {
+  } else if (array->descr->type_num == NPY_INT32) {
     int* data = (int*)PyArray_DATA(array);
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX || sigclip) {
       int* temp = data;
@@ -2489,7 +2489,7 @@ static PyObject * median(PyObject *self, PyObject *args, PyObject *keywds) {
       med = (double)(quickselect(data, n, k) + (double)quickselect(data, n, k-1))/2;
     }
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX || sigclip) delete data;
-  } else if (array->descr->type_num == PyArray_INT64) {
+  } else if (array->descr->type_num == NPY_INT64) {
     long* data = (long*)PyArray_DATA(array);
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX || sigclip) {
       long* temp = data;
@@ -2678,7 +2678,7 @@ static PyObject * fluxblend(PyObject *self, PyObject *args, PyObject *keywds) {
     return NULL;
   }
 
-  if (flux->descr->type_num == PyArray_DOUBLE) {
+  if (flux->descr->type_num == NPY_DOUBLE) {
     double* a = (double*)PyArray_DATA(flux);
     int* b = (int*)PyArray_DATA(indices);
 

@@ -4,7 +4,8 @@ from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
 from superFATBOY import gpu_imcombine, imcombine
-from numpy import *
+import numpy as np
+import math
 from scipy.optimize import leastsq
 from superFATBOY import gpu_drihizzle, drihizzle
 
@@ -76,10 +77,10 @@ class rectifyProcess(fatboyProcess):
         for j in range(len(rctfdus)):
             #Median filter then find continuum at sigma > 3, min width 5px
             if (rctfdus[j].dispersion == fdu.DISPERSION_HORIZONTAL):
-                oned = mediansmooth1d(sum(rctfdus[j].getData(tag="cleanFrame")[:,find_xlo:find_xhi], 1), 5)
+                oned = mediansmooth1d(np.sum(rctfdus[j].getData(tag="cleanFrame")[:,find_xlo:find_xhi], 1), 5)
             elif (rctfdus[j].dispersion == fdu.DISPERSION_VERTICAL):
-                oned = mediansmooth1d(sum(rctfdus[j].getData(tag="cleanFrame")[find_xlo:find_xhi,:], 0), 5)
-            #continuaList is an n x 2 array of [[ylo1, yhi1], [ylo2, yhi2], ...]
+                oned = mediansmooth1d(np.sum(rctfdus[j].getData(tag="cleanFrame")[find_xlo:find_xhi,:], 0), 5)
+            #continuaList is an n x 2 np.array of [[ylo1, yhi1], [ylo2, yhi2], ...]
             continuaList = extractSpectra(oned, sigma=thresh, width=5, nspec=maxSpectra)
             if (not rctfdus[j].hasProperty("use_only_positive")):
                 #Check the inverse of the data too for continua from the frame paired with
@@ -93,7 +94,7 @@ class rectifyProcess(fatboyProcess):
             if (continuaList is None):
                 continue
             #Reject continua outside of [trace_ylo:trace_yhi] range
-            keep = ones(len(continuaList), dtype=bool)
+            keep = np.ones(len(continuaList), dtype=bool)
             for i in range(len(continuaList)):
                 ylo = continuaList[i][0]
                 yhi = continuaList[i][1]
@@ -117,12 +118,12 @@ class rectifyProcess(fatboyProcess):
                         #xinit == -1 => find brightest part of continuum within middle half of chip
                         #Use first kept spectrum for this purpose
                         if (rctfdus[j].dispersion == fdu.DISPERSION_HORIZONTAL):
-                            zcut = mediansmooth1d(sum(rctfdus[j].getData(tag="cleanFrame")[ylo:yhi+1,:],0), 5)
+                            zcut = mediansmooth1d(np.sum(rctfdus[j].getData(tag="cleanFrame")[ylo:yhi+1,:],0), 5)
                         elif (rctfdus[j].dispersion == fdu.DISPERSION_VERTICAL):
-                            zcut = mediansmooth1d(sum(rctfdus[j].getData(tag="cleanFrame")[:,ylo:yhi+1], 1), 5)
+                            zcut = mediansmooth1d(np.sum(rctfdus[j].getData(tag="cleanFrame")[:,ylo:yhi+1], 1), 5)
                         xlo = int(zcut.size//4)
                         xhi = int(zcut.size*3//4)
-                        xinit = where(zcut == max(zcut[xlo:xhi]))[0][0]
+                        xinit = np.where(zcut == np.max(zcut[xlo:xhi]))[0][0]
                 else:
                     print("rectifyProcess::calcLongslitContinuaRectification> Continuum ["+str(ylo)+":"+str(yhi)+"] in "+rctfdus[j].getFullId()+" is outside of range ["+str(trace_ylo)+":"+str(trace_yhi)+"].  Ignoring!")
                     self._log.writeLog(__name__, "Continuum ["+str(ylo)+":"+str(yhi)+"] in "+rctfdus[j].getFullId()+" is outside of range ["+str(trace_ylo)+":"+str(trace_yhi)+"].  Ignoring!")
@@ -144,8 +145,8 @@ class rectifyProcess(fatboyProcess):
         #Set this up before looping over orders
         step = 5
         xs = list(range(xinit, xsize-50, step))+list(range(xinit-step, 50, -1*step))
-        #Index array used for fitting
-        yind = arange(ysize, dtype=float64)
+        #Index np.array used for fitting
+        yind = np.arange(ysize, dtype=np.float64)
 
         #Loop over FDUs
         for currFDU in rctfdus:
@@ -170,10 +171,10 @@ class rectifyProcess(fatboyProcess):
                 #Attempt to "blank out" any troughs due to sky subtraction
                 #Median filter then find continuum at sigma > 3, min width 5px
                 if (currFDU.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    oned = -1*mediansmooth1d(sum(currData, 1), 5)
+                    oned = -1*mediansmooth1d(np.sum(currData, 1), 5)
                 elif (currFDU.dispersion == fdu.DISPERSION_VERTICAL):
-                    oned = -1*mediansmooth1d(sum(currData, 0), 5)
-                #continuaList is an n x 2 array of [[ylo1, yhi1], [ylo2, yhi2], ...]
+                    oned = -1*mediansmooth1d(np.sum(currData, 0), 5)
+                #continuaList is an n x 2 np.array of [[ylo1, yhi1], [ylo2, yhi2], ...]
                 troughList = extractSpectra(oned, sigma=thresh, width=5, nspec=maxSpectra)
                 if (troughList is not None):
                     for j in range(len(troughList)):
@@ -235,18 +236,18 @@ class rectifyProcess(fatboyProcess):
                         yhi = int(currY + 2*yboxsize)
                         #Sum 5 pixel box and fit 1-d Gaussian
                         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                            y = sum(currData[:, xs[j]-2:xs[j]+3], 1, dtype=float64)
+                            y = np.sum(currData[:, xs[j]-2:xs[j]+3], 1, dtype=np.float64)
                         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                            y = sum(currData[xs[j]-2:xs[j]+3, :], 0, dtype=float64)
+                            y = np.sum(currData[xs[j]-2:xs[j]+3, :], 0, dtype=np.float64)
                     #Make sure it doesn't move off chip
                     if (ylo < 0):
                         ylo = 0
                     if (yhi >= ysize):
                         yhi = ysize-1
                     #Initial guesses for Gaussian fit
-                    p = zeros(4, dtype=float64)
-                    p[0] = max(y[ylo:yhi])
-                    p[1] = (where(y[ylo:yhi] == p[0]))[0][0]+ylo
+                    p = np.zeros(4, dtype=np.float64)
+                    p[0] = np.max(y[ylo:yhi])
+                    p[1] = (np.where(y[ylo:yhi] == p[0]))[0][0]+ylo
                     p[2] = gaussWidth
                     p[3] = gpu_arraymedian(y.copy())
                     #Range of pixels above and below continuum used for calculating std dev of background
@@ -300,9 +301,9 @@ class rectifyProcess(fatboyProcess):
                         #Compare current y fit value to weighted avg instead of just
                         #previous value.
                         for i in range(len(lastYs)):
-                            wavg += lastYs[i]/sqrt(abs(lastXs[i]-xs[j]))
-                            wavgx += lastXs[i]/sqrt(abs(lastXs[i]-xs[j]))
-                            wavgDivisor += 1./sqrt(abs(lastXs[i]-xs[j]))
+                            wavg += lastYs[i]/math.sqrt(abs(lastXs[i]-xs[j]))
+                            wavgx += lastXs[i]/math.sqrt(abs(lastXs[i]-xs[j]))
+                            wavgDivisor += 1./math.sqrt(abs(lastXs[i]-xs[j]))
                         if (wavgDivisor != 0):
                             wavg = wavg/wavgDivisor
                             wavgx = wavgx/wavgDivisor
@@ -312,12 +313,12 @@ class rectifyProcess(fatboyProcess):
                             wavgx = currX
                         #More than 50 pixels in deltaX between weight average of last 10
                         #datapoints and current X
-                        #And not the discontinuity in middle of xs where we jump from end back to center
+                        #And not the discontinuity in middle of xs np.where we jump from end back to center
                         #because abs(xs[j]-xs[j-1]) == step
                         if (abs(xs[j]-xs[j-1]) == step and abs(wavgx-xs[j]) > 50):
                             if (len(lastYs) > 1):
                                 #Fit slope to lastYs
-                                lin = leastsq(linResiduals, [0.,0.], args=(array(lastXs),array(lastYs)))
+                                lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastXs),np.array(lastYs)))
                                 slope = lin[0][1]
                             else:
                                 #Only 1 datapoint, use +/- maxSlope as slope
@@ -331,7 +332,7 @@ class rectifyProcess(fatboyProcess):
                         else:
                             if (len(lastYs) > 3):
                                 #Fit slope to lastYs
-                                lin = leastsq(linResiduals, [0.,0.], args=(array(lastXs),array(lastYs)))
+                                lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastXs),np.array(lastYs)))
                                 slope = lin[0][1]
                             else:
                                 #Less than 4 datapoints, use +/- maxSlope as slope
@@ -383,18 +384,18 @@ class rectifyProcess(fatboyProcess):
                 #Phase 2 of rejection criteria after continua have been traced
                 #Find outliers > 2.5 sigma in peak values and remove them
                 #First store first value as yout
-                peaks = array(peaks)
+                peaks = np.array(peaks)
                 peakmed = arraymedian(peaks)
                 peaksd = peaks.std()
                 b = (peaks > peakmed-2.5*peaksd)*(peaks < peakmed+2.5*peaksd)
-                xcoords = array(xcoords)[b]
-                ycoords = array(ycoords)[b]
+                xcoords = np.array(xcoords)[b]
+                ycoords = np.array(ycoords)[b]
                 print("\trejecting outliers (phase 2) - kept "+str(len(ycoords))+" datapoints.")
                 self._log.writeLog(__name__, "rejecting outliers (phase 2) - kept "+str(len(ycoords))+" datapoints.", printCaller=False, tabLevel=1)
 
                 #Fit 2nd order order polynomial to datapoints, Y = f(X)
                 order = 2
-                p = zeros(order+1, float64)
+                p = np.zeros(order+1, np.float64)
                 p[0] = ycoords[0]
                 try:
                     lsq = leastsq(polyResiduals, p, args=(xcoords,ycoords,order))
@@ -409,7 +410,7 @@ class rectifyProcess(fatboyProcess):
                 xcen = xsize//2
                 currYout = polyFunction(lsq[0], xcen, order) #yout at xcenter
                 #Remove outliers and refit
-                b = abs(yresid) < yresid.mean()+2.5*yresid.std()
+                b = np.abs(yresid) < yresid.mean()+2.5*yresid.std()
                 xcoords = xcoords[b]
                 ycoords = ycoords[b]
                 print("\trejecting outliers (phase 3). Sigma = "+str(yresid.std())[:5]+". Using "+str(len(ycoords))+" datapoints to fit continuum.")
@@ -433,7 +434,7 @@ class rectifyProcess(fatboyProcess):
                             xval = int(xcoords[i]+.5)
                             for yi in range(yval-1,yval+2):
                                 for xi in range(xval-1,xval+2):
-                                    dist = sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
+                                    dist = np.sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
                                     qaData[yi,xi] = qavalue/((1+dist)**2)
                     elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                         for i in range(len(xcoords)):
@@ -441,7 +442,7 @@ class rectifyProcess(fatboyProcess):
                             xval = int(xcoords[i]+.5)
                             for yi in range(yval-1,yval+2):
                                 for xi in range(xval-1,xval+2):
-                                    dist = sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
+                                    dist = np.sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
                                     qaData[xi,yi] = qavalue/((1+dist)**2)
                 print("\tY Center: "+formatNum(currYout)+"\t Xref: "+str(xs[0])+"\t Cov. Frac: "+formatNum(covfrac))
                 self._log.writeLog(__name__, "Y Center: "+formatNum(currYout)+"\t Xref: "+str(xs[0])+"\t Cov. Frac: "+formatNum(covfrac), printCaller=False, tabLevel=1)
@@ -465,20 +466,20 @@ class rectifyProcess(fatboyProcess):
         print("rectifyProcess::calcLongslitContinuaRectification> Successfully traced out "+str(ncont)+ " continua.  Fitting transformation...")
         self._log.writeLog(__name__, "Successfully traced out "+str(ncont)+ " continua.  Fitting transformation...")
         #Convert to arrays
-        xin = array(xin, dtype=float32)
-        yin = array(yin, dtype=float32)
+        xin = np.array(xin, dtype=np.float32)
+        yin = np.array(yin, dtype=np.float32)
         if (fdu.dispersion == fdu.DISPERSION_VERTICAL):
             #Need to swap xin, yin here because surfaceResiduals and surfaceFunction expect out = f(xin, yin) not f(yin, xin).
             tmp = xin
             xin = yin
             yin = tmp
-        yout = array(yout)
+        yout = np.array(yout)
         #Fit entire continuum transformation
         #Calculate number of terms based on order
         terms = 0
         for j in range(fit_order+2):
             terms+=j
-        p = zeros(terms)
+        p = np.zeros(terms)
         #Initial guess is f(x_in, y_in) = y_in
         p[2] = 1
         #Want to define center to be (0,0) before fitting
@@ -498,9 +499,9 @@ class rectifyProcess(fatboyProcess):
         except Exception as ex:
             print("rectifyProcess::calcLongslitContinuaRectification> ERROR performing least squares fit: "+str(ex)+"! Continua will NOT be rectified!")
             self._log.writeLog(__name__, "ERROR performing least squares fit: "+str(ex)+"! Continua will NOT be rectified!", type=fatboyLog.ERROR)
-            ycoeffs = array([0, 0, 1])
+            ycoeffs = np.array([0, 0, 1])
             if (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                ycoeffs = array([0, 1, 0])
+                ycoeffs = np.array([0, 1, 0])
             return ycoeffs
 
         #Compute output offsets and residuals from actual datapoints
@@ -520,10 +521,10 @@ class rectifyProcess(fatboyProcess):
         sigThresh = 2
         niter = 0
         norig = len(yout)
-        bad = where(abs(yresid-residmean)/residstddev > sigThresh)
+        bad = np.where(np.abs(yresid-residmean)/residstddev > sigThresh)
         while (len(bad[0]) > 0):
             niter += 1
-            good = (abs(yresid-residmean)/residstddev <= sigThresh)
+            good = (np.abs(yresid-residmean)/residstddev <= sigThresh)
             xin = xin[good]
             yin = yin[good]
             yout = yout[good]
@@ -534,9 +535,9 @@ class rectifyProcess(fatboyProcess):
             except Exception as ex:
                 print("rectifyProcess::calcLongslitContinuaRectification> ERROR performing least squares fit: "+str(ex)+"! Continua will NOT be rectified!")
                 self._log.writeLog(__name__, "ERROR performing least squares fit: "+str(ex)+"! Continua will NOT be rectified!", type=fatboyLog.ERROR)
-                ycoeffs = array([0, 0, 1])
+                ycoeffs = np.array([0, 0, 1])
                 if (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    ycoeffs = array([0, 1, 0])
+                    ycoeffs = np.array([0, 1, 0])
                 return ycoeffs
 
             #Compute output offsets and residuals from actual datapoints
@@ -547,7 +548,7 @@ class rectifyProcess(fatboyProcess):
             if (niter > 2):
                 #Gradually increase sigma threshold
                 sigThresh += 0.2
-            bad = where(abs(yresid-residmean)/residstddev > sigThresh)
+            bad = np.where(np.abs(yresid-residmean)/residstddev > sigThresh)
         print("\tAfter "+str(niter)+" passes, kept "+str(len(yout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]))
         print("\tData - fit mean: "+formatNum(residmean)+"\tsigma: "+formatNum(residstddev))
         self._log.writeLog(__name__, "After "+str(niter)+" passes, kept "+str(len(yout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=1)
@@ -568,9 +569,9 @@ class rectifyProcess(fatboyProcess):
         if (skyFDU is None):
             print("rectifyProcess::calcLongslitSkylineRectification> Warning: Could not find clean sky frame associated with "+fdu.getFullId()+"!  Skylines will NOT be rectified!")
             self._log.writeLog(__name__, "Could not find clean sky frame associated with "+fdu.getFullId()+"!  Skylines will NOT be rectified!", type=fatboyLog.WARNING)
-            xcoeffs = array([0, 1, 0])
+            xcoeffs = np.array([0, 1, 0])
             if (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                xcoeffs = array([0, 0, 1])
+                xcoeffs = np.array([0, 0, 1])
             return xcoeffs
 
         if (self.getOption("write_calib_output", fdu.getTag()).lower() == "yes"):
@@ -624,9 +625,9 @@ class rectifyProcess(fatboyProcess):
         xcenters = []
         #Take 1-d sum and median filter
         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-            oned = sum(skyData[find_ylo:find_yhi,:], 0)
+            oned = np.sum(skyData[find_ylo:find_yhi,:], 0)
         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-            oned = sum(skyData[:,find_ylo:find_yhi], 1)
+            oned = np.sum(skyData[:,find_ylo:find_yhi], 1)
 
         if (self._fdb.getGPUMode()):
             oned = gpumedianfilter(oned)
@@ -639,7 +640,7 @@ class rectifyProcess(fatboyProcess):
         else:
             z = smooth1dCPU(oned, 5, 1)
         medVal = arraymedian(z, nonzero=True)
-        sig = z[where(z != 0)].std()
+        sig = z[np.where(z != 0)].std()
 
         if (usePlot and (debug or writePlots)):
             plt.plot(z)
@@ -649,12 +650,12 @@ class rectifyProcess(fatboyProcess):
         z[-15:] = 0.
 
         #First pass at globally finding sky lines
-        while (max(z) > medVal+thresh*sig):
-            if (max(z) <= 0):
+        while (np.max(z) > medVal+thresh*sig):
+            if (np.max(z) <= 0):
                 #All points have been zeroed out
                 break
             #Find brightest point
-            b = (where(z == max(z)))[0][0]
+            b = (np.where(z == np.max(z)))[0][0]
             #Check that it matches min threshold
             if (z[b] > medVal+thresh*sig):
                 valid = True
@@ -673,7 +674,7 @@ class rectifyProcess(fatboyProcess):
                 z[b-15:b+15] = 0
                 #Update median and std dev
                 medVal = arraymedian(z, nonzero=True)
-                sig = z[where(z != 0)].std()
+                sig = z[np.where(z != 0)].std()
         #Split into 4 sections for two pass detection
         if (useTwoPasses):
             print("rectifyProcess::calcLongslitSkylineRectification> Pass 2: Searching for additional sky/arclamp lines...")
@@ -683,25 +684,25 @@ class rectifyProcess(fatboyProcess):
                 xs.append(k)
             #Loop over each section
             for k in range(len(xs)-1):
-                #Create new array with "z" value for just this section and zero out edges
+                #Create new np.array with "z" value for just this section and zero out edges
                 zlocal = z[xs[k]:xs[k+1]]
                 zlocal[0:15] = 0.
                 zlocal[-15:] = 0.
                 medVal = arraymedian(zlocal, nonzero=True)
                 #Calculate sigma if there are nonzero points left in this section
-                if (len(where(zlocal != 0)[0]) != 0):
-                    sig = zlocal[where(zlocal != 0)].std()
+                if (len(np.where(zlocal != 0)[0]) != 0):
+                    sig = zlocal[np.where(zlocal != 0)].std()
                 else:
                     #set sigma to 10000 - just a way to fail condition of while loop
                     sig=10000.
                 #Always try to get at least one line if there is any nonzero data
                 firstPass = True
-                while (max(zlocal) > medVal+thresh*sig or firstPass):
-                    if (max(zlocal) <= 0):
+                while (np.max(zlocal) > medVal+thresh*sig or firstPass):
+                    if (np.max(zlocal) <= 0):
                         #All points have been zeroed out
                         break
                     #Find brightest point
-                    b = (where(zlocal == max(zlocal)))[0][0]
+                    b = (np.where(zlocal == np.max(zlocal)))[0][0]
                     #If first pass, lower threshold to just 1.5 sigma so that at least one point
                     #can be used to anchor fit in this section
                     if (firstPass and zlocal[b] < medVal+1.5*sig):
@@ -716,7 +717,7 @@ class rectifyProcess(fatboyProcess):
                         for l in range(b-5,b+6):
                             if (zlocal[l] == 0):
                                 valid = False
-                        #print b+xs[k], len(where(zlocal != 0)[0]), (zlocal[b]-med)/sig
+                        #print b+xs[k], len(np.where(zlocal != 0)[0]), (zlocal[b]-med)/sig
                         firstPass = False
                         #This line is valid -- it is at least 6 pixels away from another line
                         if valid:
@@ -726,22 +727,22 @@ class rectifyProcess(fatboyProcess):
                             self._log.writeLog(__name__, "Found skyline: Center = "+str(b+xs[k])+"; sigma = "+str((zlocal[b]-medVal)/sig), printCaller=False, tabLevel=1)
                         #Zero out +/-15 pixels from this line
                         zlocal[b-15:b+15] = 0
-                        if (len(where(zlocal != 0)[0]) == 0):
+                        if (len(np.where(zlocal != 0)[0]) == 0):
                             break
                         #update median and sd
                         medVal = arraymedian(zlocal, nonzero=True)
-                        sig = zlocal[where(zlocal != 0)].std()
+                        sig = zlocal[np.where(zlocal != 0)].std()
 
-        #Use brightest skyline to trace out range in y where skylines are visible
+        #Use brightest skyline to trace out range in y np.where skylines are visible
         #(Usually they cut off before the top/bottom of the chip)
         nlines = len(xcenters)
         skyData = skyFDU.getData()
         bcen = int(xcenters[0])
         #Sum 1-d cut at 5 pixels centered around skyline
         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-            bline = sum(skyData[:,bcen-2:bcen+3],1, dtype=float64)
+            bline = np.sum(skyData[:,bcen-2:bcen+3],1, dtype=np.float64)
         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-            bline = sum(skyData[bcen-2:bcen+3,:],0, dtype=float64)
+            bline = np.sum(skyData[bcen-2:bcen+3,:],0, dtype=np.float64)
         #Calculate median and std dev
         blmed = arraymedian(bline)
         blsig = bline.std()
@@ -755,7 +756,7 @@ class rectifyProcess(fatboyProcess):
         currY = ysize//2
         while (not isylo and currY > 5):
             #If 5 consecutive points in 1-d cut are below -2 sigma, we've found lower cutoff
-            if (alltrue(bline[currY-4:currY+1] < blmed-2*blsig)):
+            if (np.all(bline[currY-4:currY+1] < blmed-2*blsig)):
                 ylo = currY
                 isylo = True
             currY-=1
@@ -764,7 +765,7 @@ class rectifyProcess(fatboyProcess):
         currY = ysize//2
         while (not isyhi and currY < ysize-5):
             #If 5 consecutive points in 1-d cut are below -2 sigma, we've found upper cutoff
-            if (alltrue(bline[currY:currY+5] < blmed-2*blsig)):
+            if (np.all(bline[currY:currY+5] < blmed-2*blsig)):
                 yhi = currY
                 isyhi = True
             currY+=1
@@ -787,8 +788,8 @@ class rectifyProcess(fatboyProcess):
         yinit = int(yinit)
         step = 10
         ys = list(range(yinit, ylo-step, -1*step))+list(range(yinit+step, yhi, step))
-        #Index array used for fitting
-        xind = arange(xsize, dtype=float64)
+        #Index np.array used for fitting
+        xind = np.arange(xsize, dtype=np.float64)
 
         #Setup output lists
         xin = []
@@ -828,7 +829,7 @@ class rectifyProcess(fatboyProcess):
             if (gaussWidth < 2):
                 #Minimum 2 pixels
                 gaussWidth = 2
-            gaussWidth /= sqrt(2)
+            gaussWidth /= np.sqrt(2)
 
             if (usePlot and self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
                 print("LINE", xcen, yinit)
@@ -848,9 +849,9 @@ class rectifyProcess(fatboyProcess):
                 #Sum 11 pixel box and fit 1-d Gaussian
                 #Use 11 instead of 5 to wash out noise more and obtain better fit
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    x = sum(skyData[ys[j]-5:ys[j]+6,xlo:xhi], 0, dtype=float64)
+                    x = np.sum(skyData[ys[j]-5:ys[j]+6,xlo:xhi], 0, dtype=np.float64)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    x = sum(skyData[xlo:xhi,ys[j]-5:ys[j]+6], 1, dtype=float64)
+                    x = np.sum(skyData[xlo:xhi,ys[j]-5:ys[j]+6], 1, dtype=np.float64)
                 if (len(x) < skybox):
                     continue
                 #Make sure it doesn't move off chip
@@ -861,9 +862,9 @@ class rectifyProcess(fatboyProcess):
                 x[x<0] = 0
 
                 #Initial guesses for Gaussian fit
-                p = zeros(4, dtype=float64)
-                p[0] = max(x)
-                p[1] = (where(x == p[0]))[0][0]+xlo
+                p = np.zeros(4, dtype=np.float64)
+                p[0] = np.max(x)
+                p[1] = (np.where(x == p[0]))[0][0]+xlo
                 p[2] = gaussWidth
                 p[3] = gpu_arraymedian(x.copy())
                 if (abs(p[1]-currX) > skybox):
@@ -876,7 +877,7 @@ class rectifyProcess(fatboyProcess):
 
                 #print ("\t",xcen, ys[j], xlo, xhi, lsq)
                 #if (j == 0):
-                #    plt.plot(arange(len(x))+xlo, x)
+                #    plt.plot(np.arange(len(x))+xlo, x)
                 #    plt.show()
 
                 #Error checking results of leastsq call
@@ -923,9 +924,9 @@ class rectifyProcess(fatboyProcess):
                     #Compare current x fit value to weighted avg instead of just
                     #previous value.
                     for i in range(len(lastXs)):
-                        wavg += lastXs[i]/sqrt(abs(lastYs[i]-ys[j]))
-                        wavgy += lastYs[i]/sqrt(abs(lastYs[i]-ys[j]))
-                        wavgDivisor += 1./sqrt(abs(lastYs[i]-ys[j]))
+                        wavg += lastXs[i]/math.sqrt(abs(lastYs[i]-ys[j]))
+                        wavgy += lastYs[i]/math.sqrt(abs(lastYs[i]-ys[j]))
+                        wavgDivisor += 1./math.sqrt(abs(lastYs[i]-ys[j]))
                     if (wavgDivisor != 0):
                         wavg = wavg/wavgDivisor
                         wavgy = wavgy/wavgDivisor
@@ -935,12 +936,12 @@ class rectifyProcess(fatboyProcess):
                         wavgy = currY
                     #More than 50 pixels in deltaY between weight average of last 10
                     #datapoints and current Y
-                    #And not the discontinuity in middle of ys where we jump from end back to center
+                    #And not the discontinuity in middle of ys np.where we jump from end back to center
                     #because abs(ys[j]-ys[j-1]) == step
                     if (abs(ys[j]-ys[j-1]) == step and abs(wavgy-ys[j]) > 50):
                         if (len(lastXs) > 1):
                             #Fit slope to lastXs
-                            lin = leastsq(linResiduals, [0.,0.], args=(array(lastYs),array(lastXs)))
+                            lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastYs),np.array(lastXs)))
                             slope = lin[0][1]
                         else:
                             #Only 1 datapoint, use -0.12 as slope
@@ -952,7 +953,7 @@ class rectifyProcess(fatboyProcess):
                     else:
                         if (len(lastXs) > 3):
                             #Fit slope to lastXs
-                            lin = leastsq(linResiduals, [0.,0.], args=(array(lastYs),array(lastXs)))
+                            lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastYs),np.array(lastXs)))
                             slope = lin[0][1]
                         else:
                             #Less than 4 datapoints, use -0.12 as slope
@@ -1004,18 +1005,18 @@ class rectifyProcess(fatboyProcess):
             #Find outliers > 2.5 sigma in peak values and remove them
             #First store first value as xout
             #currXout = xcoords[0]
-            peaks = array(peaks)
+            peaks = np.array(peaks)
             peakmed = arraymedian(peaks)
             peaksd = peaks.std()
             b = (peaks > peakmed-2.5*peaksd)*(peaks < peakmed+2.5*peaksd)
-            xcoords = array(xcoords)[b]
-            ycoords = array(ycoords)[b]
+            xcoords = np.array(xcoords)[b]
+            ycoords = np.array(ycoords)[b]
             print("\trejecting outliers (phase 2) - kept "+str(len(xcoords))+" datapoints.")
             self._log.writeLog(__name__, "rejecting outliers (phase 2) - kept "+str(len(xcoords))+" datapoints.", printCaller=False, tabLevel=1)
 
             #Fit 2nd order order polynomial to datapoints, X = f(Y)
             order = 2
-            p = zeros(order+1, float64)
+            p = np.zeros(order+1, np.float64)
             p[0] = xcoords[0]
             try:
                 lsq = leastsq(polyResiduals, p, args=(ycoords,xcoords,order))
@@ -1030,7 +1031,7 @@ class rectifyProcess(fatboyProcess):
             ycen = ysize//2
             currXout = polyFunction(lsq[0], ycen, order) #yout at ycenter
             #Remove outliers and refit
-            b = abs(xresid) < xresid.mean()+2.5*xresid.std()
+            b = np.abs(xresid) < xresid.mean()+2.5*xresid.std()
             xcoords = xcoords[b]
             ycoords = ycoords[b]
             print("\trejecting outliers (phase 3). Sigma = "+formatNum(xresid.std())+". Using "+str(len(xcoords))+" datapoints to fit slitlets.")
@@ -1051,7 +1052,7 @@ class rectifyProcess(fatboyProcess):
                         xval = int(xcoords[i]+.5)
                         for yi in range(yval-1,yval+2):
                             for xi in range(xval-1,xval+2):
-                                dist = sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
+                                dist = np.sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
                                 qaData[yi,xi] = qavalue/((1+dist)**2)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                     for i in range(len(xcoords)):
@@ -1059,7 +1060,7 @@ class rectifyProcess(fatboyProcess):
                         xval = int(xcoords[i]+.5)
                         for yi in range(yval-1,yval+2):
                             for xi in range(xval-1,xval+2):
-                                dist = sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
+                                dist = np.sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
                                 qaData[xi,yi] = qavalue/((1+dist)**2)
             print("\tX Center: "+formatNum(currXout)+"\t Yref: "+str(ys[0])+"\t Cov. Frac: "+formatNum(covfrac))
             self._log.writeLog(__name__, "X Center: "+formatNum(currXout)+"\t Yref: "+str(ys[0])+"\t Cov. Frac: "+formatNum(covfrac), printCaller=False, tabLevel=1)
@@ -1067,20 +1068,20 @@ class rectifyProcess(fatboyProcess):
         print("rectifyProcess::calcLongslitSkylineRectification> Successfully traced out "+str(nlines)+ " skylines.  Fitting transformation...")
         self._log.writeLog(__name__, "Successfully traced out "+str(nlines)+ " skylines.  Fitting transformation...")
         #Convert to arrays
-        xin = array(xin, dtype=float32)
-        yin = array(yin, dtype=float32)
+        xin = np.array(xin, dtype=np.float32)
+        yin = np.array(yin, dtype=np.float32)
         if (fdu.dispersion == fdu.DISPERSION_VERTICAL):
             #Need to swap xin, yin here because surfaceResiduals and surfaceFunction expect out = f(xin, yin) not f(yin, xin).
             tmp = xin
             xin = yin
             yin = tmp
-        xout = array(xout)
+        xout = np.array(xout)
         #Fit entire skyline transformation
         #Calculate number of terms based on order
         terms = 0
         for j in range(fit_order+2):
             terms+=j
-        p = zeros(terms)
+        p = np.zeros(terms)
         #Initial guess is f(x_in, y_in) = x_in
         p[1] = 1
         #Want to define center to be (0,0) before fitting
@@ -1100,9 +1101,9 @@ class rectifyProcess(fatboyProcess):
         except Exception as ex:
             print("rectifyProcess::calcLongslitSkylineRectification> ERROR performing least squares fit: "+str(ex)+"! Skylines will NOT be rectified!")
             self._log.writeLog(__name__, "ERROR performing least squares fit: "+str(ex)+"! Skylines will NOT be rectified!", type=fatboyLog.ERROR)
-            xcoeffs = array([0, 1, 0])
+            xcoeffs = np.array([0, 1, 0])
             if (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                xcoeffs = array([0, 0, 1])
+                xcoeffs = np.array([0, 0, 1])
             return xcoeffs
 
         #Compute output offsets and residuals from actual datapoints
@@ -1122,10 +1123,10 @@ class rectifyProcess(fatboyProcess):
         sigThresh = 2
         niter = 0
         norig = len(xout)
-        bad = where(abs(xresid-residmean)/residstddev > sigThresh)
+        bad = np.where(np.abs(xresid-residmean)/residstddev > sigThresh)
         while (len(bad[0]) > 0):
             niter += 1
-            good = (abs(xresid-residmean)/residstddev <= sigThresh)
+            good = (np.abs(xresid-residmean)/residstddev <= sigThresh)
             xin = xin[good]
             yin = yin[good]
             xout = xout[good]
@@ -1136,9 +1137,9 @@ class rectifyProcess(fatboyProcess):
             except Exception as ex:
                 print("rectifyProcess::calcLongslitSkylineRectification> ERROR performing least squares fit: "+str(ex)+"! Skylines will NOT be rectified!")
                 self._log.writeLog(__name__, "ERROR performing least squares fit: "+str(ex)+"! Skylines will NOT be rectified!", type=fatboyLog.ERROR)
-                xcoeffs = array([0, 1, 0])
+                xcoeffs = np.array([0, 1, 0])
                 if (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    xcoeffs = array([0, 0, 1])
+                    xcoeffs = np.array([0, 0, 1])
                 return xcoeffs
 
             #Compute output offsets and residuals from actual datapoints
@@ -1149,7 +1150,7 @@ class rectifyProcess(fatboyProcess):
             if (niter > 2):
                 #Gradually increase sigma threshold
                 sigThresh += 0.2
-            bad = where(abs(xresid-residmean)/residstddev > sigThresh)
+            bad = np.where(np.abs(xresid-residmean)/residstddev > sigThresh)
         print("\tAfter "+str(niter)+" passes, kept "+str(len(xout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]))
         print("\tData - fit mean: "+formatNum(residmean)+"\tsigma: "+formatNum(residstddev))
         self._log.writeLog(__name__, "After "+str(niter)+" passes, kept "+str(len(xout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=1)
@@ -1231,7 +1232,7 @@ class rectifyProcess(fatboyProcess):
                 fit_order = int(self.getOption("fit_order", fdu.getTag()))
                 sky_fit_order = int(self.getOption("sky_fit_order", fdu.getTag()))
                 f = open(coeff_file, 'w')
-                f.write('poly ' + str(max(fit_order, sky_fit_order)) + "\n")
+                f.write('poly ' + str(max(fit_order,  sky_fit_order)) + "\n")
                 for j in range(len(rect_coeffs[0])):
                     f.write(str(rect_coeffs[0][j])+"\n")
                 f.write("\n") #Blank line
@@ -1253,7 +1254,7 @@ class rectifyProcess(fatboyProcess):
                 if (coord_list.shape[1] > 4):
                     iseg = coord_list[:4]
                 else:
-                    iseg = zeros(len(islit))
+                    iseg = np.zeros(len(islit))
             elif (mosMode == "whole_chip"):
                 (xin, yin, yout) = (coord_list[:,0], coord_list[:,1], coord_list[:,2])
             else:
@@ -1288,7 +1289,7 @@ class rectifyProcess(fatboyProcess):
             ysize = fdu.getShape()[1]
 
         if (not calibs['slitmask'].hasProperty("nslits")):
-            calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData().max())
+            calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData(force_cpu=True).max())
         nslits = calibs['slitmask'].getProperty("nslits")
         if (calibs['slitmask'].hasProperty("regions")):
             (sylo, syhi, slitx, slitw) = calibs['slitmask'].getProperty("regions")
@@ -1303,9 +1304,9 @@ class rectifyProcess(fatboyProcess):
                 print("rectifyProcess::calculateMOSContinuaTrans> No region file given.  Calculating regions from slitmask...")
                 self._log.writeLog(__name__, "No region file given.  Calculating regions from slitmask...")
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    cut1d = calibs['slitmask'].getData()[:,xsize//2].astype(float64)
+                    cut1d = calibs['slitmask'].getData()[:,xsize//2].astype(np.float64)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    cut1d = calibs['slitmask'].getData()[xsize//2,:].astype(float64)
+                    cut1d = calibs['slitmask'].getData()[xsize//2,:].astype(np.float64)
                 #detect nonzero points in 1-d cut to find regions
                 slitlets = extractNonzeroRegions(cut1d, 10) #min_width = 10
                 if (slitlets is None):
@@ -1316,8 +1317,8 @@ class rectifyProcess(fatboyProcess):
                     return None
                 sylo = slitlets[:,0]
                 syhi = slitlets[:,1]
-                slitx = array([xsize//2]*len(sylo))
-                slitw = array([3]*len(sylo))
+                slitx = np.array([xsize//2]*len(sylo))
+                slitw = np.array([3]*len(sylo))
             else:
                 #Read region file
                 if (regFile.endswith(".reg")):
@@ -1334,9 +1335,9 @@ class rectifyProcess(fatboyProcess):
                     return None
             calibs['slitmask'].setProperty("regions", (sylo, syhi, slitx, slitw))
 
-        ytransData = zeros(calibs['slitmask'].getData().shape, dtype=float32)
+        ytransData = np.zeros(calibs['slitmask'].getData().shape, dtype=np.float32)
         #Use GPU to calculuate xind
-        xind = arange(xsize, dtype=float32)
+        xind = np.arange(xsize, dtype=np.float32)
         if (fdu.dispersion == fdu.DISPERSION_VERTICAL):
             xind = xind.reshape((xsize,1))
         if (self._fdb.getGPUMode()):
@@ -1346,19 +1347,19 @@ class rectifyProcess(fatboyProcess):
                 yind = calcXin(ysize, xsize)
         else:
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                yind = (arange(xsize*ysize).reshape(ysize,xsize) // xsize).astype(float32)
+                yind = (np.arange(xsize*ysize).reshape(ysize,xsize) // xsize).astype(np.float32)
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                yind = arange(xsize*ysize, dtype=float32).reshape(xsize,ysize) % ysize
+                yind = np.arange(xsize*ysize, dtype=np.float32).reshape(xsize,ysize) % ysize
         #+1 because region files start at corner=(1,1) not (0,0)
-        rylo = zeros(len(slitx), dtype=float32)+1.
-        ryhi = zeros(len(slitx), dtype=float32)+1.
+        rylo = np.zeros(len(slitx), dtype=np.float32)+1.
+        ryhi = np.zeros(len(slitx), dtype=np.float32)+1.
 
         if (mosMode == "use_slitpos"):
             #Convert to arrays
-            xin = array(xin)
-            yin = array(yin)
-            yout = array(yout)
-            xslitin = array(xslitin)
+            xin = np.array(xin)
+            yin = np.array(yin)
+            yout = np.array(yout)
+            xslitin = np.array(xslitin)
             if (useCenterAsZero):
                 #Subtract x0
                 x0 = xsize//2
@@ -1371,7 +1372,7 @@ class rectifyProcess(fatboyProcess):
             for i in range(fit_order+2):
                 nterms+=i
                 terms+=nterms
-            p = zeros(terms)
+            p = np.zeros(terms)
             p[2] = 1
             try:
                 lsq = leastsq(surface3dResiduals, p, args=(xin, yin, xslitin, yout, fit_order))
@@ -1398,10 +1399,10 @@ class rectifyProcess(fatboyProcess):
             sigThresh = 2
             niter = 0
             norig = len(yout)
-            bad = where(abs(yresid-residmean)/residstddev > sigThresh)
+            bad = np.where(np.abs(yresid-residmean)/residstddev > sigThresh)
             while (len(bad[0]) > 0):
                 niter += 1
-                good = (abs(yresid-residmean)/residstddev <= sigThresh)
+                good = (np.abs(yresid-residmean)/residstddev <= sigThresh)
                 xin = xin[good]
                 yin = yin[good]
                 yout = yout[good]
@@ -1426,7 +1427,7 @@ class rectifyProcess(fatboyProcess):
                 if (niter > 2):
                     #Gradually increase sigma threshold
                     sigThresh += 0.2
-                bad = where(abs(yresid-residmean)/residstddev > sigThresh)
+                bad = np.where(np.abs(yresid-residmean)/residstddev > sigThresh)
             print("\tAfter "+str(niter)+" passes, kept "+str(len(yout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]))
             print("\tData - fit mean: "+formatNum(residmean)+"\tsigma: "+formatNum(residstddev))
             self._log.writeLog(__name__, "After "+str(niter)+" passes, kept "+str(len(yout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=1)
@@ -1434,7 +1435,7 @@ class rectifyProcess(fatboyProcess):
 
 
             #Create "z" indicies = slitx for each slitlet
-            z = zeros(calibs['slitmask'].getData().shape, dtype=float32)
+            z = np.zeros(calibs['slitmask'].getData().shape, dtype=np.float32)
             for slitidx in range(nslits):
                 z[calibs['slitmask'].getData() == (slitidx+1)] = slitx[slitidx]
 
@@ -1459,9 +1460,9 @@ class rectifyProcess(fatboyProcess):
                 ytransData *= (z != 0)
         elif (mosMode == "whole_chip"):
             #Convert to arrays
-            xin = array(xin)
-            yin = array(yin)
-            yout = array(yout)
+            xin = np.array(xin)
+            yin = np.array(yin)
+            yout = np.array(yout)
             if (useCenterAsZero):
                 #Subtract x0
                 x0 = xsize//2
@@ -1471,7 +1472,7 @@ class rectifyProcess(fatboyProcess):
             terms = 0
             for j in range(fit_order+2):
                 terms+=j
-            p = zeros(terms)
+            p = np.zeros(terms)
             #Initial guess is f(x_in, y_in) = x_in
             p[1] = 1
 
@@ -1508,10 +1509,10 @@ class rectifyProcess(fatboyProcess):
             sigThresh = 2
             niter = 0
             norig = len(yout)
-            bad = where(abs(yresid-residmean)/residstddev > sigThresh)
+            bad = np.where(np.abs(yresid-residmean)/residstddev > sigThresh)
             while (len(bad[0]) > 0):
                 niter += 1
-                good = (abs(yresid-residmean)/residstddev <= sigThresh)
+                good = (np.abs(yresid-residmean)/residstddev <= sigThresh)
                 xin = xin[good]
                 yin = yin[good]
                 yout = yout[good]
@@ -1535,7 +1536,7 @@ class rectifyProcess(fatboyProcess):
                 if (niter > 2):
                     #Gradually increase sigma threshold
                     sigThresh += 0.2
-                bad = where(abs(yresid-residmean)/residstddev > sigThresh)
+                bad = np.where(np.abs(yresid-residmean)/residstddev > sigThresh)
             print("\tAfter "+str(niter)+" passes, kept "+str(len(yout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]))
             print("\tData - fit mean: "+formatNum(residmean)+"\tsigma: "+formatNum(residstddev))
             self._log.writeLog(__name__, "After "+str(niter)+" passes, kept "+str(len(yout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=1)
@@ -1554,11 +1555,11 @@ class rectifyProcess(fatboyProcess):
                     i+=1
         elif (mosMode == "independent_slitlets"):
             #Convert to arrays
-            xin = array(xin)
-            yin = array(yin)
-            yout = array(yout)
-            islit = array(islit)
-            iseg = array(iseg)
+            xin = np.array(xin)
+            yin = np.array(yin)
+            yout = np.array(yout)
+            islit = np.array(islit)
+            iseg = np.array(iseg)
 
             #Use helper method to all ylo, yhi for each slit in each frame
             (ylos, yhis, slitx, slitw) = findRegions(calibs['slitmask'].getData(), nslits, calibs['slitmask'], gpu=self._fdb.getGPUMode(), log=self._log)
@@ -1612,7 +1613,7 @@ class rectifyProcess(fatboyProcess):
                     terms = 0
                     for j in range(fit_order+2):
                         terms+=j
-                    p = zeros(terms)
+                    p = np.zeros(terms)
                     #Initial guess is f(x_in, y_in) = x_in
                     p[1] = 1
                     try:
@@ -1643,10 +1644,10 @@ class rectifyProcess(fatboyProcess):
                     sigThresh = 2
                     niter = 0
                     norig = len(slityout)
-                    bad = where(abs(yresid-residmean)/residstddev > sigThresh)
+                    bad = np.where(np.abs(yresid-residmean)/residstddev > sigThresh)
                     while (len(bad[0]) > 0):
                         niter += 1
-                        good = (abs(yresid-residmean)/residstddev <= sigThresh)
+                        good = (np.abs(yresid-residmean)/residstddev <= sigThresh)
                         slitxin = slitxin[good]
                         slityin = slityin[good]
                         slityout = slityout[good]
@@ -1670,7 +1671,7 @@ class rectifyProcess(fatboyProcess):
                         if (niter > 2):
                             #Gradually increase sigma threshold
                             sigThresh += 0.2
-                        bad = where(abs(yresid-residmean)/residstddev > sigThresh)
+                        bad = np.where(np.abs(yresid-residmean)/residstddev > sigThresh)
                     print("\t\tAfter "+str(niter)+" passes, kept "+str(len(slityout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]))
                     print("\t\tData - fit mean: "+formatNum(residmean)+"\tsigma: "+formatNum(residstddev))
                     self._log.writeLog(__name__, "After "+str(niter)+" passes, kept "+str(len(slityout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=2)
@@ -1706,8 +1707,8 @@ class rectifyProcess(fatboyProcess):
                         rylo[slitidx] = seg_rylo
                         ryhi[slitidx] = seg_ryhi
                     else:
-                        rylo[slitidx] = min(rylo[slitidx], seg_rylo)
-                        ryhi[slitidx] = max(ryhi[slitidx], seg_ryhi)
+                        rylo[slitidx] = min(rylo[slitidx],  seg_rylo)
+                        ryhi[slitidx] = max(ryhi[slitidx],  seg_ryhi)
 
         #create fatboySpecCalib and add to calibs dict
         ytrans_name = "ytrans_rect"
@@ -1721,7 +1722,7 @@ class rectifyProcess(fatboyProcess):
 
         #Update slitmask properties to save rylo and ryhi for use later in removing guide star boxes from slitmask
         if ((ytransData != 0).sum() > 0):
-            ytrans_min = floor(ytransData[ytransData != 0].min())
+            ytrans_min = np.floor(ytransData[ytransData != 0].min())
             if (ytrans_min < 0):
                 rylo -= ytrans_min
                 ryhi -= ytrans_min
@@ -1729,7 +1730,7 @@ class rectifyProcess(fatboyProcess):
         calibs['slitmask'].setProperty("ryhi", ryhi)
 
         #Get rid of guide star boxes and any entirely negative slits (shouldn't happen)
-        b = logical_and(slitw < maxSlitWidth, ryhi > 0)
+        b = np.logical_and(slitw < maxSlitWidth, ryhi > 0)
         rylo = rylo[b]
         ryhi = ryhi[b]
         slitx = slitx[b]
@@ -1790,7 +1791,7 @@ class rectifyProcess(fatboyProcess):
             if (coord_list.shape[1] > 5):
                 iseg = coord_list[:5]
             else:
-                iseg = zeros(len(islit))
+                iseg = np.zeros(len(islit))
         elif (isinstance(coords, tuple)):
             #This is a tuple returned from traceMOSSkylineRectification
             (xin, yin, xout, islit, iseg) = coords
@@ -1800,11 +1801,11 @@ class rectifyProcess(fatboyProcess):
             return None
 
         #Convert to arrays
-        xin = array(xin)
-        yin = array(yin)
-        xout = array(xout)
-        islit = array(islit)
-        iseg = array(iseg)
+        xin = np.array(xin)
+        yin = np.array(yin)
+        xout = np.array(xout)
+        islit = np.array(islit)
+        iseg = np.array(iseg)
 
         fit_order = int(self.getOption("mos_sky_fit_order", fdu.getTag()))
         maxSlitWidth = float(self.getOption("mos_max_slit_width", fdu.getTag()))
@@ -1822,7 +1823,7 @@ class rectifyProcess(fatboyProcess):
             ysize = fdu.getShape()[1]
 
         if (not calibs['slitmask'].hasProperty("nslits")):
-            calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData().max())
+            calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData(force_cpu=True).max())
         nslits = calibs['slitmask'].getProperty("nslits")
         if (calibs['slitmask'].hasProperty("regions")):
             (sylo, syhi, slitx, slitw) = calibs['slitmask'].getProperty("regions")
@@ -1837,9 +1838,9 @@ class rectifyProcess(fatboyProcess):
                 print("rectifyProcess::calculateMOSSkylineTrans> No region file given.  Calculating regions from slitmask...")
                 self._log.writeLog(__name__, "No region file given.  Calculating regions from slitmask...")
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    cut1d = calibs['slitmask'].getData()[:,xsize//2].astype(float64)
+                    cut1d = calibs['slitmask'].getData()[:,xsize//2].astype(np.float64)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    cut1d = calibs['slitmask'].getData()[xsize//2,:].astype(float64)
+                    cut1d = calibs['slitmask'].getData()[xsize//2,:].astype(np.float64)
                 #detect nonzero points in 1-d cut to find regions
                 slitlets = extractNonzeroRegions(cut1d, 10) #min_width = 10
                 if (slitlets is None):
@@ -1850,8 +1851,8 @@ class rectifyProcess(fatboyProcess):
                     return None
                 sylo = slitlets[:,0]
                 syhi = slitlets[:,1]
-                slitx = array([xsize//2]*len(sylo))
-                slitw = array([3]*len(sylo))
+                slitx = np.array([xsize//2]*len(sylo))
+                slitw = np.array([3]*len(sylo))
             else:
                 #Read region file
                 if (regFile.endswith(".reg")):
@@ -1869,7 +1870,7 @@ class rectifyProcess(fatboyProcess):
             calibs['slitmask'].setProperty("regions", (sylo, syhi, slitx, slitw))
 
         #Use GPU to calculuate xind
-        yind = arange(ysize, dtype=float32).reshape(ysize,1)
+        yind = np.arange(ysize, dtype=np.float32).reshape(ysize,1)
         if (self._fdb.getGPUMode()):
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                 xind = calcXin(xsize, ysize)
@@ -1877,15 +1878,15 @@ class rectifyProcess(fatboyProcess):
                 xind = calcYin(ysize, xsize)
         else:
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                xind = arange(xsize*ysize, dtype=float32).reshape(ysize,xsize) % xsize
+                xind = np.arange(xsize*ysize, dtype=np.float32).reshape(ysize,xsize) % xsize
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                xind = (arange(xsize*ysize).reshape(xsize,ysize) // ysize).astype(float32)
+                xind = (np.arange(xsize*ysize).reshape(xsize,ysize) // ysize).astype(np.float32)
 
         #Use helper method to all ylo, yhi for each slit in each frame
         (ylos, yhis, slitx, slitw) = findRegions(calibs['slitmask'].getData(), nslits, calibs['slitmask'], gpu=self._fdb.getGPUMode(), log=self._log)
 
 
-        xtransData = zeros(calibs['slitmask'].getData().shape, dtype=float32)
+        xtransData = np.zeros(calibs['slitmask'].getData().shape, dtype=np.float32)
 
         for slitidx in range(nslits):
             if (slitw[slitidx] > maxSlitWidth):
@@ -1934,7 +1935,7 @@ class rectifyProcess(fatboyProcess):
                 terms = 0
                 for j in range(fit_order+2):
                     terms+=j
-                p = zeros(terms)
+                p = np.zeros(terms)
                 #Initial guess is f(x_in, y_in) = x_in
                 p[1] = 1
                 try:
@@ -1960,10 +1961,10 @@ class rectifyProcess(fatboyProcess):
                 sigThresh = 2
                 niter = 0
                 norig = len(slitxout)
-                bad = where(abs(xresid-residmean)/residstddev > sigThresh)
+                bad = np.where(np.abs(xresid-residmean)/residstddev > sigThresh)
                 while (len(bad[0]) > 0):
                     niter += 1
-                    good = (abs(xresid-residmean)/residstddev <= sigThresh)
+                    good = (np.abs(xresid-residmean)/residstddev <= sigThresh)
                     slitxin = slitxin[good]
                     slityin = slityin[good]
                     slitxout = slitxout[good]
@@ -1985,7 +1986,7 @@ class rectifyProcess(fatboyProcess):
                     if (niter > 2):
                         #Gradually increase sigma threshold
                         sigThresh += 0.2
-                    bad = where(abs(xresid-residmean)/residstddev > sigThresh)
+                    bad = np.where(np.abs(xresid-residmean)/residstddev > sigThresh)
                 print("\t\tAfter "+str(niter)+" passes, kept "+str(len(slitxout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]))
                 print("\t\tData - fit mean: "+formatNum(residmean)+"\tsigma: "+formatNum(residstddev))
                 self._log.writeLog(__name__, "After "+str(niter)+" passes, kept "+str(len(slitxout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=2)
@@ -2000,7 +2001,7 @@ class rectifyProcess(fatboyProcess):
                     else:
                         xtransData[ylo:yhi+1,sxlo:sxhi][currMask] = surfaceFunction(coeffs, xind[ylo:yhi+1,sxlo:sxhi], yind[ylo:yhi+1,:], fit_order)[currMask]
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    #yind is yshape x 1 array
+                    #yind is yshape x 1 np.array
                     if (useCenterAsZero):
                         xtransData[sxlo:sxhi,ylo:yhi+1][currMask] = surfaceFunction(coeffs, xind[sxlo:sxhi,ylo:yhi+1], yind[ylo:yhi+1,0]-y0, fit_order)[currMask]
                     else:
@@ -2093,7 +2094,7 @@ class rectifyProcess(fatboyProcess):
                 if (self._fdb.getGPUMode()):
                     ytransData = calcYin(xsize, ysize)
                 else:
-                    ytransData = (arange(xsize*ysize).reshape(ysize,xsize) // xsize).astype(float32)
+                    ytransData = (np.arange(xsize*ysize).reshape(ysize,xsize) // xsize).astype(np.float32)
                 ytrans_rect = fatboySpecCalib(self._pname, "ytrans_rect", fdu, data=ytransData, tagname=fdu._id, log=self._log)
                 ytrans_rect.setProperty("specmode", fdu.getProperty("specmode"))
                 ytrans_rect.setProperty("dispersion", fdu.getProperty("dispersion"))
@@ -2103,7 +2104,7 @@ class rectifyProcess(fatboyProcess):
                 if (self._fdb.getGPUMode()):
                     xtransData = calcXin(xsize, ysize)
                 else:
-                    xtransData = arange(xsize*ysize, dtype=float32).reshape(ysize,xsize) % xsize
+                    xtransData = np.arange(xsize*ysize, dtype=np.float32).reshape(ysize,xsize) % xsize
                 xtrans_rect = fatboySpecCalib(self._pname, "xtrans_rect", fdu, data=xtransData, tagname=fdu._id, log=self._log)
                 xtrans_rect.setProperty("specmode", fdu.getProperty("specmode"))
                 xtrans_rect.setProperty("dispersion", fdu.getProperty("dispersion"))
@@ -2136,7 +2137,7 @@ class rectifyProcess(fatboyProcess):
                 if (self._fdb.getGPUMode()):
                     xtransData = calcXin(xsize, ysize)
                 else:
-                    xtransData = arange(xsize*ysize, dtype=float32).reshape(ysize,xsize) % xsize
+                    xtransData = np.arange(xsize*ysize, dtype=np.float32).reshape(ysize,xsize) % xsize
                 xtrans_rect = fatboySpecCalib(self._pname, "xtrans_rect", fdu, data=xtransData, tagname=fdu._id, log=self._log)
                 xtrans_rect.setProperty("specmode", fdu.getProperty("specmode"))
                 xtrans_rect.setProperty("dispersion", fdu.getProperty("dispersion"))
@@ -2146,7 +2147,7 @@ class rectifyProcess(fatboyProcess):
                 if (self._fdb.getGPUMode()):
                     ytransData = calcYin(xsize, ysize)
                 else:
-                    ytransData = (arange(xsize*ysize).reshape(ysize,xsize) // xsize).astype(float32)
+                    ytransData = (np.arange(xsize*ysize).reshape(ysize,xsize) // xsize).astype(np.float32)
                 ytrans_rect = fatboySpecCalib(self._pname, "ytrans_rect", fdu, data=ytransData, tagname=fdu._id, log=self._log)
                 ytrans_rect.setProperty("specmode", fdu.getProperty("specmode"))
                 ytrans_rect.setProperty("dispersion", fdu.getProperty("dispersion"))
@@ -2254,14 +2255,14 @@ class rectifyProcess(fatboyProcess):
                     #output file already exists and overwrite = no.  Update data from disk and set "rectified" = True
                     calibs['slitmask'].setProperty("rectified", True)
                     #Update nslits property
-                    nslits = calibs['slitmask'].getData().max()
+                    nslits = calibs['slitmask'].getData(force_cpu=True).max()
                     calibs['slitmask'].setProperty("nslits", nslits)
                     #Update regions
                     if (calibs['slitmask'].hasProperty("regions")):
                         (sylo, syhi, slitx, slitw) = calibs['slitmask'].getProperty("regions")
                         #Get rid of guide star boxes and any entirely negative slits (shouldn't happen)
                         maxSlitWidth = float(self.getOption("mos_max_slit_width", fdu.getTag()))
-                        b = logical_and(slitw < maxSlitWidth, syhi > 0)
+                        b = np.logical_and(slitw < maxSlitWidth, syhi > 0)
                         sylo = sylo[b]
                         syhi = syhi[b]
                         slitx = slitx[b]
@@ -2709,7 +2710,7 @@ class rectifyProcess(fatboyProcess):
                 (cleanData, header, point_expmap, point_pixmap) = drihizzle_method(fdu, None, None, inmask=crMask, weight='exptime', kernel="point", dropsize=0.01, geomDist=calibs['rect_coeffs'], inunits='counts', outunits='counts', log=self._log, mode=gpu_drihizzle.MODE_FDU_TAG, dataTag="cleanFrame")
                 #Next use turbo
                 (turbo_data, header, turbo_expmap, turbo_pixmap) = drihizzle_method(fdu, None, None, inmask=crMask, weight='exptime', kernel="turbo", dropsize=1, geomDist=calibs['rect_coeffs'], inunits='counts', outunits='counts', log=self._log, mode=gpu_drihizzle.MODE_FDU_TAG, dataTag="cleanFrame")
-                #Next scale any output pixel where more than one input pixel contributed
+                #Next scale any output pixel np.where more than one input pixel contributed
                 #And replace any output pixel with 0 contribution with turbo value
                 b = (cleanData == 0)*(turbo_expmap != 0)*(turbo_data != 0)
                 nonzeroPoints = turbo_expmap != 0
@@ -2736,13 +2737,13 @@ class rectifyProcess(fatboyProcess):
                 b = point_expmap == 0
                 nmData = medReplace2d(nmData, b, 3)
                 #Update "noisemap" data tag
-                fdu.tagDataAs("noisemap", data=sqrt(nmData))
+                fdu.tagDataAs("noisemap", data=np.sqrt(nmData))
 
             #First use point to drizzle
             (point_data, header, point_expmap, point_pixmap) = drihizzle_method(fdu, None, None, inmask=crMask, weight='exptime', kernel="point", dropsize=0.01, geomDist=calibs['rect_coeffs'], inunits='counts', outunits='counts', log=self._log, mode=gpu_drihizzle.MODE_FDU)
             #Next use turbo
             (turbo_data, header, turbo_expmap, turbo_pixmap) = drihizzle_method(fdu, None, None, inmask=crMask, weight='exptime', kernel="turbo", dropsize=1, geomDist=calibs['rect_coeffs'], inunits='counts', outunits='counts', log=self._log, mode=gpu_drihizzle.MODE_FDU)
-            #Next scale any output pixel where more than one input pixel contributed
+            #Next scale any output pixel np.where more than one input pixel contributed
             #And replace any output pixel with 0 contribution with turbo value
             b = (point_data == 0)*(turbo_expmap != 0)*(turbo_data != 0)
             nonzeroPoints = turbo_expmap != 0
@@ -2753,7 +2754,7 @@ class rectifyProcess(fatboyProcess):
             scale[scale < 0] = 0
 
             #Compute difference image
-            diffImage = zeros(point_data.shape)
+            diffImage = np.zeros(point_data.shape)
             diffImage[b] = turbo_data[b]*scale[b] - point_data[b]
             point_data[b] = turbo_data[b]*scale[b]
             point_expmap[b] = fdu.exptime
@@ -2765,7 +2766,7 @@ class rectifyProcess(fatboyProcess):
             fdu.writeTo(diffFile, tag="diffImage")
             fdu.removeProperty("diffImage")
 
-            #Still zeros around edges
+            #Still np.zeros around edges
             b = point_expmap != 0
             #Adjust expmap for double contributions
             point_expmap[b] *= fdu.exptime/point_expmap[b]
@@ -2792,7 +2793,7 @@ class rectifyProcess(fatboyProcess):
                 fdu.tagDataAs("noisemap", nmData)
                 (nmData, header, expmap, pixmap) = drihizzle_method(fdu, None, None, inmask=crMask, weight='exptime', kernel=drihizzleKernel, dropsize=dropsize, geomDist=calibs['rect_coeffs'], inunits='counts', outunits='counts', log=self._log, mode=gpu_drihizzle.MODE_FDU_TAG, dataTag="noisemap")
                 #Update "noisemap" data tag
-                fdu.tagDataAs("noisemap", data=sqrt(nmData))
+                fdu.tagDataAs("noisemap", data=np.sqrt(nmData))
 
                 #Rectify actual data frame
             (data, header, expmap, pixmap) = drihizzle_method(fdu, None, None, inmask=crMask, weight='exptime', kernel=drihizzleKernel, dropsize=dropsize, geomDist=calibs['rect_coeffs'], inunits='counts', outunits='counts', log=self._log, mode=gpu_drihizzle.MODE_FDU)
@@ -2856,7 +2857,7 @@ class rectifyProcess(fatboyProcess):
             #Now update slitmask to remove guide star boxes
 
             if (not slitmask.hasProperty("nslits")):
-                slitmask.setProperty("nslits", slitmask.getData().max())
+                slitmask.setProperty("nslits", slitmask.getData(force_cpu=True).max())
             nslits = slitmask.getProperty("nslits")
             if (slitmask.hasProperty("regions")):
                 (sylo, syhi, slitx, slitw) = slitmask.getProperty("regions")
@@ -2869,7 +2870,7 @@ class rectifyProcess(fatboyProcess):
                 rylo = slitmask.getProperty("rylo")
                 ryhi = slitmask.getProperty("ryhi")
                 #Get rid of guide star boxes and any entirely negative slits (shouldn't happen)
-                b = logical_and(slitw < maxSlitWidth, ryhi > 0)
+                b = np.logical_and(slitw < maxSlitWidth, ryhi > 0)
                 sylo = rylo[b]
                 syhi = ryhi[b]
                 slitx = slitx[b]
@@ -2877,7 +2878,7 @@ class rectifyProcess(fatboyProcess):
             else:
                 #Must be using previous ytrans file.  rylo, ryhi not calculated, use sylo, syhi
                 #Get rid of guide star boxes and any entirely negative slits (shouldn't happen)
-                b = logical_and(slitw < maxSlitWidth, syhi > 0)
+                b = np.logical_and(slitw < maxSlitWidth, syhi > 0)
                 sylo = sylo[b]
                 syhi = syhi[b]
                 slitx = slitx[b]
@@ -2967,7 +2968,7 @@ class rectifyProcess(fatboyProcess):
                 (cleanData, header, point_expmap, point_pixmap) = drihizzle_method(fdu, None, None, inmask=crMask, weight='exptime', kernel="point", dropsize=0.01, xtrans=calibs['xtrans_rect'].getData(), ytrans=calibs['ytrans_rect'].getData(), inunits='counts', outunits='counts', log=self._log, mode=gpu_drihizzle.MODE_FDU_TAG, dataTag="cleanFrame")
                 #Next use turbo
                 (turbo_data, header, turbo_expmap, turbo_pixmap) = drihizzle_method(fdu, None, None, inmask=crMask, weight='exptime', kernel="turbo", dropsize=1, xtrans=calibs['xtrans_rect'].getData(), ytrans=calibs['ytrans_rect'].getData(), inunits='counts', outunits='counts', log=self._log, mode=gpu_drihizzle.MODE_FDU_TAG, dataTag="cleanFrame")
-                #Next scale any output pixel where more than one input pixel contributed
+                #Next scale any output pixel np.where more than one input pixel contributed
                 #And replace any output pixel with 0 contribution with turbo value
                 b = (cleanData == 0)*(turbo_expmap != 0)*(turbo_data != 0)
                 nonzeroPoints = turbo_expmap != 0
@@ -2994,13 +2995,13 @@ class rectifyProcess(fatboyProcess):
                 b = point_expmap == 0
                 nmData = medReplace2d(nmData, b, 3)
                 #Update "noisemap" data tag
-                fdu.tagDataAs("noisemap", data=sqrt(nmData))
+                fdu.tagDataAs("noisemap", data=np.sqrt(nmData))
 
             #First use point to drizzle
             (point_data, header, point_expmap, point_pixmap) = drihizzle_method(fdu, None, None, inmask=crMask, weight='exptime', kernel="point", dropsize=0.01, xtrans=calibs['xtrans_rect'].getData(), ytrans=calibs['ytrans_rect'].getData(), inunits='counts', outunits='counts', log=self._log, mode=gpu_drihizzle.MODE_FDU)
             #Next use turbo
             (turbo_data, header, turbo_expmap, turbo_pixmap) = drihizzle_method(fdu, None, None, inmask=crMask, weight='exptime', kernel="turbo", dropsize=1, xtrans=calibs['xtrans_rect'].getData(), ytrans=calibs['ytrans_rect'].getData(), inunits='counts', outunits='counts', log=self._log, mode=gpu_drihizzle.MODE_FDU)
-            #Next scale any output pixel where more than one input pixel contributed
+            #Next scale any output pixel np.where more than one input pixel contributed
             #And replace any output pixel with 0 contribution with turbo value
             b = (point_data == 0)*(turbo_expmap != 0)*(turbo_data != 0)
             nonzeroPoints = turbo_expmap != 0
@@ -3011,7 +3012,7 @@ class rectifyProcess(fatboyProcess):
             scale[scale < 0] = 0
 
             #Compute difference image
-            diffImage = zeros(point_data.shape)
+            diffImage = np.zeros(point_data.shape)
             diffImage[b] = turbo_data[b]*scale[b] - point_data[b]
             point_data[b] = turbo_data[b]*scale[b]
             point_expmap[b] = fdu.exptime
@@ -3023,7 +3024,7 @@ class rectifyProcess(fatboyProcess):
             fdu.writeTo(diffFile, tag="diffImage")
             fdu.removeProperty("diffImage")
 
-            #Still zeros around edges
+            #Still np.zeros around edges
             b = point_expmap != 0
             #Adjust expmap for double contributions
             point_expmap[b] *= fdu.exptime/point_expmap[b]
@@ -3049,7 +3050,7 @@ class rectifyProcess(fatboyProcess):
                 fdu.tagDataAs("noisemap", nmData)
                 (nmData, header, expmap, pixmap) = drihizzle_method(fdu, None, None, inmask=crMask, weight='exptime', kernel=drihizzleKernel, dropsize=dropsize, xtrans=calibs['xtrans_rect'].getData(), ytrans=calibs['ytrans_rect'].getData(), inunits='counts', outunits='counts', log=self._log, mode=gpu_drihizzle.MODE_FDU_TAG, dataTag="noisemap")
                 #Update "noisemap" data tag
-                fdu.tagDataAs("noisemap", data=sqrt(nmData))
+                fdu.tagDataAs("noisemap", data=np.sqrt(nmData))
 
             #Rectify actual data frame
             (data, header, expmap, pixmap) = drihizzle_method(fdu, None, None, inmask=crMask, weight='exptime', kernel=drihizzleKernel, dropsize=dropsize, xtrans=calibs['xtrans_rect'].getData(), ytrans=calibs['ytrans_rect'].getData(), inunits='counts', outunits='counts', log=self._log, mode=gpu_drihizzle.MODE_FDU)
@@ -3218,7 +3219,7 @@ class rectifyProcess(fatboyProcess):
         xstride = xsize//n_segments
 
         if (not calibs['slitmask'].hasProperty("nslits")):
-            calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData().max())
+            calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData(force_cpu=True).max())
         nslits = calibs['slitmask'].getProperty("nslits")
         if (calibs['slitmask'].hasProperty("regions")):
             (sylo, syhi, slitx, slitw) = calibs['slitmask'].getProperty("regions")
@@ -3233,9 +3234,9 @@ class rectifyProcess(fatboyProcess):
                 print("rectifyProcess::traceMOSContinuaRectification> No region file given.  Calculating regions from slitmask...")
                 self._log.writeLog(__name__, "No region file given.  Calculating regions from slitmask...")
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    cut1d = calibs['slitmask'].getData()[:,xinit].astype(float64)
+                    cut1d = calibs['slitmask'].getData()[:,xinit].astype(np.float64)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    cut1d = calibs['slitmask'].getData()[xinit,:].astype(float64)
+                    cut1d = calibs['slitmask'].getData()[xinit,:].astype(np.float64)
                 #detect nonzero points in 1-d cut to find regions
                 slitlets = extractNonzeroRegions(cut1d, 10) #min_width = 10
                 if (slitlets is None):
@@ -3246,8 +3247,8 @@ class rectifyProcess(fatboyProcess):
                     return None
                 sylo = slitlets[:,0]
                 syhi = slitlets[:,1]
-                slitx = array([xinit]*len(sylo))
-                slitw = array([3]*len(sylo))
+                slitx = np.array([xinit]*len(sylo))
+                slitw = np.array([3]*len(sylo))
             else:
                 #Read region file
                 if (regFile.endswith(".reg")):
@@ -3265,11 +3266,11 @@ class rectifyProcess(fatboyProcess):
             calibs['slitmask'].setProperty("regions", (sylo, syhi, slitx, slitw))
 
         #Use GPU to calculuate xind
-        yind = arange(ysize, dtype=float32).reshape(ysize,1)
+        yind = np.arange(ysize, dtype=np.float32).reshape(ysize,1)
         if (self._fdb.getGPUMode()):
             xind = calcXin(xsize, ysize)
         else:
-            xind = arange(xsize*ysize, dtype=float32).reshape(ysize,xsize) % xsize
+            xind = np.arange(xsize*ysize, dtype=np.float32).reshape(ysize,xsize) % xsize
 
         #Use helper method to all ylo, yhi for each slit in each frame
         (ylos, yhis, slitx, slitw) = findRegions(calibs['slitmask'].getData(), nslits, calibs['slitmask'], gpu=self._fdb.getGPUMode(), log=self._log)
@@ -3280,9 +3281,9 @@ class rectifyProcess(fatboyProcess):
             if (doDS):
                 #Find shift for double subtraction
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    oned = sum(currFDU.getData(tag="cleanFrame")[:,find_xlo:find_xhi], 1)
+                    oned = np.sum(currFDU.getData(tag="cleanFrame")[:,find_xlo:find_xhi], 1)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    oned = sum(currFDU.getData(tag="cleanFrame")[find_xlo:find_xhi,:], 0)
+                    oned = np.sum(currFDU.getData(tag="cleanFrame")[find_xlo:find_xhi,:], 0)
 
                 #Loop over slitlets
                 for slitidx in range(nslits):
@@ -3301,8 +3302,8 @@ class rectifyProcess(fatboyProcess):
                 #Mask out negative datapoints and cross correlate to find double subtract shift
                 posCut[posCut < 0] = 0
                 negCut[negCut < 0] = 0
-                ccor = correlate(posCut,negCut,mode='same')
-                mcor = where(ccor == max(ccor))[0]
+                ccor = np.correlate(posCut,negCut,mode='same')
+                mcor = np.where(ccor == np.max(ccor))[0]
                 shift = len(ccor)//2-mcor[0]
                 print("rectifyProcess::traceMOSContinuaRectification> Double subtract shift = "+str(shift)+"; guess was +/-"+str(currFDU.getProperty("double_subtract_guess")))
                 self._log.writeLog(__name__, "Double subtract shift = "+str(shift)+"; guess was +/-"+str(currFDU.getProperty("double_subtract_guess")))
@@ -3323,11 +3324,11 @@ class rectifyProcess(fatboyProcess):
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                     currMask = calibs['slitmask'].getData()[ylo:yhi+1,find_xlo:find_xhi] == (slitidx+1)
                     slit = currFDU.getData(tag="cleanFrame")[ylo:yhi+1,find_xlo:find_xhi]*currMask
-                    oned = sum(slit, 1)
+                    oned = np.sum(slit, 1)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                     currMask = calibs['slitmask'].getData()[find_xlo:find_xhi,ylo:yhi+1] == (slitidx+1)
                     slit = currFDU.getData(tag="cleanFrame")[find_xlo:find_xhi,ylo:yhi+1]*currMask
-                    oned = sum(slit, 0)
+                    oned = np.sum(slit, 0)
 
                 if (doDS):
                     #Median filter and mask out negative datapoints
@@ -3337,8 +3338,8 @@ class rectifyProcess(fatboyProcess):
                     negCut[negCut < 0] = 0
 
                     #Find double subtract shift and compare to overall shift found above
-                    ccor = correlate(posCut,negCut,mode='same')
-                    mcor = where(ccor == max(ccor))[0]
+                    ccor = np.correlate(posCut,negCut,mode='same')
+                    mcor = np.where(ccor == np.max(ccor))[0]
                     slitshift = len(ccor)//2-mcor[0]
                     if (abs(slitshift-shift) > 2):
                         #This shift is > 3 pixel away from the shift calculated for the whole image and is likely wrong.
@@ -3347,15 +3348,15 @@ class rectifyProcess(fatboyProcess):
 
                     #Double subtract to bring out continuum more
                     #Use overall shift as its more likely accurate
-                    posOffset = 0-min(0,shift)
-                    negOffset = shift-min(0,shift)
+                    posOffset = 0-min(0, shift)
+                    negOffset = shift-min(0, shift)
                     dsCut = posCut[posOffset:len(posCut)-negOffset] + negCut[negOffset:len(posCut)-posOffset]
-                    #Mask zeros as small positive number so they don't get flagged as bad pixels
+                    #Mask np.zeros as small positive number so they don't get flagged as bad pixels
                     dsCut[dsCut < 0] = 1.e-6
                 else:
-                    #Do not double subtract, just median filter and mask out zeros
+                    #Do not double subtract, just median filter and mask out np.zeros
                     dsCut = medianfilterCPU(oned)
-                    #Mask zeros as small positive number so they don't get flagged as bad pixels
+                    #Mask np.zeros as small positive number so they don't get flagged as bad pixels
                     dsCut[dsCut < 0] = 1.e-6
                     posOffset = 0
                 continuaList = extractSpectra(dsCut, sigma=thresh, width=4, nspec=maxSpectra)
@@ -3379,12 +3380,12 @@ class rectifyProcess(fatboyProcess):
                         #xinit == -1 => find brightest part of continuum within middle half of chip
                         #Use first kept spectrum for this purpose
                         if (currFDU.dispersion == fdu.DISPERSION_HORIZONTAL):
-                            zcut = mediansmooth1d(sum(currFDU.getData(tag="cleanFrame")[cylo:cyhi+1,:],0), 5)
+                            zcut = mediansmooth1d(np.sum(currFDU.getData(tag="cleanFrame")[cylo:cyhi+1,:],0), 5)
                         elif (currFDU.dispersion == fdu.DISPERSION_VERTICAL):
-                            zcut = mediansmooth1d(sum(currFDU.getData(tag="cleanFrame")[:,cylo:cyhi+1], 1), 5)
+                            zcut = mediansmooth1d(np.sum(currFDU.getData(tag="cleanFrame")[:,cylo:cyhi+1], 1), 5)
                         xlo = int(zcut.size//4)
                         xhi = int(zcut.size*3//4)
-                        xinit = where(zcut == max(zcut[xlo:xhi]))[0][0]
+                        xinit = np.where(zcut == np.max(zcut[xlo:xhi]))[0][0]
                     #Update fdu property "continua_list"
                     if (not currFDU.hasProperty("continua_list")):
                         currFDU.setProperty("continua_list", [(cylo, cyhi, slitidx, shift)])
@@ -3428,8 +3429,8 @@ class rectifyProcess(fatboyProcess):
             #Lower x vals
             xs += list(range(xstride*(seg+1)-bndry, xstride*seg+bndry, -1*step))
 
-        #Index array used for fitting
-        yind = arange(ysize, dtype=float64)
+        #Index np.array used for fitting
+        yind = np.arange(ysize, dtype=np.float64)
 
         #Loop over FDUs
         for currFDU in rctfdus:
@@ -3449,8 +3450,8 @@ class rectifyProcess(fatboyProcess):
                     negData[negData < 0] = 0
 
                     #Perform double subtraction
-                    posOffset = 0-min(0,shift)
-                    negOffset = shift-min(0,shift)
+                    posOffset = 0-min(0, shift)
+                    negOffset = shift-min(0, shift)
                     if (currFDU.dispersion == fdu.DISPERSION_HORIZONTAL):
                         currData[posOffset:currData.shape[0]-negOffset,:] += negData[negOffset:currData.shape[0]-posOffset,:]
                     elif (currFDU.dispersion == fdu.DISPERSION_VERTICAL):
@@ -3515,19 +3516,19 @@ class rectifyProcess(fatboyProcess):
                             currMask = calibs['slitmask'].getData()[x3:x4,ylos[slitidx]:yhis[slitidx]+1] == (slitidx+1)
                             #oned_seg0 = sum(currData[x3:x4,ylos[slitidx]:yhis[slitidx]+1]*currMask, 0) #1-d cut of curr segment
                             oned_seg0 = gpu_arraymedian(currData[x3:x4,ylos[slitidx]:yhis[slitidx]+1]*currMask, axis="Y") #1-d cut of curr segment
-                        ccor = correlate(oned_seg0, oned_seg1, mode='same')
-                        mcor = where(ccor == max(ccor))[0]
+                        ccor = np.correlate(oned_seg0, oned_seg1, mode='same')
+                        mcor = np.where(ccor == np.max(ccor))[0]
                         seg_shifts.append(len(ccor)//2-mcor[0])
 
                 #Find the data corresponding to this slit and take 1-d cut
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                     currMask = calibs['slitmask'].getData()[ylo:yhi+1,find_xlo:find_xhi] == (slitidx+1)
                     slit = currFDU.getData(tag="cleanFrame")[ylo:yhi+1,find_xlo:find_xhi]*currMask
-                    oned = sum(slit, 1)
+                    oned = np.sum(slit, 1)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                     currMask = calibs['slitmask'].getData()[find_xlo:find_xhi,ylo:yhi+1] == (slitidx+1)
                     slit = currFDU.getData(tag="cleanFrame")[find_xlo:find_xhi,ylo:yhi+1]*currMask
-                    oned = sum(slit, 0)
+                    oned = np.sum(slit, 0)
 
                 lastSeg = xinit//xstride #reset lastSeg
                 #Loop over xs every 5 pixels and try to fit Gaussian across continuum
@@ -3543,7 +3544,7 @@ class rectifyProcess(fatboyProcess):
                         lastYs = [ycoords[0]]
                         lastXs = [xcoords[0]]
                     elif (currSeg != lastSeg):
-                        lastIdx = where(abs(array(xcoords)-xs[j]) == min(abs(array(xcoords)-xs[j])))[0][0]
+                        lastIdx = np.where(np.abs(np.array(xcoords)-xs[j]) == np.min(np.abs(np.array(xcoords)-xs[j])))[0][0]
                         currY = ycoords[lastIdx]+seg_shifts[currSeg]
                         lastYs = [ycoords[lastIdx]+seg_shifts[currSeg]]
                         lastXs = [xcoords[lastIdx]]
@@ -3557,10 +3558,10 @@ class rectifyProcess(fatboyProcess):
                         yhi = ysize-1
 
                     if (currFDU.dispersion == fdu.DISPERSION_HORIZONTAL):
-                        outerbox = gpu_arraymedian(currData[max(0, ylo-yboxsize):yhi+yboxsize+1,xs[j]-5:xs[j]+6].copy(), axis="X")
+                        outerbox = gpu_arraymedian(currData[max(0,  ylo-yboxsize):yhi+yboxsize+1,xs[j]-5:xs[j]+6].copy(), axis="X")
                         y = gpu_arraymedian(currData[ylo:yhi+1,xs[j]-5:xs[j]+6].copy(), axis="X")
                     elif (currFDU.dispersion == fdu.DISPERSION_VERTICAL):
-                        outerbox = gpu_arraymedian(currData[xs[j]-5:xs[j]+6,max(0, ylo-yboxsize):yhi+yboxsize+1].copy(), axis="Y")
+                        outerbox = gpu_arraymedian(currData[xs[j]-5:xs[j]+6,max(0,  ylo-yboxsize):yhi+yboxsize+1].copy(), axis="Y")
                         y = gpu_arraymedian(currData[xs[j]-5:xs[j]+6,ylo:yhi+1].copy(), axis="Y")
 
                     #if (j == 0):
@@ -3580,7 +3581,7 @@ class rectifyProcess(fatboyProcess):
                     #Test 3: max value of inner box after 3 pixel smoothing
                     #must be greater than median+1*sigma of outer box
                     #Don't let first point fail this test
-                    if (j != 0 and max(smooth1dCPU(y,3,1)) < arraymedian(outerbox) + outerbox.std()):
+                    if (j != 0 and np.max(smooth1dCPU(y,3,1)) < arraymedian(outerbox) + outerbox.std()):
                         noData = True
                     #If first iteration break
                     if (noData and j == 0):
@@ -3596,9 +3597,9 @@ class rectifyProcess(fatboyProcess):
                         ylo = 0
 
                     if (currFDU.dispersion == fdu.DISPERSION_HORIZONTAL):
-                        y = sum(currData[ylo:yhi+1,xs[j]-5:xs[j]+6], 1, dtype=float64)
+                        y = np.sum(currData[ylo:yhi+1,xs[j]-5:xs[j]+6], 1, dtype=np.float64)
                     elif (currFDU.dispersion == fdu.DISPERSION_VERTICAL):
-                        y = sum(currData[xs[j]-5:xs[j]+6,ylo:yhi+1], 0, dtype=float64)
+                        y = np.sum(currData[xs[j]-5:xs[j]+6,ylo:yhi+1], 0, dtype=np.float64)
                     y[y<0] = 0
                     y*=y
 
@@ -3608,12 +3609,12 @@ class rectifyProcess(fatboyProcess):
                     #  plt.show()
 
                     #Initial guesses for Gaussian fit
-                    p = zeros(4, dtype=float64)
-                    p[0] = max(y)
-                    p[1] = (where(y == p[0]))[0][0]+ylo
+                    p = np.zeros(4, dtype=np.float64)
+                    p[0] = np.max(y)
+                    p[1] = (np.where(y == p[0]))[0][0]+ylo
                     p[2] = gaussWidth
                     p[3] = gpu_arraymedian(y.copy())
-                    if (initpeak > 0 and sqrt(p[0]) < 0.02*initpeak):
+                    if (initpeak > 0 and np.sqrt(p[0]) < 0.02*initpeak):
                         #peak flux must be >= 2% of highest for any 1-d cut
                         #print "ERR2A", xs[j], initpeak, p[0]
                         continue
@@ -3651,7 +3652,7 @@ class rectifyProcess(fatboyProcess):
                         currY = lsq[0][1]
                         currX = xs[0]
                         peaks.append(lsq[0][0])
-                        initpeak = sqrt(lsq[0][0])
+                        initpeak = np.sqrt(lsq[0][0])
                         xcoords.append(xs[j])
                         ycoords.append(lsq[0][1])
                         lastXs.append(xs[j])
@@ -3687,9 +3688,9 @@ class rectifyProcess(fatboyProcess):
                         #Compare current y fit value to weighted avg instead of just
                         #previous value.
                         for i in range(len(lastYs)):
-                            wavg += lastYs[i]/sqrt(abs(lastXs[i]-xs[j]))
-                            wavgx += lastXs[i]/sqrt(abs(lastXs[i]-xs[j]))
-                            wavgDivisor += 1./sqrt(abs(lastXs[i]-xs[j]))
+                            wavg += lastYs[i]/math.sqrt(abs(lastXs[i]-xs[j]))
+                            wavgx += lastXs[i]/math.sqrt(abs(lastXs[i]-xs[j]))
+                            wavgDivisor += 1./math.sqrt(abs(lastXs[i]-xs[j]))
                         if (wavgDivisor != 0):
                             wavg = wavg/wavgDivisor
                             wavgx = wavgx/wavgDivisor
@@ -3699,12 +3700,12 @@ class rectifyProcess(fatboyProcess):
                             wavgx = currX
                         #More than 50 pixels in deltaX between weight average of last 10
                         #datapoints and current X
-                        #And not the discontinuity in middle of xs where we jump from end back to center
+                        #And not the discontinuity in middle of xs np.where we jump from end back to center
                         #because abs(xs[j]-xs[j-1]) == step
                         if (abs(xs[j]-xs[j-1]) == step and abs(wavgx-xs[j]) > 50):
                             if (len(lastYs) > 1):
                                 #Fit slope to lastYs
-                                lin = leastsq(linResiduals, [0.,0.], args=(array(lastXs),array(lastYs)))
+                                lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastXs),np.array(lastYs)))
                                 slope = lin[0][1]
                             else:
                                 #Only 1 datapoint, use -0.12 as slope
@@ -3716,7 +3717,7 @@ class rectifyProcess(fatboyProcess):
                         else:
                             if (len(lastYs) > 3):
                                 #Fit slope to lastYs
-                                lin = leastsq(linResiduals, [0.,0.], args=(array(lastXs),array(lastYs)))
+                                lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastXs),np.array(lastYs)))
                                 slope = lin[0][1]
                             else:
                                 #Less than 4 datapoints, use -0.12 as slope
@@ -3780,9 +3781,9 @@ class rectifyProcess(fatboyProcess):
                 #Find outliers > 2.5 sigma in peak values and remove them
                 #First store first value as yout
                 currYout = ycoords[0]
-                peaks = array(peaks)
-                xcoords = array(xcoords)
-                ycoords = array(ycoords)
+                peaks = np.array(peaks)
+                xcoords = np.array(xcoords)
+                ycoords = np.array(ycoords)
                 xc_keep = [] #Create new lists for xcoords and ycoords that will be kept
                 yc_keep = []
                 iseg_keep = [] #And for segment number of those kept datapoints
@@ -3811,7 +3812,7 @@ class rectifyProcess(fatboyProcess):
                     #Fit fit_order order order polynomial to datapoints, Y = f(X)
                     #order = 2
                     order = fit_order
-                    p = zeros(order+1, float64)
+                    p = np.zeros(order+1, np.float64)
                     p[0] = ycoords[0]
                     try:
                         lsq = leastsq(polyResiduals, p, args=(seg_xcoords,seg_ycoords,order))
@@ -3822,7 +3823,7 @@ class rectifyProcess(fatboyProcess):
                     yprime = polyFunction(lsq[0], seg_xcoords, order)
                     yresid = yprime-seg_ycoords
                     #Remove outliers and refit
-                    b = abs(yresid) < yresid.mean()+2.5*yresid.std()
+                    b = np.abs(yresid) < yresid.mean()+2.5*yresid.std()
                     seg_xcoords = seg_xcoords[b]
                     seg_ycoords = seg_ycoords[b]
                     #Append to keep lists
@@ -3837,8 +3838,8 @@ class rectifyProcess(fatboyProcess):
                         self._log.writeLog(__name__, "rejecting outliers (phase 3). Sigma = "+str(yresid.std())[:5]+". Using "+str(len(seg_ycoords))+" datapoints to fit slitlets.", printCaller=False, tabLevel=1)
 
                 #Copy back over to xcoords, ycoords
-                xcoords = array(xc_keep)
-                ycoords = array(yc_keep)
+                xcoords = np.array(xc_keep)
+                ycoords = np.array(yc_keep)
                 #Check coverage fraction
                 covfrac = len(ycoords)*100.0/len(xs)
                 if (covfrac >= minCovFrac):
@@ -3859,7 +3860,7 @@ class rectifyProcess(fatboyProcess):
                             xval = int(xcoords[i]+.5)
                             for yi in range(yval-1,yval+2):
                                 for xi in range(xval-1,xval+2):
-                                    dist = sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
+                                    dist = np.sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
                                     qaData[yi,xi] = qavalue/((1+dist)**2)
                     elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                         for i in range(len(xcoords)):
@@ -3867,7 +3868,7 @@ class rectifyProcess(fatboyProcess):
                             xval = int(xcoords[i]+.5)
                             for yi in range(yval-1,yval+2):
                                 for xi in range(xval-1,xval+2):
-                                    dist = sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
+                                    dist = np.sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
                                     qaData[xi,yi] = qavalue/((1+dist)**2)
 
                 print("\tY Center: "+formatNum(currYout)+"\t Xref: "+str(xs[0])+"\t Cov. Frac: "+formatNum(covfrac))
@@ -3894,13 +3895,13 @@ class rectifyProcess(fatboyProcess):
         print("rectifyProcess::traceMOSContinuaRectification> Successfully traced out "+str(len(yout))+" datapoints in "+str(ncont)+ " continua.")
         self._log.writeLog(__name__, "Successfully traced out "+str(len(yout))+" datapoints in "+str(ncont)+ " continua.")
         #Convert to arrays
-        xin = array(xin)
-        yin = array(yin)
-        yout = array(yout)
+        xin = np.array(xin)
+        yin = np.array(yin)
+        yout = np.array(yout)
         if (mosMode == "use_slitpos"):
-            xslitin = array(xslitin)
+            xslitin = np.array(xslitin)
         elif (mosMode == "independent_slitlets"):
-            islit = array(islit)
+            islit = np.array(islit)
 
         #Write out more qa data
         qafile = outdir+"/rectified/qa_"+fdu._id+"-continua.dat"
@@ -3979,10 +3980,10 @@ class rectifyProcess(fatboyProcess):
         print("rectifyProcess::traceMOSSkylineRectification> Searching for sky/arclamp to trace out, using "+skyFDU.getFullId()+"...")
         self._log.writeLog(__name__, "Searching for sky/arclamp to trace out, using "+skyFDU.getFullId()+"...")
 
-        skyData = skyFDU.getData().copy()
+        skyData = skyFDU.getData(force_cpu=True).copy()
 
         if (not calibs['slitmask'].hasProperty("nslits")):
-            calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData().max())
+            calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData(force_cpu=True).max())
         nslits = calibs['slitmask'].getProperty("nslits")
         if (calibs['slitmask'].hasProperty("regions")):
             (sylo, syhi, slitx, slitw) = calibs['slitmask'].getProperty("regions")
@@ -3997,9 +3998,9 @@ class rectifyProcess(fatboyProcess):
                 print("rectifyProcess::traceMOSSkylineRectification> No region file given.  Calculating regions from slitmask...")
                 self._log.writeLog(__name__, "No region file given.  Calculating regions from slitmask...")
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    cut1d = calibs['slitmask'].getData()[:,xsize//2].astype(float64)
+                    cut1d = calibs['slitmask'].getData()[:,xsize//2].astype(np.float64)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    cut1d = calibs['slitmask'].getData()[xsize//2,:].astype(float64)
+                    cut1d = calibs['slitmask'].getData()[xsize//2,:].astype(np.float64)
                 #detect nonzero points in 1-d cut to find regions
                 slitlets = extractNonzeroRegions(cut1d, 10) #min_width = 10
                 if (slitlets is None):
@@ -4010,8 +4011,8 @@ class rectifyProcess(fatboyProcess):
                     return None
                 sylo = slitlets[:,0]
                 syhi = slitlets[:,1]
-                slitx = array([xsize//2]*len(sylo))
-                slitw = array([3]*len(sylo))
+                slitx = np.array([xsize//2]*len(sylo))
+                slitw = np.array([3]*len(sylo))
             else:
                 #Read region file
                 if (regFile.endswith(".reg")):
@@ -4029,11 +4030,11 @@ class rectifyProcess(fatboyProcess):
             calibs['slitmask'].setProperty("regions", (sylo, syhi, slitx, slitw))
 
         #Use GPU to calculuate xind
-        yind = arange(ysize, dtype=float32).reshape(ysize,1)
+        yind = np.arange(ysize, dtype=np.float32).reshape(ysize,1)
         if (self._fdb.getGPUMode()):
             xind = calcXin(xsize, ysize)
         else:
-            xind = arange(xsize*ysize, dtype=float32).reshape(ysize,xsize) % xsize
+            xind = np.arange(xsize*ysize, dtype=np.float32).reshape(ysize,xsize) % xsize
 
         #Use helper method to all ylo, yhi for each slit in each frame
         (ylos, yhis, slitx, slitw) = findRegions(calibs['slitmask'].getData(), nslits, calibs['slitmask'], gpu=self._fdb.getGPUMode(), log=self._log)
@@ -4065,11 +4066,11 @@ class rectifyProcess(fatboyProcess):
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                 currMask = calibs['slitmask'].getData()[ylo:yhi+1,:] == (slitidx+1)
                 slit = skyData[ylo:yhi+1,:]*currMask
-                oned = sum(slit, 0)
+                oned = np.sum(slit, 0)
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                 currMask = calibs['slitmask'].getData()[:,ylo:yhi+1] == (slitidx+1)
                 slit = skyData[:,ylo:yhi+1]*currMask
-                oned = sum(slit, 1)
+                oned = np.sum(slit, 1)
 
             #write_fits_file('slit.fits', slit)
             if (useAlternate):
@@ -4077,9 +4078,9 @@ class rectifyProcess(fatboyProcess):
                 #Alternate method is finding n (default 11) central pixels of slit and taking a median cut at each x
                 for j in range(len(oned)):
                     if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                        b = where(calibs['slitmask'].getData()[ylo:yhi+1,j] == slitidx+1)
+                        b = np.where(calibs['slitmask'].getData()[ylo:yhi+1,j] == slitidx+1)
                     elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                        b = where(calibs['slitmask'].getData()[j,ylo:yhi+1] == slitidx+1)
+                        b = np.where(calibs['slitmask'].getData()[j,ylo:yhi+1] == slitidx+1)
                     if (len(b[0]) < alternateBoxsize):
                         oned[j] = 0
                         continue
@@ -4101,7 +4102,7 @@ class rectifyProcess(fatboyProcess):
             else:
                 z = smooth1dCPU(oned, 5, 1)
             medVal = arraymedian(z, nonzero=True)
-            sig = z[where(z != 0)].std()
+            sig = z[np.where(z != 0)].std()
 
             if (usePlot and (debug or writePlots)):
                 plt.plot(z)
@@ -4111,12 +4112,12 @@ class rectifyProcess(fatboyProcess):
             z[-15:] = 0.
 
             #First pass at globally finding sky lines
-            while (max(z) > medVal+thresh*sig):
-                if (max(z) <= 0):
+            while (np.max(z) > medVal+thresh*sig):
+                if (np.max(z) <= 0):
                     #All points have been zeroed out
                     break
                 #Find brightest point
-                b = (where(z == max(z)))[0][0]
+                b = (np.where(z == np.max(z)))[0][0]
                 #Check that it matches min threshold
                 if (z[b] > medVal+thresh*sig):
                     valid = True
@@ -4138,22 +4139,22 @@ class rectifyProcess(fatboyProcess):
                     else:
                         #Fit and subtract gaussian
                         refCut = z[b-10:b+11]**2
-                        p = zeros(4, dtype=float64)
-                        p[0] = max(refCut)
+                        p = np.zeros(4, dtype=np.float64)
+                        p[0] = np.max(refCut)
                         p[1] = 10
                         p[2] = 2
                         p[3] = gpu_arraymedian(refCut)
-                        lsq = leastsq(gaussResiduals, p, args=(arange(len(refCut), dtype=float64), refCut))
+                        lsq = leastsq(gaussResiduals, p, args=(np.arange(len(refCut), dtype=np.float64), refCut))
                         #Subtract line from z
-                        p = zeros(4)
-                        p[0] = sqrt(abs(lsq[0][0]))
+                        p = np.zeros(4)
+                        p[0] = math.sqrt(abs(lsq[0][0]))
                         p[1] = b+lsq[0][1]-10
                         p[2] = abs(lsq[0][2]*sqrt(2))
-                        z -= gaussFunction(p, arange(len(z), dtype=float32))
+                        z -= gaussFunction(p, np.arange(len(z), dtype=np.float32))
                         z[int(b-lsq[0][2]):int(b+lsq[0][2]+0.5)] = 0
                     #Update median and std dev
                     medVal = arraymedian(z, nonzero=True)
-                    sig = z[where(z != 0)].std()
+                    sig = z[np.where(z != 0)].std()
             #Split into 4 sections for two pass detection
             if (useTwoPasses):
                 if (self._fdb._verbosity == fatboyLog.VERBOSE):
@@ -4164,25 +4165,25 @@ class rectifyProcess(fatboyProcess):
                     xs.append(k)
                 #Loop over each section
                 for k in range(len(xs)-1):
-                    #Create new array with "z" value for just this section and zero out edges
+                    #Create new np.array with "z" value for just this section and zero out edges
                     zlocal = z[xs[k]:xs[k+1]]
                     zlocal[0:15] = 0.
                     zlocal[-15:] = 0.
                     medVal = arraymedian(zlocal, nonzero=True)
                     #Calculate sigma if there are nonzero points left in this section
-                    if (len(where(zlocal != 0)[0]) != 0):
-                        sig = zlocal[where(zlocal != 0)].std()
+                    if (len(np.where(zlocal != 0)[0]) != 0):
+                        sig = zlocal[np.where(zlocal != 0)].std()
                     else:
                         #set sigma to 10000 - just a way to fail condition of while loop
                         sig=10000.
                     #Always try to get at least one line if there is any nonzero data
                     firstPass = True
-                    while (max(zlocal) > medVal+thresh*sig or firstPass):
-                        if (max(zlocal) <= 0):
+                    while (np.max(zlocal) > medVal+thresh*sig or firstPass):
+                        if (np.max(zlocal) <= 0):
                             #All points have been zeroed out
                             break
                         #Find brightest point
-                        b = (where(zlocal == max(zlocal)))[0][0]
+                        b = (np.where(zlocal == np.max(zlocal)))[0][0]
                         #If first pass, lower threshold to just 1.5 sigma so that at least one point
                         #can be used to anchor fit in this section
                         if (firstPass and zlocal[b] < medVal+1.5*sig):
@@ -4197,7 +4198,7 @@ class rectifyProcess(fatboyProcess):
                             for l in range(b-5,b+6):
                                 if (zlocal[l] == 0):
                                     valid = False
-                            #print b+xs[k], len(where(zlocal != 0)[0]), (zlocal[b]-med)/sig
+                            #print b+xs[k], len(np.where(zlocal != 0)[0]), (zlocal[b]-med)/sig
                             firstPass = False
                             #This line is valid -- it is at least 6 pixels away from another line
                             if valid:
@@ -4208,21 +4209,21 @@ class rectifyProcess(fatboyProcess):
                                     self._log.writeLog(__name__, "Found skyline: Center = "+str(b+xs[k])+"; sigma = "+str((zlocal[b]-medVal)/sig), printCaller=False, tabLevel=2, verbosity=fatboyLog.VERBOSE)
                             #Zero out +/-15 pixels from this line in second pass
                             zlocal[b-15:b+15] = 0
-                            if (len(where(zlocal != 0)[0]) == 0):
+                            if (len(np.where(zlocal != 0)[0]) == 0):
                                 break
                             #update median and sd
                             medVal = arraymedian(zlocal, nonzero=True)
-                            sig = zlocal[where(zlocal != 0)].std()
+                            sig = zlocal[np.where(zlocal != 0)].std()
 
-            #Use brightest skyline to trace out range in y where skylines are visible
+            #Use brightest skyline to trace out range in y np.where skylines are visible
             #(In case they cut off before the top/bottom of the slitlet/order)
             nlines = len(xcenters)
             bcen = int(xcenters[0])
             #Sum 1-d cut at 5 pixels centered around skyline
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                bline = sum(slit[:,bcen-2:bcen+3],1, dtype=float64)
+                bline = np.sum(slit[:,bcen-2:bcen+3],1, dtype=np.float64)
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                bline = sum(slit[bcen-2:bcen+3,:],0, dtype=float64)
+                bline = np.sum(slit[bcen-2:bcen+3,:],0, dtype=np.float64)
             #Calculate median and std dev
             blmed = arraymedian(bline)
             blsig = bline.std()
@@ -4236,7 +4237,7 @@ class rectifyProcess(fatboyProcess):
             currY = slitSize//2
             while (not isslitylo and currY > 5):
                 #If 5 consecutive points in 1-d cut are below -2 sigma, we've found lower cutoff
-                if (alltrue(bline[currY-4:currY+1] < blmed-2*blsig)):
+                if (np.all(bline[currY-4:currY+1] < blmed-2*blsig)):
                     slitylo = currY
                     isslitylo = True
                 currY-=1
@@ -4245,7 +4246,7 @@ class rectifyProcess(fatboyProcess):
             currY = slitSize//2
             while (not isslityhi and currY < slitSize-5):
                 #If 5 consecutive points in 1-d cut are below -2 sigma, we've found upper cutoff
-                if (alltrue(bline[currY:currY+5] < blmed-2*blsig)):
+                if (np.all(bline[currY:currY+5] < blmed-2*blsig)):
                     slityhi = currY
                     isslityhi = True
                 currY+=1
@@ -4266,8 +4267,8 @@ class rectifyProcess(fatboyProcess):
             yinit = (slitylo+slityhi)//2
             #step = 5
             ys = list(range(yinit, slitylo-step, -1*step))+list(range(yinit+step, slityhi, step))
-            #Index array used for fitting
-            slitxind = arange(xsize, dtype=float64)
+            #Index np.array used for fitting
+            slitxind = np.arange(xsize, dtype=np.float64)
 
             #Setup output lists
             slitxin = []
@@ -4288,16 +4289,16 @@ class rectifyProcess(fatboyProcess):
                     slit = medianfilter2dCPU(slit, axis="Y")
 
             #write_fits_file('slit_mf.fits', slit)
-            lineMask = ones(slit.shape, int32) #Array to mask that have been found to subtract from data
+            lineMask = np.ones(slit.shape, np.int32) #Array to mask that have been found to subtract from data
 
             #Loop over list of skylines
             for xcen in xcenters:
                 if (useAlternate):
                     #Update yinit and ys here based on this individual line
                     if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                        b = where(calibs['slitmask'].getData()[ylo:yhi+1,xcen] == slitidx+1)
+                        b = np.where(calibs['slitmask'].getData()[ylo:yhi+1,xcen] == slitidx+1)
                     elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                        b = where(calibs['slitmask'].getData()[xcen,ylo:yhi+1] == slitidx+1)
+                        b = np.where(calibs['slitmask'].getData()[xcen,ylo:yhi+1] == slitidx+1)
                     lineylo = max(b[0].min(), 5)
                     lineyhi = min(b[0].max(), ysize-6)
                     yinit = (lineylo+lineyhi)//2
@@ -4319,7 +4320,7 @@ class rectifyProcess(fatboyProcess):
                 if (gaussWidth < 2):
                     #Minimum 2 pixels
                     gaussWidth = 2
-                gaussWidth /= sqrt(2)
+                gaussWidth /= np.sqrt(2)
 
                 if (usePlot and self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
                     print("LINE", xcen, yinit)
@@ -4342,16 +4343,16 @@ class rectifyProcess(fatboyProcess):
                     #multiply by lineMask once here
                     slitm = slit*lineMask
                     if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                        outerbox = gpu_arraymedian((slitm)[ys[j]-5:ys[j]+6,max(0, xlo-skybox):xhi+skybox].copy(), axis="Y")
+                        outerbox = gpu_arraymedian((slitm)[ys[j]-5:ys[j]+6,max(0,  xlo-skybox):xhi+skybox].copy(), axis="Y")
                         x = gpu_arraymedian((slitm)[ys[j]-5:ys[j]+6,xlo:xhi].copy(), axis="Y")
                     elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                        outerbox = gpu_arraymedian((slitm)[max(0, xlo-skybox):xhi+skybox,ys[j]-step:ys[j]+step+1].copy(), axis="X")
+                        outerbox = gpu_arraymedian((slitm)[max(0,  xlo-skybox):xhi+skybox,ys[j]-step:ys[j]+step+1].copy(), axis="X")
                         x = gpu_arraymedian((slitm)[xlo:xhi,ys[j]-step:ys[j]+step+1].copy(), axis="X")
                     if (type(x) == int):
                         continue
                     #if (j == 0 and slitidx == 2):
-                        #plt.plot(arange(len(outerbox))+xlo-skybox, outerbox)
-                        #plt.plot(arange(len(x))+xlo, x)
+                        #plt.plot(np.arange(len(outerbox))+xlo-skybox, outerbox)
+                        #plt.plot(np.arange(len(x))+xlo, x)
                         #plt.show()
 
                     #Rejection criteria
@@ -4366,7 +4367,7 @@ class rectifyProcess(fatboyProcess):
                     #Test 3: max value of inner box after 3 pixel smoothing
                     #must be greater than median+1*sigma of outer box
                     #Don't let first point fail this test
-                    if (j != 0 and max(smooth1dCPU(x,3,1)) < arraymedian(outerbox) + outerbox.std()):
+                    if (j != 0 and np.max(smooth1dCPU(x,3,1)) < arraymedian(outerbox) + outerbox.std()):
                         noData = True
                     #If first iteration break
                     if (noData and j == 0):
@@ -4384,17 +4385,17 @@ class rectifyProcess(fatboyProcess):
                     #Sum 11 pixel box and fit 1-d Gaussian
                     #Use 11 instead of 5 to wash out noise more and obtain better fit
                     if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                        x = sum((slitm)[ys[j]-step:ys[j]+step+1,xlo:xhi], 0, dtype=float64)
+                        x = np.sum((slitm)[ys[j]-step:ys[j]+step+1,xlo:xhi], 0, dtype=np.float64)
                     elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                        x = sum((slitm)[xlo:xhi,ys[j]-step:ys[j]+step+1], 1, dtype=float64)
+                        x = np.sum((slitm)[xlo:xhi,ys[j]-step:ys[j]+step+1], 1, dtype=np.float64)
                     if (len(x) < 3*skybox):
                         continue
                     x[x<0] = 0
 
                     #Initial guesses for Gaussian fit
-                    p = zeros(4, dtype=float64)
-                    p[0] = max(x[skybox:-skybox])
-                    p[1] = (where(x == p[0]))[0][0]+xlo
+                    p = np.zeros(4, dtype=np.float64)
+                    p[0] = np.max(x[skybox:-skybox])
+                    p[1] = (np.where(x == p[0]))[0][0]+xlo
                     p[2] = gaussWidth
                     p[3] = gpu_arraymedian(x.copy())
                     if (abs(p[1]-currX) > skybox):
@@ -4453,9 +4454,9 @@ class rectifyProcess(fatboyProcess):
                         #Compare current x fit value to weighted avg instead of just
                         #previous value.
                         for i in range(len(lastXs)):
-                            wavg += lastXs[i]/sqrt(abs(lastYs[i]-ys[j]))
-                            wavgy += lastYs[i]/sqrt(abs(lastYs[i]-ys[j]))
-                            wavgDivisor += 1./sqrt(abs(lastYs[i]-ys[j]))
+                            wavg += lastXs[i]/math.sqrt(abs(lastYs[i]-ys[j]))
+                            wavgy += lastYs[i]/math.sqrt(abs(lastYs[i]-ys[j]))
+                            wavgDivisor += 1./math.sqrt(abs(lastYs[i]-ys[j]))
                         if (wavgDivisor != 0):
                             wavg = wavg/wavgDivisor
                             wavgy = wavgy/wavgDivisor
@@ -4465,12 +4466,12 @@ class rectifyProcess(fatboyProcess):
                             wavgy = currY
                         #More than 50 pixels in deltaY between weight average of last 10
                         #datapoints and current Y
-                        #And not the discontinuity in middle of ys where we jump from end back to center
+                        #And not the discontinuity in middle of ys np.where we jump from end back to center
                         #because abs(ys[j]-ys[j-1]) == step
                         if (abs(ys[j]-ys[j-1]) == step and abs(wavgy-ys[j]) > 50):
                             if (len(lastXs) > 1):
                                 #Fit slope to lastXs
-                                lin = leastsq(linResiduals, [0.,0.], args=(array(lastYs),array(lastXs)))
+                                lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastYs),np.array(lastXs)))
                                 slope = lin[0][1]
                             else:
                                 #Only 1 datapoint, use +/- maxSlope as slope
@@ -4480,11 +4481,11 @@ class rectifyProcess(fatboyProcess):
                             #Calculate guess for refX and max acceptable error
                             #err = 1+maxSlope*deltaY, with a max value of 3.
                             refX = wavg+slope*(ys[j]-wavgy)
-                            maxerr = min(1+int(abs(ys[j]-wavgy)*.02),max(3,10*maxSlope))
+                            maxerr = min(1+int(abs(ys[j]-wavgy)*.02),max(3, 10*maxSlope))
                         else:
                             if (len(lastXs) > 2):
                                 #Fit slope to lastXs
-                                lin = leastsq(linResiduals, [0.,0.], args=(array(lastYs),array(lastXs)))
+                                lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastYs),np.array(lastXs)))
                                 slope = lin[0][1]
                             else:
                                 #Less than 4 datapoints, use +/-maxSlope as slope
@@ -4494,7 +4495,7 @@ class rectifyProcess(fatboyProcess):
                             #Calculate guess for refX and max acceptable error
                             #0.5 <= maxerr <= 2 in this case.  Use slope*50 if it falls in that range
                             refX = wavg+slope*(ys[j]-wavgy)
-                            maxerr = max(min(abs(slope*50),max(2,10*maxSlope)),0.5)
+                            maxerr = max(min(abs(slope*50),max(2, 10*maxSlope)),0.5)
                         #Discontinuity point in ys. Keep if within +/- 1 (or step*maxSlope)
                         if (ys[j] == yinit+step and abs(lsq[0][1]-currX) < max(step*abs(maxSlope), 1)):
                             #update currX, currY, append to all lists
@@ -4542,12 +4543,12 @@ class rectifyProcess(fatboyProcess):
                 #Find outliers > 2.5 sigma in peak values and remove them
                 #First store first value as xout
                 currXout = xcoords[0]
-                peaks = array(peaks)
+                peaks = np.array(peaks)
                 peakmed = arraymedian(peaks)
                 peaksd = peaks.std()
                 b = (peaks > peakmed-2.5*peaksd)*(peaks < peakmed+2.5*peaksd)
-                xcoords = array(xcoords)[b]
-                ycoords = array(ycoords)[b]
+                xcoords = np.array(xcoords)[b]
+                ycoords = np.array(ycoords)[b]
 
                 #Check coverage fraction
                 if (len(xcoords) < 3):
@@ -4561,7 +4562,7 @@ class rectifyProcess(fatboyProcess):
 
                 #Fit 2nd order order polynomial to datapoints, X = f(Y)
                 order = 2
-                p = zeros(order+1, float64)
+                p = np.zeros(order+1, np.float64)
                 p[0] = xcoords[0]
                 try:
                     lsq = leastsq(polyResiduals, p, args=(ycoords,xcoords,order))
@@ -4572,7 +4573,7 @@ class rectifyProcess(fatboyProcess):
                 slitxprime = polyFunction(lsq[0], ycoords, order)
                 xresid = slitxprime-xcoords
                 #Remove outliers and refit
-                b = abs(xresid) < xresid.mean()+2.5*xresid.std()
+                b = np.abs(xresid) < xresid.mean()+2.5*xresid.std()
                 xcoords = xcoords[b]
                 ycoords = ycoords[b]
                 if (self._fdb._verbosity == fatboyLog.VERBOSE):
@@ -4605,7 +4606,7 @@ class rectifyProcess(fatboyProcess):
                                 continue
                             for yi in range(yval-1,yval+2):
                                 for xi in range(xval-1,xval+2):
-                                    dist = sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
+                                    dist = np.sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
                                     qaData[yi,xi] = qavalue/((1+dist)**2)
                     elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                         for i in range(len(xcoords)):
@@ -4615,22 +4616,22 @@ class rectifyProcess(fatboyProcess):
                                 continue
                             for yi in range(yval-1,yval+2):
                                 for xi in range(xval-1,xval+2):
-                                    dist = sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
+                                    dist = np.sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
                                     qaData[xi,yi] = qavalue/((1+dist)**2)
-                    inys = arange(min(ys), max(ys)+1)
+                    inys = np.arange(np.min(ys), np.max(ys)+1)
                     outxs = polyFunction(lsq[0], inys+ylo, order)
 
                     #Mask out line based on FWHM and 2nd order fit to this individual line
                     if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                        xind = arange(lineMask.size).reshape(lineMask.shape) % lineMask.shape[1]
+                        xind = np.arange(lineMask.size).reshape(lineMask.shape) % lineMask.shape[1]
                         outxs = outxs.reshape((outxs.size,1))
-                        b = (xind[inys,:] >= int32(outxs-gaussWidth))*(xind[inys,:] <= int32(outxs+gaussWidth+0.5))
+                        b = (xind[inys,:] >= np.int32(outxs-gaussWidth))*(xind[inys,:] <= np.int32(outxs+gaussWidth+0.5))
                         tempMask = lineMask[inys, :]
                         tempMask[b] = 0
                         lineMask[inys, :] = tempMask
                     elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                        xind = arange(lineMask.size).reshape(lineMask.shape)//lineMask.shape[1]
-                        b = (xind[:,inys] >= int32(outxs-gaussWidth))*(xind[:,inys] <= int32(outxs+gaussWidth+0.5))
+                        xind = np.arange(lineMask.size).reshape(lineMask.shape)//lineMask.shape[1]
+                        b = (xind[:,inys] >= np.int32(outxs-gaussWidth))*(xind[:,inys] <= np.int32(outxs+gaussWidth+0.5))
                         tempMask = lineMask[:, inys]
                         tempMask[b] = 0
                         lineMask[:, inys] = tempMask
@@ -4639,7 +4640,7 @@ class rectifyProcess(fatboyProcess):
                     print("\t\tX Center: "+formatNum(currXout)+"\t Yref: "+str(ys[0])+"\t Cov. Frac: "+formatNum(covfrac))
                     self._log.writeLog(__name__, "X Center: "+formatNum(currXout)+"\t Yref: "+str(ys[0])+"\t Cov. Frac: "+formatNum(covfrac), printCaller=False, tabLevel=2, verbosity=fatboyLog.VERBOSE)
 
-            #write_fits_file('linemask.fits',lineMask,int32)
+            #write_fits_file('linemask.fits',lineMask,np.int32)
             #write_fits_file('masked.fits',slit*lineMask)
             if (nlines == 0):
                 print("rectifyProcess::traceMOSSkylineRectification> Warning: Could not trace out any skylines in slit "+str(slitidx+1))
@@ -4648,9 +4649,9 @@ class rectifyProcess(fatboyProcess):
             print("\tSlit "+str(slitidx+1)+": Successfully traced out "+str(nlines)+ " skylines.  Fitting transformation...")
             self._log.writeLog(__name__, "\tSlit "+str(slitidx+1)+": Successfully traced out "+str(nlines)+ " skylines.  Fitting transformation...", printCaller=False, tabLevel=1)
             #Convert to arrays
-            slitxin = array(slitxin)
-            slityin = array(slityin)
-            slitxout = array(slitxout)
+            slitxin = np.array(slitxin)
+            slityin = np.array(slityin)
+            slitxout = np.array(slitxout)
 
             for seg in range(n_segments):
                 xstride = xsize//n_segments
@@ -4669,7 +4670,7 @@ class rectifyProcess(fatboyProcess):
                 terms = 0
                 for j in range(fit_order+2):
                     terms+=j
-                p = zeros(terms)
+                p = np.zeros(terms)
                 #Initial guess is f(x_in, y_in) = x_in
                 p[1] = 1
                 if (len(seg_slitxin) <= terms):
@@ -4699,10 +4700,10 @@ class rectifyProcess(fatboyProcess):
                 sigThresh = 2
                 niter = 0
                 norig = len(seg_slitxout)
-                bad = where(abs(xresid-residmean)/residstddev > sigThresh)
+                bad = np.where(np.abs(xresid-residmean)/residstddev > sigThresh)
                 while (len(bad[0]) > 0):
                     niter += 1
-                    good = (abs(xresid-residmean)/residstddev <= sigThresh)
+                    good = (np.abs(xresid-residmean)/residstddev <= sigThresh)
                     seg_slitxin = seg_slitxin[good]
                     seg_slityin = seg_slityin[good]
                     seg_slitxout = seg_slitxout[good]
@@ -4720,7 +4721,7 @@ class rectifyProcess(fatboyProcess):
                     if (niter > 2):
                         #Gradually increase sigma threshold
                         sigThresh += 0.2
-                    bad = where(abs(xresid-residmean)/residstddev > sigThresh)
+                    bad = np.where(np.abs(xresid-residmean)/residstddev > sigThresh)
                 print("\t\tAfter "+str(niter)+" passes, kept "+str(len(seg_slitxout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]))
                 print("\t\tData - fit mean: "+formatNum(residmean)+"\tsigma: "+formatNum(residstddev))
                 self._log.writeLog(__name__, "After "+str(niter)+" passes, kept "+str(len(seg_slitxout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=2)

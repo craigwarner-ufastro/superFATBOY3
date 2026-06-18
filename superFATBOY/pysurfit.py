@@ -1,3 +1,4 @@
+import numpy as np
 #!/usr/bin/python -u
 import scipy
 from scipy.optimize import leastsq
@@ -37,13 +38,13 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
     if (mode == MODE_FITS):
         if (os.access(input, os.F_OK)):
             outimage = pyfits.open(input)
-            data = outimage[mef].data.astype(float32)
+            data = outimage[mef].data.astype(np.float32)
         else:
             print("pysurfit> Could not find file "+input)
             write_fatboy_log(log, logtype, "Could not find file "+input, __name__)
             return None
     elif (mode == MODE_RAW):
-        data = input.astype(float32)
+        data = input.astype(np.float32)
     elif (mode == MODE_FDU):
         data = input.getData()
     elif (mode == MODE_FDU_DIFFERENCE):
@@ -86,7 +87,7 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
 
     #Setup input mask if not given already
     if (inmask is None):
-        inmask = ones(d2.shape).astype(bool)
+        inmask = np.ones(d2.shape).astype(bool)
     else:
         inmask = (inmask.reshape(nx//bin,bin,ny//bin,bin,).sum(1).sum(2)//bin//bin).astype(bool)
     if (_verbosity == fatboyLog.VERBOSE):
@@ -94,10 +95,10 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
     tt = time.time()
 
     #Setup input arrays to calculate surface
-    xin = arange(ny*nx//bin//bin) % (nx//bin)*bin+(bin//2-0.5)
-    yin = arange(ny*nx//bin//bin) // (nx//bin)*bin+(bin//2-0.5)
-    xin = xin.astype(float64)
-    yin = yin.astype(float64)
+    xin = np.arange(ny*nx//bin//bin) % (nx//bin)*bin+(bin//2-0.5)
+    yin = np.arange(ny*nx//bin//bin) // (nx//bin)*bin+(bin//2-0.5)
+    xin = xin.astype(np.float64)
+    yin = yin.astype(np.float64)
     if (_verbosity == fatboyLog.VERBOSE):
         print("\tInput Arrays: ",time.time()-tt,"; Total: ",time.time()-t)
     tt = time.time()
@@ -109,10 +110,10 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
     terms = 0
     for j in range(order+2):
         terms+=j
-    p = zeros(terms)
+    p = np.zeros(terms)
     p[0] = d2[inmask].mean()
 
-    keep = ones(d2.shape).astype(bool)
+    keep = np.ones(d2.shape).astype(bool)
     nkeep = (keep*inmask).sum()
     nkeepold = 0
     curriter = 0
@@ -147,10 +148,10 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
                 n+=1
         resid = d2b-fit[b]
         tempmean = resid.sum()/nkeep
-        tempstddev = sqrt((resid*resid).sum()*(1./(nkeep-1))-tempmean*tempmean*nkeep/(nkeep-1))
+        tempstddev = np.sqrt((resid*resid).sum()*(1./(nkeep-1))-tempmean*tempmean*nkeep/(nkeep-1))
         print("\t\tData - fit    mean: "+str(tempmean) + "   sigma: "+str(tempstddev))
         write_fatboy_log(log, logtype, "Data - fit    mean: "+str(tempmean) + "   sigma: "+str(tempstddev), __name__, printCaller=False, tabLevel=1)
-        keep *= logical_and((d2-fit-tempmean)*(1./tempstddev) <= upper, (d2-fit-tempmean)*(1./tempstddev) >= -lower)
+        keep *= np.logical_and((d2-fit-tempmean)*(1./tempstddev) <= upper, (d2-fit-tempmean)*(1./tempstddev) >= -lower)
         curriter+=1
         nkeepold = nkeep
         nkeep = (keep*inmask).sum()
@@ -160,8 +161,8 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
         tt = time.time()
 
     #reconstruct fit from original data size
-    xin = arange(ny*nx).reshape(ny,nx) % nx + 0.
-    yin = arange(ny*nx).reshape(ny,nx) // nx + 0.
+    xin = np.arange(ny*nx).reshape(ny,nx) % nx + 0.
+    yin = np.arange(ny*nx).reshape(ny,nx) // nx + 0.
     fit = data*0.
     fit += lsq[0][0]
     n = 1
@@ -179,7 +180,7 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
         if (mode == MODE_FITS):
             outimage[mef].data = fit
         elif (mode == MODE_RAW):
-            hdu = pyfits.PrimaryHDU(float32(fit))
+            hdu = pyfits.PrimaryHDU(fit.astype(np.float32))
             outimage = pyfits.HDUList([hdu])
         elif (mode == MODE_FDU or mode == MODE_FDU_TAG):
             outimage = pyfits.open(input.getFilename())

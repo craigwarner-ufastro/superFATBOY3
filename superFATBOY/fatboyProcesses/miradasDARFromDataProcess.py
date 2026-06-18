@@ -1,3 +1,4 @@
+import numpy as np
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
@@ -20,7 +21,7 @@ class miradasDARFromDataProcess(fatboyProcess):
             slitlet_number = int(slitlet_number)
 
         if (doAllSlitlets):
-            slitlets = arange(1, nslits+1)
+            slitlets = np.arange(1, nslits+1)
         else:
             slitlets = [slitlet_number]
 
@@ -36,7 +37,7 @@ class miradasDARFromDataProcess(fatboyProcess):
         for islit in slitlets:
             if (fdu.hasProperty("psf_"+str(islit))):
                 psf = fdu.getProperty("psf_"+str(islit))
-                refidx = where(psf[:,1] != -1)[0][0]
+                refidx = np.where(psf[:,1] != -1)[0][0]
                 refwave = psf[refidx, 0]
                 dar_i = psf[:,1]-psf[refidx, 1]
                 fdu.tagDataAs("dar_slit_"+str(islit), dar_i)

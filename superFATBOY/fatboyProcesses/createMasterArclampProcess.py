@@ -12,6 +12,9 @@ class createMasterArclampProcess(fatboyProcess):
 
     #Convenience method so that code doesn't have to be rewritten several times in getCalib
     def createMasterArclamp(self, fdu, lamps, properties):
+        if not lamps:
+            print("createMasterArclampProcess::createMasterArclamp> ERROR: No arclamps provided!")
+            return None
         #imcombine individual arclamp files
         masterLamp = None
         mlfilename = None
@@ -87,7 +90,7 @@ class createMasterArclampProcess(fatboyProcess):
                 #Method is named for flat but reuse same method
                 nm = noisemaps_mflat_dome_on_off_gpu(data, offData, ncomb1, ncomb2)
             else:
-                nm = sqrt(abs(data/ncomb1)+abs(offData/ncomb2))
+                nm = np.sqrt(np.abs(data/ncomb1)+np.abs(offData/ncomb2))
             #Now subtract off lamps
             data -= offData
             offData = None #free memory
@@ -110,7 +113,7 @@ class createMasterArclampProcess(fatboyProcess):
             if (self._fdb.getGPUMode()):
                 nm = createNoisemap(masterLamp.getData(), ncomb)
             else:
-                nm = sqrt(masterLamp.getData()/ncomb)
+                nm = np.sqrt(masterLamp.getData()/ncomb)
             masterLamp.tagDataAs("noisemap", nm)
         #Set properties here
         masterLamp.setType("master_arclamp", True)

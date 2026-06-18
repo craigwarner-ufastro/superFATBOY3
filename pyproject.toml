@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "numpy"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "superFATBOY3"
+version = "2.3.6"
+dependencies = [
+    "numpy",
+    "scipy",
+    "astropy",
+    "cupy-cuda12x"  # Optional: lists dependencies explicitly
+]

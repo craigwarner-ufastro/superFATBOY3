@@ -1,3 +1,4 @@
+import numpy as np
 from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY.fatboyProcess import fatboyProcess
 hasCuda = True
@@ -6,15 +7,14 @@ try:
     if (not superFATBOY.gpuEnabled()):
         hasCuda = False
     else:
-        import pycuda.driver as drv
-        if (not superFATBOY.threaded()):
-            #If not threaded mode, import autoinit.  Otherwise assume context exists.
-            #Code will crash if in threaded mode and context does not exist.
-            import pycuda.autoinit
-        from pycuda.compiler import SourceModule
+        import cupy as cp
+        #if (not superFATBOY.threaded()):
+        #    #If not threaded mode, import autoinit.  Otherwise assume context exists.
+        #    #Code will crash if in threaded mode and context does not exist.
+        #    pass
         from superFATBOY.fatboyLibs import fatboy_mod, get_fatboy_mod
 except Exception:
-    print("removeCosmicRayProcess> Warning: PyCUDA not installed")
+    print("removeCosmicRayProcess> Warning: CuPy not installed")
     hasCuda = False
 from numpy import *
 import os, time
@@ -61,8 +61,8 @@ class removeCosmicRaysProcess(fatboyProcess):
             sqcols = sq[0:nx-2,:]+sq[1:nx-1,:]+sq[2:nx,:]
             sqcols = sqcols[:,0:ny-2]+sqcols[:,1:ny-1]+sqcols[:,2:ny]
             sqcols = (sqcols-sq[1:nx-1,1:ny-1])/8.
-            sd = sqrt(sqcols-cols**2)
-            b = where(abs(data[1:nx-1,1:ny-1]-cols) > 5*sd)
+            sd = np.sqrt(sqcols-cols**2)
+            b = np.where(np.abs(data[1:nx-1,1:ny-1]-cols) > 5*sd)
             newData = data.copy()
             ict = 0
             xs = b[0]+1
@@ -71,7 +71,7 @@ class removeCosmicRaysProcess(fatboyProcess):
                 j = xs[i]
                 l = ys[i]
                 ict+=1
-                temp = array([data[j-1,l-1],data[j,l-1],data[j+1,l-1], data[j-1,l],data[j+1,l],data[j-1,l+1],data[j,l+1],data[j+1,l+1]])
+                temp = np.array([data[j-1,l-1],data[j,l-1],data[j+1,l-1], data[j-1,l],data[j+1,l],data[j-1,l+1],data[j,l+1],data[j+1,l+1]])
                 temp.sort()
                 newData[j,l] = (temp[3]+temp[4])/2.0
             data = newData
@@ -90,21 +90,21 @@ class removeCosmicRaysProcess(fatboyProcess):
         else:
             fatboy_mod = get_fatboy_mod()
         cosmicRayRemoval = fatboy_mod.get_function("cosmicRayRemoval_float")
-        output = empty(data.shape, float32)
+        output = np.empty(data.shape, np.float32)
         rows = data.shape[0]
         cols = data.shape[1]
-        ict = zeros(1, int32)
+        ict = np.zeros(1, np.int32)
         blocks = data.size//512
         if (data.size % 512 != 0):
             blocks += 1
         totict = 0
         for j in range(npass):
-            cosmicRayRemoval(drv.In(data), drv.Out(output), int32(rows), int32(cols), drv.InOut(ict), grid=(blocks,1), block=(block_size,1,1))
+            cosmicRayRemoval((blocks,1), (block_size,1,1), (cp.asarray(data), cp.asarray(output), np.int32(rows), np.int32(cols), cp.asarray(ict)))
             print("\tPass "+str(j)+": "+str(ict)+" replaced.")
             self._log.writeLog(__name__, "Image "+fdu.getFullId()+", Pass "+str(j)+": "+str(ict)+" replaced.")
             data = output
             totict += ict[0]
-            ict = zeros(1, int32)
+            ict = np.zeros(1, np.int32)
         print("Cosmic Ray Removal time: "+str(time.time()-t))
         fdu.setHistory('cosmic_rays_removed', totict)
         return output

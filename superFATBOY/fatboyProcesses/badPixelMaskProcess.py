@@ -113,16 +113,16 @@ class badPixelMaskProcess(fatboyProcess):
             (ny, nx) = fdu.getShape()
             gpu_bad_pixel_mask = self.bpm_mod.get_function("gpu_bad_pixel_mask")
 
-            # Ensure input is float32 and on device
+            # Ensure input is np.float32 and on device
             input_data = cp.asarray(sourceFDU.getData(), dtype=np.float32)
-            output_data = cp.empty(fdu.getShape(), dtype=np.int32)
+            output_data = cp.np.empty(fdu.getShape(), dtype=np.int32)
 
             blocks = (output_data.size + block_size - 1) // block_size
 
             gpu_bad_pixel_mask(
                 (blocks,), (block_size,),
                 (output_data, input_data, np.int32(nx), np.int32(ny),
-                 np.float32(lo), np.float32(hi), np.int32(edge_reject), np.float32(radius_reject))
+                 lo.astype(np.float32), hi.astype(np.float32), edge_reject.astype(np.int32), radius_reject.astype(np.float32))
             )
             data = output_data.get().astype(bool)
         else:
@@ -242,7 +242,7 @@ class badPixelMaskProcess(fatboyProcess):
                 masterFlat.writeTo(mffilename)
             # Update FDU with new median value of master flat
             scaleFactor = masterFlat.getHistory('renormalized_bpm')
-            fdu.updateData(np.float32(fdu.getData()) * scaleFactor)
+            fdu.updateData(fdu.getData().astype(np.float32) * scaleFactor)
             fdu.setHistory('rescaled_for_bad_pixels', scaleFactor)
         # Apply bad pixel mask
         fdu.applyBadPixelMask(badPixelMask)

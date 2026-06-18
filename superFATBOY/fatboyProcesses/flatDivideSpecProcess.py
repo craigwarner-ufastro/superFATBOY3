@@ -1,3 +1,8 @@
+try:
+    import cupy as cp
+except ImportError:
+    cp = None
+import numpy as np
 from superFATBOY.fatboyDataUnit import fatboyDataUnit
 from superFATBOY.fatboyImage import fatboyImage
 from superFATBOY.fatboyLibs import *
@@ -102,7 +107,7 @@ class flatDivideSpecProcess(fatboyProcess):
             if (self._fdb.getGPUMode()):
                 nm = noisemaps_mflat_dome_on_off_gpu(data, offData, ncomb1, ncomb2)
             else:
-                nm = sqrt(abs(data/ncomb1)+abs(offData/ncomb2))
+                nm = np.sqrt(np.abs(data/ncomb1)+np.abs(offData/ncomb2))
             #Now subtract off flats
             data -= offData
             offData = None #free memory
@@ -126,7 +131,7 @@ class flatDivideSpecProcess(fatboyProcess):
             if (self._fdb.getGPUMode()):
                 nm = createNoisemap(masterFlat.getData(), ncomb)
             else:
-                nm = sqrt(abs(masterFlat.getData()/ncomb))
+                nm = np.sqrt(np.abs(masterFlat.getData()/ncomb))
             masterFlat.tagDataAs("noisemap", nm)
         else:
             print("flatDivideSpecProcess::createMasterFlat> Error: invalid flat_method: "+flatmethod)
@@ -362,9 +367,9 @@ class flatDivideSpecProcess(fatboyProcess):
             else:
                 fatboy_mod = get_fatboy_mod()
             divArrays = fatboy_mod.get_function("divideArrays_float")
-            divArrays(drv.InOut(image), drv.In(flat), int32(image.size), grid=(blocks,1), block=(block_size,1,1))
+            divArrays((blocks,1), (block_size,1,1), (cp.asarray(image), cp.asarray(flat), np.int32(image.size)))
         else:
-            #find points where flat is zero and set them to 1 to avoid divideByZeroException
+            #find points np.where flat is zero and set them to 1 to avoid divideByZeroException
             flatzeros = flat == 0
             flat[flatzeros] = 1
             image /= flat
@@ -725,16 +730,16 @@ class flatDivideSpecProcess(fatboyProcess):
             if (self._fdb.getGPUMode()):
                 nm = createNoisemap(masterFlat.getData(), ncomb)
             else:
-                nm = sqrt(masterFlat.getData()/ncomb)
+                nm = np.sqrt(masterFlat.getData()/ncomb)
             masterFlat.tagDataAs("noisemap", nm)
         #Get this FDU's noisemap
         nm = fdu.getData(tag="noisemap")
-        #Propagate noisemaps.  For division dz/z = sqrt((dx/x)^2 + (dy/y)^2)
+        #Propagate noisemaps.  For division dz/z = np.sqrt((dx/x)^2 + (dy/y)^2)
         if (self._fdb.getGPUMode()):
             #noisemaps_fd_gpu(fd_image, pre-fd_noisemap, pre-fd_image, mflat noisemap, mflat
             nm = noisemaps_fd_gpu(fdu.getData(), fdu.getData(tag="noisemap"), fdu.getData("cleanFrame"), masterFlat.getData("noisemap"), masterFlat.getData())
         else:
-            nm = abs(fdu.getData())*sqrt(fdu.getData(tag="noisemap")**2/fdu.getData("cleanFrame")**2 + masterFlat.getData("noisemap")**2/masterFlat.getData()**2)
+            nm = np.abs(fdu.getData())*np.sqrt(fdu.getData(tag="noisemap")**2/fdu.getData("cleanFrame")**2 + masterFlat.getData("noisemap")**2/masterFlat.getData()**2)
             nm[fdu.getData("cleanFrame") == 0] = 0
             nm[masterFlat.getData() == 0] = 0
         fdu.tagDataAs("noisemap", nm)

@@ -1,3 +1,4 @@
+import numpy as np
 ## @package superFATBOY
 #  Documentation for pipeline.
 #
@@ -244,37 +245,37 @@ class fatboyDataUnit:
         if (self.badPixelMask is None):
             #Create a bad pixel mask with no bad pixels
             #Do not need to save it as class member in this case
-            data = zeros(self._shape, bool)
+            data = np.zeros(self._shape, bool)
             bpmname = "badPixelMasks/BPM-"+str(self.filter)+"-"+str(self.nreads)+"rd-"+str(self._id)
             return fatboyCalib("fatboyDataUnit:getBadPixelMask", fatboyDataUnit.FDU_TYPE_BAD_PIXEL_MASK, self, data=data, tagname=bpmname, log=self._log)
         return self.badPixelMask
     #end getBadPixelMask
 
     ## Get and return data. Only read from disk if necessary.
-    def getData(self, tag=None):
+    def getData(self, tag=None, force_cpu=False):
         if (tag is not None and self.hasProperty(tag)):
             #Asking for data from a specific step -- e.g. preSkySubtraction for use in creating master skies
-            return self.getProperty(tag)
-        if (self._data is None):
+            data = self.getProperty(tag)
+        elif (self._data is None):
             #Read from disk
             t = time.time()
             image = pyfits.open(self.filename)
             self._data = image[self._mef].data
             if (self._data.dtype == 'uint16'):
-                self._data = self._data.astype(int32)
+                self._data = self._data.astype(np.int32)
             if (self.hasHeaderValue('BZERO')):
                 (pname, version) = getPyfitsVersion()
                 if (pname == "astropy" and version < '1.1'):
                     self._data = self._data+self.getHeaderValue('BZERO')
                 elif (version < '3.2'):
                     self._data = self._data+self.getHeaderValue('BZERO')
-                #Always remove BZERO since it is now int32 data
+                #Always remove BZERO since it is now np.int32 data
                 self.removeHeaderKeyword('BZERO')
             if (not self._data.dtype.isnative):
                 #Byteswap
                 self._data = self._data.byteswap()
-                self._data = self._data.newbyteorder('<')
-                self._data.dtype.newbyteorder('<')
+                self._data = self._data.view(self._data.dtype.newbyteorder('<'))
+
             self._shape = self._data.shape
             self.reformatData() #in case actual data disagrees with header, check to reformat data from (1,2048,2048) to (2048,2048) here too
             image.close()
@@ -288,11 +289,18 @@ class fatboyDataUnit:
             if (self._fdb is not None):
                 self._fdb.totalReadDataTime += (time.time()-t)
                 self._fdb.checkMemoryManagement(self) #check memory status
+            data = self._data
+        else:
+            data = self._data
+            
         if (self.getObsType(True) == self.FDU_TYPE_BAD_PIXEL_MASK):
             #bad pixel masks should be type bool
-            if (self._data.dtype != dtype("bool")):
-                self._data = self._data.astype("bool")
-        return self._data
+            if (data.dtype != np.dtype("bool")):
+                data = data.astype("bool")
+
+        if force_cpu and hasattr(data, 'get'):
+            data = data.get()
+        return data
     #end getData
 
     ## return current _filename
@@ -390,7 +398,7 @@ class fatboyDataUnit:
         return self._medVal
     #end getMedian
 
-    ## Base class returns empty list.  Can be overridden to return a list of fatboyDataUnit (or subclass) representing multiple data extensions.
+    ## Base class returns np.empty list.  Can be overridden to return a list of fatboyDataUnit (or subclass) representing multiple data extensions.
     ## Each should have a different fdu.section value.  For instance, newfirm has 4 detectors or CIRCE has multiple nramps.
     def getMultipleExtensions(self):
         return []
@@ -418,12 +426,11 @@ class fatboyDataUnit:
                 infile = "temp-fatboy/property_"+key+"_"+self.getFullId()
                 if (os.access(infile, os.F_OK)):
                     image = pyfits.open(infile)
-                    temp = array(image[0].data)
+                    temp = np.array(image[0].data)
                     if (not temp.dtype.isnative):
                         #Byteswap
                         temp = temp.byteswap()
-                        temp = temp.newbyteorder('<')
-                        temp.dtype.newbyteorder('<')
+                        temp = temp.view(temp.dtype.newbyteorder('<'))
                     image.close()
                     del image
                     #Return data here -- do not re-add to properties for memory management purposes
@@ -931,7 +938,7 @@ class fatboyDataUnit:
                 self._header[self._keywords['obstype_keyword']] = self.obstype
     #end setType
 
-    #Tag an array as data saved at a particular step
+    #Tag an np.array as data saved at a particular step
     def tagDataAs(self, tagname, data=None):
         if (data is None):
             #tag current data
@@ -944,8 +951,7 @@ class fatboyDataUnit:
             if (not data.dtype.isnative):
                 #Byteswap
                 data = data.byteswap()
-                data = data.newbyteorder('<')
-                data.dtype.newbyteorder('<')
+                data = data.view(data.dtype.newbyteorder('<'))
             self.setProperty(tagname, data)
     #end tagDataAs
 
@@ -1004,7 +1010,7 @@ class fatboyDataUnit:
     def updateFilenames(self):
         if (not self.hasHistory('origFilename')):
             #First time this method is called.  Current filename is still original filename
-            #Create empty list of previous filenames which will later be appended
+            #Create np.empty list of previous filenames which will later be appended
             self.setHistory('origFilename', self.filename)
             self.setHistory('previousFilenames', [])
         else:
@@ -1022,7 +1028,7 @@ class fatboyDataUnit:
                 #Update multiple properties from a MEF
                 for j in range(len(tag)):
                     if (len(image) > j+1):
-                        #Assume empty data in primary extension
+                        #Assume np.empty data in primary extension
                         if (tag[j] in image[j+1].header):
                             #tagname is written to header, tag as this name
                             self.tagDataAs(image[j+1].header[tag[j]], data=image[j+1].data)
@@ -1049,8 +1055,8 @@ class fatboyDataUnit:
         if (not self._data.dtype.isnative):
             #Byteswap
             self._data = self._data.byteswap()
-            self._data = self._data.newbyteorder('<')
-            self._data.dtype.newbyteorder('<')
+            self._data = self._data.view(self._data.dtype.newbyteorder('<'))
+
         if (headerTag is not None):
             self.setProperty(headerTag, image[0].header)
         else:
@@ -1123,32 +1129,37 @@ class fatboyDataUnit:
         filename = self.filename
         if (not os.access(filename, os.F_OK) and self.hasHistory('sourceFilename')):
             filename = self.getHistory('sourceFilename')
+        
+        data = self.getData(tag=tag)
+        if (hasCuda and isinstance(data, cp.ndarray)):
+            data = data.get()
+
         if (not os.access(filename, os.F_OK)):
             #source file does not exist -- can happen in DFP
-            dt = self.getData(tag=tag).dtype
-            if (self.getObsType(True) == self.FDU_TYPE_BAD_PIXEL_MASK or self.getData(tag=tag).dtype == 'bool'):
+            dt = data.dtype
+            if (self.getObsType(True) == self.FDU_TYPE_BAD_PIXEL_MASK or data.dtype == bool):
                 #Convert to 8 bit unsigned int for bad pixel mask since FITS doesn't support bool
-                dt = uint8
+                dt = np.uint8
             updateHeaderEntry(self._header, 'FILENAME', outfile)
             if (outfile.rfind('/') != -1):
                 updateHeaderEntry(self._header, 'FILENAME', outfile[outfile.rfind('/')+1:])
-            return write_fits_file(outfile, self.getData(tag=tag), dtype=dt, header=self._header, headerExt=headerExt, log=self._log)
+            return write_fits_file(outfile, data, dtype=dt, header=self._header, headerExt=headerExt, log=self._log)
         try:
             image = pyfits.open(filename)
             if (self.getObsType(True) == self.FDU_TYPE_BAD_PIXEL_MASK):
                 #Convert to 8 bit unsigned int for bad pixel mask since FITS doesn't support bool
-                image[self._mef].data = self.getData(tag=tag).astype(uint8)
-            elif (self.getData(tag=tag).dtype == 'bool'):
+                image[self._mef].data = data.astype(np.uint8)
+            elif (data.dtype == bool):
                 #Convert to 8 bit unsigned int for bad pixel mask since FITS doesn't support bool
-                image[self._mef].data = self.getData(tag=tag).astype(uint8)
-            elif (self.getData(tag=tag).dtype == 'int64'):
+                image[self._mef].data = data.astype(np.uint8)
+            elif (data.dtype == np.int64):
                 #Convert to 32 bit int before saving
-                image[self._mef].data = self.getData(tag=tag).astype(int32)
-            elif (self.getData(tag=tag).dtype == 'float64'):
-                #Convert to 32 bit int before saving
-                image[self._mef].data = self.getData(tag=tag).astype(float32)
+                image[self._mef].data = data.astype(np.int32)
+            elif (data.dtype == np.float64):
+                #Convert to 32 bit float before saving
+                image[self._mef].data = data.astype(np.float32)
             else:
-                image[self._mef].data = self.getData(tag=tag)
+                image[self._mef].data = data
             #update header
             updateHeader(image[0].header, self._header)
             updateHeaderEntry(image[0].header, 'FILENAME', outfile)

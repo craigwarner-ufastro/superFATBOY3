@@ -105,7 +105,7 @@ extern "C" {
     n = array->dimensions[0];
     int ny = array->dimensions[1];
     k = n/2;
-    if (array->descr->type_num == PyArray_FLOAT) {
+    if (array->descr->type_num == NPY_FLOAT) {
       float* data = (float*)PyArray_DATA(array);
       k = (n-nhigh-nlow)/2+nlow;
       for (int j = 0; j < n; j++) {
@@ -137,7 +137,7 @@ extern "C" {
     int* slitmask = (int*)PyArray_DATA(smaskarray);
     float *medians = (float*)PyArray_DATA(medianarray);
 
-    if (array->descr->type_num == PyArray_FLOAT) {
+    if (array->descr->type_num == NPY_FLOAT) {
       float* data = (float*)PyArray_DATA(array);
       float *temp = data;
       int lastIdx = 0;
@@ -226,7 +226,7 @@ extern "C" {
     k = n/2;
     if (PyArray_ISBYTESWAPPED(array)) PyArray_Byteswap(array, true);
 
-    if (array->descr->type_num == PyArray_FLOAT) {
+    if (array->descr->type_num == NPY_FLOAT) {
       float* data = (float*)PyArray_DATA(array);
       if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
         float *temp = data;
@@ -283,7 +283,7 @@ extern "C" {
 	med = (double)(data[k]+data[k-1])/2;
       }
       if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) free(data); 
-    } else if (array->descr->type_num == PyArray_DOUBLE) {
+    } else if (array->descr->type_num == NPY_DOUBLE) {
       double* data = (double*)PyArray_DATA(array);
       if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
         double *temp = data;
@@ -340,7 +340,7 @@ extern "C" {
         med = (double)(data[k]+data[k-1])/2;
       }
       if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) free(data);
-    } else if (array->descr->type_num == PyArray_INT32) {
+    } else if (array->descr->type_num == NPY_INT32) {
       int* data = (int*)PyArray_DATA(array);
       if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
         int *temp = data;
@@ -397,7 +397,7 @@ extern "C" {
         med = (double)(data[k]+data[k-1])/2;
       }
       if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) free(data);
-    } else if (array->descr->type_num == PyArray_INT64) {
+    } else if (array->descr->type_num == NPY_INT64) {
       long* data = (long*)PyArray_DATA(array);
       if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX) {
         long *temp = data;

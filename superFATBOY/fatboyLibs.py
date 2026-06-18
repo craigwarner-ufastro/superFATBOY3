@@ -9,26 +9,19 @@ try:
     if (not superFATBOY.gpuEnabled()):
         hasCuda = False
     else:
-        import pycuda.driver as drv
-        import pycuda.tools
-        if (not superFATBOY.threaded()):
-            #If not threaded mode, import autoinit.  Otherwise assume context exists.
-            #Code will crash if in threaded mode and context does not exist.
-            import pycuda.autoinit
-        from pycuda.compiler import SourceModule
-        import pycuda.gpuarray as gpuarray
-        from pycuda.reduction import ReductionKernel
+        import cupy as cp
 except Exception:
-    print("fatboyLibs> WARNING: PyCUDA not installed!")
+    print("fatboyLibs> WARNING: CuPy not installed!")
     hasCuda = False
     superFATBOY.setGPUEnabled(False)
 
 from superFATBOY.fatboyLog import *
 from superFATBOY.gpu_arraymedian import *
 
-from numpy import *
 import numpy as np
 import scipy
+import scipy.signal
+import scipy.ndimage
 from scipy.optimize import leastsq
 try:
     import pyfits
@@ -36,6 +29,7 @@ except ImportError as ex:
     import astropy
     import astropy.io.fits as pyfits
     useAstropy = True
+import math
 import os, time
 import xml.dom.minidom
 from xml.dom.minidom import Node
@@ -52,7 +46,10 @@ nbr_values = blocks * block_size
 def get_fatboy_mod():
     fatboy_mod = None
     if (hasCuda and superFATBOY.gpuEnabled()):
-        fatboy_mod = SourceModule("""
+        fatboy_mod = cp.RawModule(code="""
+#define INT_MIN -2147483648
+#define INT_MAX 2147483647
+extern "C" {
 
       /***** Device functions ***/
 
@@ -164,9 +161,9 @@ def get_fatboy_mod():
           zp[2] = z[i]*z[i];
         }
         for (int j = 3; j <= order; j++) {
-          xp[j] = pow(xin[xi], j);
-          yp[j] = pow(yin[i], j);
-          zp[j] = pow(z[i], j);
+          xp[j] = powf((float)(xin[xi]), (float)(j));
+          yp[j] = powf((float)(yin[i]), (float)(j));
+          zp[j] = powf((float)(z[i]), (float)(j));
         }
         yout[i] = 0;
         for (int x = 0; x <= order; x++) {
@@ -354,7 +351,7 @@ def get_fatboy_mod():
 
       __global__ void fwhm2d_cube_float(float* data, int* flag, int depth, int nx, int ny, int estimateBackground, float* fwhms) {
         //estimate 2-d fwhm of data
-        //returned array contains fwhm_mean, fwhm_stddev, array of 4 FWHMs, background value used as zero level
+        //returned np.array contains fwhm_mean, fwhm_stddev, np.array of 4 FWHMs, background value used as zero level
         const int i = blockDim.x*blockIdx.x + threadIdx.x;
         if (i >= depth) return;
         if (flag[i] == 0) {
@@ -916,7 +913,7 @@ def get_fatboy_mod():
             x = data[i]*linCoeffs[0];
             for (int j = 1; j < nCoeffs; j++) {
                 n++;
-                x += linCoeffs[j] * pow(data[i], n);
+                x += linCoeffs[j] * powf((float)(data[i]), (float)(n));
             }
             data[i] = x;
         }
@@ -1144,6 +1141,7 @@ def get_fatboy_mod():
         const int i = blockDim.x*blockIdx.x + threadIdx.x;
         if (data[i] == val) atomicExch(&idx[0], i);
       }
+}
     """)
     return fatboy_mod
 #end get_fatboy_mod
@@ -1184,18 +1182,18 @@ def doItAll(fdu, params, log, linCoeffs=None, darkFdu=None, flatFdu=None, bpm=No
 
     #Get data
     data = fdu.getData()
-    if (data.dtype != float32):
-        data = float32(data)
+    if (data.dtype != np.float32):
+        data = data.astype(np.float32)
 
-    #Create empty output array
-    output = empty(data.shape, float32)
+    #Create np.empty output np.array
+    output = np.empty(data.shape, np.float32)
     rows = data.shape[0]
     cols = data.shape[1]
     blocks = data.size//512
     if (data.size % 512 != 0):
         blocks += 1
     #Steps
-    steps = zeros(4, int32)
+    steps = np.zeros(4, np.int32)
 
     #Coadds and nreads
     coaddRead = 1
@@ -1208,9 +1206,9 @@ def doItAll(fdu, params, log, linCoeffs=None, darkFdu=None, flatFdu=None, bpm=No
         nCoeffs = len(linCoeffs)
         if (nCoeffs != 1 or linCoeffs[0] != 1):
             steps[0] = 1
-            linCoeffs = float32(linCoeffs)
+            linCoeffs = linCoeffs.astype(np.float32)
     else:
-        linCoeffs = ones(1, float32)
+        linCoeffs = np.ones(1, np.float32)
 
     t3 = time.time()
 
@@ -1219,7 +1217,7 @@ def doItAll(fdu, params, log, linCoeffs=None, darkFdu=None, flatFdu=None, bpm=No
         masterDark = darkFdu.getData()
         steps[1] = 1
     else:
-        masterDark = zeros(1, float32)
+        masterDark = np.zeros(1, np.float32)
 
     #Flat division
     if (stepsToDo.get('flatDivide') and flatFdu is not None):
@@ -1228,18 +1226,18 @@ def doItAll(fdu, params, log, linCoeffs=None, darkFdu=None, flatFdu=None, bpm=No
         masterFlat = flatFdu.getData()
         steps[2] = 1
     else:
-        masterFlat = zeros(1, float32)
+        masterFlat = np.zeros(1, np.float32)
 
     #Bad pixel mask
     if (stepsToDo.get('badPixelMask') and bpm is not None):
-        bpm = int32(bpm)
+        bpm = bpm.astype(np.int32)
         steps[3] = 1
     else:
-        bpm = zeros(1, int32)
+        bpm = np.zeros(1, np.int32)
 
     t4 = time.time()
     #Run rawToFlatDivided
-    kernel(drv.In(data), drv.Out(output), drv.In(linCoeffs), int32(nCoeffs), float32(coaddRead), drv.In(masterDark), drv.In(masterFlat), drv.In(bpm), drv.In(steps), grid=(blocks,1), block=(block_size,1,1))
+    kernel((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(output), cp.asarray(linCoeffs), np.int32(nCoeffs), np.float32(coaddRead), cp.asarray(masterDark), cp.asarray(masterFlat), cp.asarray(bpm), cp.asarray(steps)))
     t5 = time.time()
 
     #Update fdu
@@ -1251,7 +1249,11 @@ def doItAll(fdu, params, log, linCoeffs=None, darkFdu=None, flatFdu=None, bpm=No
         skySubtractImage = fatboy_mod.get_function("subtractArrays_scaled_float")
         masterSky = skyFdu.getData()
         skyScale = fdu.getMedian()/skyFdu.getMedian()
-        skySubtractImage(drv.InOut(data), drv.In(masterSky), float32(skyScale), grid=(blocks,1), block=(block_size,1,1))
+        image1_gpu = cp.asarray(data)
+        image2_gpu = cp.asarray(masterSky)
+        skySubtractImage((blocks,1), (block_size,1,1), (image1_gpu, image2_gpu, np.float32(skyScale)))
+        if isinstance(data, np.ndarray):
+            data[:] = image1_gpu.get()
 
     t6 = time.time()
 
@@ -1259,14 +1261,14 @@ def doItAll(fdu, params, log, linCoeffs=None, darkFdu=None, flatFdu=None, bpm=No
     if (stepsToDo.get('removeCosmicRays')):
         cosmicRayRemoval = fatboy_mod.get_function("cosmicRayRemoval_float")
         crpass = params['COSMIC_RAY_PASSES']
-        ict = zeros(1, int32)
+        ict = np.zeros(1, np.int32)
         for j in range(crpass):
-            cosmicRayRemoval(drv.In(data), drv.Out(output), int32(rows), int32(cols), drv.InOut(ict), grid=(blocks,1), block=(block_size,1,1))
+            cosmicRayRemoval((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(output), np.int32(rows), np.int32(cols), cp.asarray(ict)))
             print(ict,' replaced.')
             if (log is not None):
                 log.writeLog(__name__, str(ict)+" replaced.", printCaller=False, tabLevel=1)
             data = output
-            ict = zeros(1, int32)
+            ict = np.zeros(1, np.int32)
 
     t7 = time.time()
     #print "Time: setup = "+str(t2-t)+", kernel = "+str(time.time()-t2)+", total = "+str(time.time()-t)
@@ -1280,13 +1282,13 @@ def applyObjMask(image, objMask):
     if (image.size % block_size != 0):
         blocks += 1
     #Make sure obj mask is little endian 32 bit int
-    objMask = objMask.astype("int32")
+    objMask = objMask.astype("np.int32")
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
         fatboy_mod = get_fatboy_mod()
     applyObjMaskFunc = fatboy_mod.get_function("applyObjMask_float")
-    applyObjMaskFunc(drv.InOut(image), drv.In(objMask), grid=(blocks,1), block=(block_size,1,1))
+    applyObjMaskFunc((blocks,1), (block_size,1,1), (cp.asarray(image), cp.asarray(objMask)))
     return image
 #end applyObjMask
 
@@ -1302,21 +1304,21 @@ def apply2PassObjMask(image, objMask, boxcarSize, rejectLevel):
         blocks += 1
 
     #Make sure obj mask is little endian 32 bit int
-    objMask = objMask.astype("int32")
+    objMask = objMask.astype("np.int32")
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
         fatboy_mod = get_fatboy_mod()
     createObjMaskFunc = fatboy_mod.get_function("createObjMask")
-    createObjMaskFunc(drv.InOut(objMask), grid=(blocks,1), block=(block_size,1,1))
+    createObjMaskFunc((blocks,1), (block_size,1,1), (cp.asarray(objMask)))
     growApplyObjMaskFunc = fatboy_mod.get_function("growApplyObjMask_float")
-    growApplyObjMaskFunc(drv.InOut(image), drv.In(objMask), int32(rows), int32(cols), int32(w), float32(rejectLevel), grid=(blocks,1), block=(block_size,1,1))
+    growApplyObjMaskFunc((blocks,1), (block_size,1,1), (cp.asarray(image), cp.asarray(objMask), np.int32(rows), np.int32(cols), np.int32(w), np.float32(rejectLevel)))
     return image
 #end apply2PassObjMask
 
-#Turn an x*fac1 by y*fac2 array into an x by y array by averaging pixels
+#Turn an x*fac1 by y*fac2 np.array into an x by y np.array by averaging pixels
 def blkavg(data, outfile=None, faccol=1, facrow=1, mef=0, log=None):
-    #Turn an x*fac1 by y*fac2 array into an x by y array by averaging pixels
+    #Turn an x*fac1 by y*fac2 np.array into an x by y np.array by averaging pixels
     if (isinstance(data, str)):
         if (os.access(data, os.F_OK)):
             outimage = pyfits.open(data)
@@ -1326,31 +1328,31 @@ def blkavg(data, outfile=None, faccol=1, facrow=1, mef=0, log=None):
             if (log is not None):
                 log.writeLog(__name__, "File "+data+" does not exist!", type=fatboyLog.ERROR)
             return None
-    elif (isinstance(data, ndarray)):
+    elif (isinstance(data, np.ndarray)):
         if (outfile is not None):
             outimage = pyfits.HDUList()
             hdu = pyfits.PrimaryHDU()
             outimage.append(hdu)
     else:
-        print("blkavg> Error: Input must be a FITS file or a raw array.")
+        print("blkavg> Error: Input must be a FITS file or a raw np.array.")
         if (log is not None):
-            log.writeLog(__name__, "Input must be a FITS file or a raw array.", type=fatboyLog.ERROR)
+            log.writeLog(__name__, "Input must be a FITS file or a raw np.array.", type=fatboyLog.ERROR)
         return None
 
     rows = data.shape[0]
     cols = data.shape[1]
-    data = data.astype(float32)
+    data = data.astype(np.float32)
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
         fatboy_mod = get_fatboy_mod()
     blkavgFunc = fatboy_mod.get_function("blkavg_float")
-    outtype = float32
-    out = empty((rows//facrow, cols//faccol), outtype)
+    outtype = np.float32
+    out = np.empty((rows//facrow, cols//faccol), outtype)
     blocks = out.size//512
     if (out.size % 512 != 0):
         blocks += 1
-    blkavgFunc(drv.In(data), drv.Out(out), int32(faccol), int32(facrow), int32(cols//faccol), int32(rows//facrow), grid=(blocks,1), block=(block_size,1,1))
+    blkavgFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(out), np.int32(faccol), np.int32(facrow), cols//np.int32(faccol), rows//np.int32(facrow)))
 
     if (outfile is not None):
         outimage[mef].data = out
@@ -1360,9 +1362,9 @@ def blkavg(data, outfile=None, faccol=1, facrow=1, mef=0, log=None):
     return out
 #end blkavg
 
-#Turn an x by y array into an x*fac1 by y*fac2 array by replicating pixels
+#Turn an x by y np.array into an x*fac1 by y*fac2 np.array by replicating pixels
 def blkrep(data, outfile=None, faccol=1, facrow=1, mef=0, log=None):
-    #Turn an x by y array into an x*fac1 by y*fac2 array by replicating pixels
+    #Turn an x by y np.array into an x*fac1 by y*fac2 np.array by replicating pixels
     if (isinstance(data, str)):
         if (os.access(data, os.F_OK)):
             outimage = pyfits.open(data)
@@ -1372,31 +1374,31 @@ def blkrep(data, outfile=None, faccol=1, facrow=1, mef=0, log=None):
             if (log is not None):
                 log.writeLog(__name__, "File "+data+" does not exist!", type=fatboyLog.ERROR)
             return None
-    elif (isinstance(data, ndarray)):
+    elif (isinstance(data, np.ndarray)):
         if (outfile is not None):
             outimage = pyfits.HDUList()
             hdu = pyfits.PrimaryHDU()
             outimage.append(hdu)
     else:
-        print("blkrep> Error: Input must be a FITS file or a raw array.")
+        print("blkrep> Error: Input must be a FITS file or a raw np.array.")
         if (log is not None):
-            log.writeLog(__name__, "Input must be a FITS file or a raw array.", type=fatboyLog.ERROR)
+            log.writeLog(__name__, "Input must be a FITS file or a raw np.array.", type=fatboyLog.ERROR)
         return None
 
     rows = data.shape[0]
     cols = data.shape[1]
-    data = data.astype(float32)
+    data = data.astype(np.float32)
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
         fatboy_mod = get_fatboy_mod()
     blkrepFunc = fatboy_mod.get_function("blkrep_float")
-    outtype = float32
+    outtype = np.float32
     blocks = data.size//512
     if (data.size % 512 != 0):
         blocks += 1
-    out = empty((rows*facrow, cols*faccol), outtype)
-    blkrepFunc(drv.In(data), drv.Out(out), int32(faccol), int32(facrow), int32(cols), int32(rows), grid=(blocks,1), block=(block_size,1,1))
+    out = np.empty((rows*facrow, cols*faccol), outtype)
+    blkrepFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(out), np.int32(faccol), np.int32(facrow), np.int32(cols), np.int32(rows)))
 
     if (outfile is not None):
         outimage[mef].data = out
@@ -1409,8 +1411,8 @@ def blkrep(data, outfile=None, faccol=1, facrow=1, mef=0, log=None):
 #GPU equivalent of surface3dFunction
 def calcTrans3d(xin, yin, z, ycoeffs, order):
     xsize = xin.size
-    ycoeffs = float32(ycoeffs)
-    yout = empty(shape=yin.shape, dtype=float32)
+    ycoeffs = ycoeffs.astype(np.float32)
+    yout = cp.empty(shape=yin.shape, dtype=np.float32)
     blocks = (yout.size)//512
     if (yout.size % 512 != 0):
         blocks += 1
@@ -1419,13 +1421,13 @@ def calcTrans3d(xin, yin, z, ycoeffs, order):
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("calcTrans3d")
-    kernel(drv.Out(yout), drv.In(xin), drv.In(yin), drv.In(z), drv.In(ycoeffs), int32(order), int32(xsize), int32(yin.size), grid=(blocks,1), block=(block_size,1,1))
+    kernel((blocks,1), (block_size,1,1), (yout, cp.asarray(xin), cp.asarray(yin), cp.asarray(z), cp.asarray(ycoeffs), np.int32(order), np.int32(xsize), np.int32(yin.size)))
     return yout
 #end calcTrans3d
 
-#Calculate an array where every value is its X coordinate
+#Calculate an np.array where every value is its X coordinate
 def calcXin(xsize, ysize):
-    xin = empty(shape=(ysize,xsize), dtype=float32)
+    xin = cp.empty(shape=(ysize,xsize), dtype=np.float32)
     blocks = (xin.size)//512
     if (xin.size % 512 != 0):
         blocks += 1
@@ -1434,13 +1436,13 @@ def calcXin(xsize, ysize):
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("calcXin")
-    kernel(drv.Out(xin), int32(xsize), int32(xin.size), grid=(blocks,1), block=(block_size,1,1))
-    return xin
+    kernel((blocks,1), (block_size,1,1), (xin, np.int32(xsize), np.int32(xin.size)))
+    return xin.get()
 #end calcXin
 
-#Calculate an array where every value is its Y coordinate
+#Calculate an np.array where every value is its Y coordinate
 def calcYin(xsize, ysize):
-    yin = empty(shape=(ysize,xsize), dtype=float32)
+    yin = cp.empty(shape=(ysize,xsize), dtype=np.float32)
     blocks = (yin.size)//512
     if (yin.size % 512 != 0):
         blocks += 1
@@ -1449,8 +1451,8 @@ def calcYin(xsize, ysize):
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("calcYin")
-    kernel(drv.Out(yin), int32(xsize), int32(yin.size), grid=(blocks,1), block=(block_size,1,1))
-    return yin
+    kernel((blocks,1), (block_size,1,1), (yin, np.int32(xsize), np.int32(yin.size)))
+    return yin.get()
 #end calcYin
 
 #Perform a 2-d convolution of data with kernel
@@ -1464,19 +1466,19 @@ def convolve2d(data, kernel, outfile=None, boundary="nearest", mef=0, maskNegati
             if (log is not None):
                 log.writeLog(__name__, "File "+data+" does not exist!", type=fatboyLog.ERROR)
             return None
-    elif (isinstance(data, ndarray)):
+    elif (isinstance(data, np.ndarray)):
         if (outfile is not None):
             outimage = pyfits.HDUList()
             hdu = pyfits.PrimaryHDU()
             outimage.append(hdu)
     else:
-        print("convolve2d> Error: Input must be a FITS file or a raw array.")
+        print("convolve2d> Error: Input must be a FITS file or a raw np.array.")
         if (log is not None):
-            log.writeLog(__name__, "Input must be a FITS file or a raw array.", type=fatboyLog.ERROR)
+            log.writeLog(__name__, "Input must be a FITS file or a raw np.array.", type=fatboyLog.ERROR)
         return None
 
-    ## INVERT KERNEL and ensure that it is float32 ##
-    kernel = kernel[::-1,::-1].astype(float32)
+    ## INVERT KERNEL and ensure that it is np.float32 ##
+    kernel = kernel[::-1,::-1].astype(np.float32)
     rows = data.shape[0]
     cols = data.shape[1]
     kny = kernel.shape[0]
@@ -1489,13 +1491,13 @@ def convolve2d(data, kernel, outfile=None, boundary="nearest", mef=0, maskNegati
     else:
         fatboy_mod = get_fatboy_mod()
     convolveFunc = fatboy_mod.get_function("convolve2d_float")
-    outtype = float32
-    data = data.astype(float32)
-    out = empty(data.shape, outtype)
+    outtype = np.float32
+    data = data.astype(np.float32)
+    out = np.empty(data.shape, outtype)
     blocks = data.size//512
     if (data.size % 512 != 0):
         blocks += 1
-    convolveFunc(drv.In(data), drv.Out(out), drv.In(kernel), int32(rows), int32(cols), int32(kny), int32(knx), int32(bnd), int32(maskNegative), grid=(blocks,1), block=(block_size,1,1))
+    convolveFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(out), cp.asarray(kernel), np.int32(rows), np.int32(cols), np.int32(kny), np.int32(knx), np.int32(bnd), np.int32(maskNegative)))
 
     if (outfile is not None):
         outimage[mef].data = out
@@ -1516,15 +1518,15 @@ def convolve2dAndBlk(data, kernel, outfile=None, facrow=1, faccol=1, boundary="n
             if (log is not None):
                 log.writeLog(__name__, "File "+data+" does not exist!", type=fatboyLog.ERROR)
             return None
-    elif (isinstance(data, ndarray)):
+    elif (isinstance(data, np.ndarray)):
         if (outfile is not None):
             outimage = pyfits.HDUList()
             hdu = pyfits.PrimaryHDU()
             outimage.append(hdu)
     else:
-        print("convolve2dAndBlk> Error: Input must be a FITS file or a raw array.")
+        print("convolve2dAndBlk> Error: Input must be a FITS file or a raw np.array.")
         if (log is not None):
-            log.writeLog(__name__, "Input must be a FITS file or a raw array.", type=fatboyLog.ERROR)
+            log.writeLog(__name__, "Input must be a FITS file or a raw np.array.", type=fatboyLog.ERROR)
         return None
 
     rows = data.shape[0]
@@ -1540,13 +1542,13 @@ def convolve2dAndBlk(data, kernel, outfile=None, facrow=1, faccol=1, boundary="n
     else:
         fatboy_mod = get_fatboy_mod()
     convolveFunc = fatboy_mod.get_function("convolve2dAndBlk_float")
-    outtype = float32
-    data = data.astype(float32)
-    out = empty((rows//facrow, cols//faccol), outtype)
+    outtype = np.float32
+    data = data.astype(np.float32)
+    out = np.empty((rows//facrow, cols//faccol), outtype)
     blocks = out.size//512
     if (out.size % 512 != 0):
         blocks += 1
-    convolveFunc(drv.In(data), drv.Out(out), drv.In(kernel), int32(rows//facrow), int32(cols//faccol), int32(kny), int32(knx), int32(bnd), int32(maskNegative), int32(facrow), int32(faccol), grid=(blocks,1), block=(block_size,1,1))
+    convolveFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(out), cp.asarray(kernel), rows//np.int32(facrow), cols//np.int32(faccol), np.int32(kny), np.int32(knx), np.int32(bnd), np.int32(maskNegative), np.int32(facrow), np.int32(faccol)))
 
     if (outfile is not None):
         outimage[mef].data = out
@@ -1569,6 +1571,8 @@ def createFitsTable(columns):
 
 #Create a noisemap
 def createNoisemap(image, gain=1.0):
+    is_cpu = isinstance(image, np.ndarray)
+    image_gpu = cp.asarray(image)
     blocks = image.size//512
     if (image.size % 512 != 0):
         blocks += 1
@@ -1577,45 +1581,50 @@ def createNoisemap(image, gain=1.0):
     else:
         fatboy_mod = get_fatboy_mod()
     gpu_noisemap = fatboy_mod.get_function("createNoisemaps_float")
-    if (image.dtype == int32):
+    if (image.dtype == np.int32):
         gpu_noisemap = fatboy_mod.get_function("createNoisemaps_int")
-    nm = empty(image.shape, float32)
-    gpu_noisemap(drv.In(image), drv.Out(nm), float32(gain), int32(image.size), grid=(blocks,1), block=(block_size,1,1))
-    return nm
+    nm_gpu = cp.empty(image.shape, np.float32)
+    # Correct RawKernel call: kernel(grid, block, args)
+    gpu_noisemap((blocks,), (block_size,), (image_gpu, nm_gpu, np.float32(gain), np.int32(image.size)))
+    if is_cpu:
+        return nm_gpu.get()
+    else:
+        return nm_gpu
 #end createNoisemap
 
 #Create a slitmask using the GPU
 def createSlitmask(shp, rslitHi, rslitLo, nslits, horizontal):
-    slitmask = empty(shape=shp, dtype=int32)
+    slitmask_gpu = cp.empty(shape=shp, dtype=np.int32)
     rows = shp[0]
     cols = shp[1]
-    blocks = slitmask.size//512
-    if (slitmask.size % 512 != 0):
+    blocks = slitmask_gpu.size//512
+    if (slitmask_gpu.size % 512 != 0):
         blocks += 1
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("createSlitmask")
-    kernel(drv.Out(slitmask), drv.InOut(int32(rslitHi)), drv.In(int32(rslitLo)), int32(cols), int32(rows), int32(nslits), int32(horizontal), int32(slitmask.size), grid=(blocks,1), block=(block_size,1,1))
-    return slitmask
+    kernel((blocks,1), (block_size,1,1), (slitmask_gpu, cp.asarray(rslitHi).astype(np.int32), cp.asarray(rslitLo).astype(np.int32), np.int32(cols), np.int32(rows), np.int32(nslits), np.int32(horizontal), np.int32(slitmask_gpu.size)))
+    return slitmask_gpu.get()
 #end createSlitmask
 
 def dcr(image, clean_file=None, crfile=None, slitmask=None, thresh=4.0, xrad=9, yrad=9, npass=5, diaxis=1, lrad=1, urad=3, grad=1, verbose=1, mef=-1, log=None):
+    import numpy as np
     if (isinstance(image, str)):
         if (os.access(image, os.F_OK)):
             outimage = pyfits.open(image)
             if (mef == -1):
                 #find first data extension
                 mef = findMef(outimage)
-            data = outimage[mef].data.astype(float32) #make sure to convert to little endian 32-bit float
+            data = outimage[mef].data.astype(np.float32) #make sure to convert to little endian 32-bit float
         else:
             print("dcr> Error: could not find image "+image)
             if (log is not None):
                 log.writeLog(__name__, "could not find image "+image, type=fatboyLog.ERROR)
             return None
-    elif (isinstance(image, ndarray)):
-        data = image.astype(float32) #copy image to data and make sure to convert to little endian 32-bit float
+    elif (isinstance(image, np.ndarray)):
+        data = image.astype(np.float32) #copy image to data and make sure to convert to little endian 32-bit float
         if (clean_file is not None or crfile is not None):
             #create new pyfits HDUlist object for output
             outimage = pyfits.HDUList()
@@ -1632,7 +1641,7 @@ def dcr(image, clean_file=None, crfile=None, slitmask=None, thresh=4.0, xrad=9, 
         #process full frame. data will be modified to have cleaned data and return value cr has cr data
         (npix, cr_data) = fatboyclib.dcr(data, thresh=thresh, xrad=xrad, yrad=yrad, npass=npass, diaxis=diaxis, lrad=lrad, urad=urad, grad=grad, verbose=verbose)
     else:
-        #Multi-object (or multi-order) spectroscopy.  Use slitmask, which is array same size as data where each pixel is an integer from 1 to n
+        #Multi-object (or multi-order) spectroscopy.  Use slitmask, which is np.array same size as data where each pixel is an integer from 1 to n
         #representing the slitlet that pixel belongs to.
         if (isinstance(slitmask, str)):
             if (os.access(slitmask, os.F_OK)):
@@ -1645,7 +1654,7 @@ def dcr(image, clean_file=None, crfile=None, slitmask=None, thresh=4.0, xrad=9, 
                 if (log is not None):
                     log.writeLog(__name__, "could not find slitmask "+slitmask, type=fatboyLog.ERROR)
                 return None
-        elif (isinstance(slitmask, ndarray)):
+        elif (isinstance(slitmask, np.ndarray)):
             smdata = slitmask
         else:
             print("dcr> Error: invalid slitmask datatype.  Must be a FITS file or numpy ndarray.")
@@ -1658,43 +1667,43 @@ def dcr(image, clean_file=None, crfile=None, slitmask=None, thresh=4.0, xrad=9, 
                 log.writeLog(__name__, "slitmask shape "+str(smdata.shape)+" is differnt from data shape "+str(data.shape), type=fatboyLog.ERROR)
             return None
         #Create arrays for clean_data and cr_data
-        clean_data = zeros(smdata.shape, dtype=float32)
-        cr_data = zeros(smdata.shape, dtype=float32)
+        clean_data = np.zeros(smdata.shape, dtype=np.float32)
+        cr_data = np.zeros(smdata.shape, dtype=np.float32)
         nslits = smdata.max() #number of slits
         #Loop over slitlets
         for j in range(nslits):
-            slit = where(smdata == (j+1))
+            slit = np.where(smdata == (j+1))
             if (diaxis != 2):
                 #Default is to assume horizontal dispersion for slits
                 ylo = slit[0].min()
                 yhi = slit[0].max()+1
                 tempMask = smdata[ylo:yhi,:] == (j+1)
-                slit = (data[ylo:yhi,:]*tempMask).astype(float32)
+                slit = (data[ylo:yhi,:]*tempMask).astype(np.float32)
                 if (yrad > (yhi-ylo)/2):
                     yrad = int((yhi-ylo)/2)
-                #Run DCR on this one slit.  Put return value into cr_data array. slit will contain cleaned_data
-                (np, cr_slit) = fatboyclib.dcr(slit, thresh=thresh, xrad=xrad, yrad=yrad, npass=npass, diaxis=diaxis, lrad=lrad, urad=urad, grad=grad, verbose=verbose)
-                npix += np
-                cr_data[ylo:yhi,:][tempMask] = cr_slit[tempMask].astype(float32)
+                #Run DCR on this one slit.  Put return value into cr_data np.array. slit will contain cleaned_data
+                (num_pixels, cr_slit) = fatboyclib.dcr(slit, thresh=thresh, xrad=xrad, yrad=yrad, npass=npass, diaxis=diaxis, lrad=lrad, urad=urad, grad=grad, verbose=verbose)
+                npix += num_pixels 
+                cr_data[ylo:yhi,:][tempMask] = cr_slit[tempMask].astype(np.float32)
                 clean_data[ylo:yhi,:][tempMask] = slit[tempMask]
             else:
                 #Vertical dispersion for slits
                 xlo = slit[1].min()
                 xhi = slit[1].max()+1
                 tempMask = smdata[:,xlo:xhi] == (j+1)
-                slit = (data[:,xlo:xhi]*tempMask).astype(float32)
+                slit = (data[:,xlo:xhi]*tempMask).astype(np.float32)
                 if (xrad > (xhi-xlo)/2):
                     xrad = int((xhi-xlo)/2)
-                #Run DCR on this one slit.  Put return value into cr_data array. slit will contain cleaned_data
-                (np, cr_slit) = fatboyclib.dcr(slit, thresh=thresh, xrad=xrad, yrad=yrad, npass=npass, diaxis=diaxis, lrad=lrad, urad=urad, grad=grad, verbose=verbose)
-                npix += np
-                cr_data[:,xlo:xhi][tempMask] = cr_slit[tempMask].astype(float32)
+                #Run DCR on this one slit.  Put return value into cr_data np.array. slit will contain cleaned_data
+                (num_pixels, cr_slit) = fatboyclib.dcr(slit, thresh=thresh, xrad=xrad, yrad=yrad, npass=npass, diaxis=diaxis, lrad=lrad, urad=urad, grad=grad, verbose=verbose)
+                npix += num_pixels
+                cr_data[:,xlo:xhi][tempMask] = cr_slit[tempMask].astype(np.float32)
                 clean_data[:,xlo:xhi][tempMask] = slit[tempMask]
             if (verbose > 0):
-                print("\tSlit "+str((j+1))+": cleaned "+str(np)+" pixels.")
+                print("\tSlit "+str((j+1))+": cleaned "+str(num_pixels)+" pixels.")
                 if (log is not None):
-                    log.writeLog(__name__, "Slit "+str((j+1))+": cleaned "+str(np)+" pixels.", printCaller=False, tabLevel=1)
-        #Copy clean_data array back to data
+                    log.writeLog(__name__, "Slit "+str((j+1))+": cleaned "+str(num_pixels)+" pixels.", printCaller=False, tabLevel=1)
+        #Copy clean_data np.array back to data
         data = clean_data
     print("dcr> Cleaned "+str(npix)+" pixels.")
     if (log is not None):
@@ -1716,9 +1725,9 @@ def dcr(image, clean_file=None, crfile=None, slitmask=None, thresh=4.0, xrad=9, 
 #Divide two arrays using the GPU
 def divideArraysFloatGPU(dividend, divisor, log=None):
     if (dividend.size != divisor.size):
-        print("fatboyLibs::divideArraysFloatGPU> Error: array size mismatch!")
+        print("fatboyLibs::divideArraysFloatGPU> Error: np.array size mismatch!")
         if (log is not None):
-            log.writeLog(__name__, "array size mismatch!", type=fatboyLog.ERROR)
+            log.writeLog(__name__, "np.array size mismatch!", type=fatboyLog.ERROR)
         #Return None
         return None
     blocks = dividend.size//512
@@ -1729,14 +1738,14 @@ def divideArraysFloatGPU(dividend, divisor, log=None):
     else:
         fatboy_mod = get_fatboy_mod()
     divArrays = fatboy_mod.get_function("divideArrays_float")
-    divArrays(drv.InOut(dividend), drv.In(divisor), int32(dividend.size), grid=(blocks,1), block=(block_size,1,1))
+    divArrays((blocks,1), (block_size,1,1), (cp.asarray(dividend), cp.asarray(divisor), np.int32(dividend.size)))
     return dividend
 #end divideArraysFloatGPU
 
 #extract non-zero regions from 1-d data
 #used for auto-finding slitlets in normalized master flats
 def extractNonzeroRegions(data, width, nspec=0, sort=False):
-    specIdx = where(data > 0)[0]
+    specIdx = np.where(data > 0)[0]
     if (len(specIdx) == 0):
         #Nothing found greater than zero
         return None
@@ -1772,8 +1781,8 @@ def extractNonzeroRegions(data, width, nspec=0, sort=False):
     if (len(specList) == 0):
         return None
 
-    specList = array(specList)
-    meanVals = array(meanVals)
+    specList = np.array(specList)
+    meanVals = np.array(meanVals)
     if (nspec == 0):
         #return all spectra, don't sort unless asked
         if (not sort):
@@ -1793,14 +1802,14 @@ def extractSpectra(data, sigma, width, nspec=0, sort=False, minFluxPct=0.001, al
     n = data.size
     if (allowZeros):
         data = data.copy()
-        data[data == 0] = abs(data[data != 0]).min()/10. #Set zeros to 0.1*min value
+        data[data == 0] = np.abs(data[data != 0]).min()/10. #Set np.zeros to 0.1*min value
     norig = (data != 0).sum()
-    #array of indices
-    ind = arange(n)
+    #np.array of indices
+    ind = np.arange(n)
     nold = n+1
     b = data != 0 #points to use as background for std dev calcs
     #Mask out 5 pixel box around highest datapoint before first pass
-    bmax = where(data == data.max())[0][0]
+    bmax = np.where(data == data.max())[0][0]
     b[max(bmax-2,0):min(bmax+3,len(b))] = False
     #Iterative sigma clipping
     niter = 0
@@ -1827,7 +1836,7 @@ def extractSpectra(data, sigma, width, nspec=0, sort=False, minFluxPct=0.001, al
         nold = n
         n = data[b].size
         #print niter, medVal, sd, b.sum(), n, nold
-    specIdx = where(data > medVal+sigma*sd)[0]
+    specIdx = np.where(data > medVal+sigma*sd)[0]
     #print "medVal = ", medVal, "sigma = ", sd, "max = ", (data.max()-medVal)/sd, "npoints = ", len(specIdx), "back pts = ", b.sum()
     #print specIdx
     if (len(specIdx) == 0):
@@ -1879,8 +1888,8 @@ def extractSpectra(data, sigma, width, nspec=0, sort=False, minFluxPct=0.001, al
     if (len(specList) == 0):
         return None
 
-    specList = array(specList)
-    meanVals = array(meanVals)
+    specList = np.array(specList)
+    meanVals = np.array(meanVals)
     if (nspec == 0):
         #return all spectra, don't sort unless asked
         if (not sort):
@@ -1895,6 +1904,68 @@ def extractSpectra(data, sigma, width, nspec=0, sort=False, minFluxPct=0.001, al
         return specList[b]
 #end extractSpectra
 
+def newExtractSpectra(data, sigma, width, nspec=0, sort=False, minFluxPct=0.001):
+    """
+    An improved version of extractSpectra that uses a local background estimate
+    and gradient-based edge detection for more robust identification of step-like profiles.
+    """
+    if data.size < width:
+        return None
+    
+    # 1. Local background subtraction (rolling median)
+    # This handles non-flat backgrounds much better than iterative global sigma clipping
+    box = max(width * 2, 21)
+    if box % 2 == 0: box += 1
+    bg = scipy.signal.medfilt(data, box)
+    clean = data - bg
+    
+    # 2. Estimate noise from the cleaned data
+    # Use Median Absolute Deviation (MAD) for a robust sigma estimate
+    mad = np.median(np.abs(clean - np.median(clean)))
+    robust_sigma = 1.4826 * mad
+    
+    # 3. Identify regions above threshold
+    threshold = sigma * robust_sigma
+    significant = clean > threshold
+    
+    if not np.any(significant):
+        return None
+    
+    # 4. Label connected components (regions)
+    labels, num_features = scipy.ndimage.label(significant)
+    
+    specList = []
+    meanVals = []
+    
+    for i in range(1, num_features + 1):
+        indices = np.where(labels == i)[0]
+        if len(indices) >= width:
+            ylo = indices[0]
+            yhi = indices[-1]
+            
+            # Check flux percentage relative to global max
+            region_mean = data[ylo:yhi+1].mean()
+            if region_mean > data.max() * minFluxPct:
+                specList.append([ylo, yhi])
+                meanVals.append(region_mean)
+                
+    if len(specList) == 0:
+        return None
+    
+    out = np.array(specList)
+    
+    # 5. Limit to requested number of spectra if necessary
+    if nspec > 0 and len(out) > nspec:
+        best_indices = np.argsort(meanVals)[-nspec:]
+        out = out[best_indices]
+        
+    # 6. Optional sorting
+    if sort:
+        out = out[np.argsort(out[:, 0])]
+        
+    return out
+#end newExtractSpectra
+
 #find and fit emission lines in 1D spectrum with Gaussian
 #returns list of Gaussian params
 def findAndFitLines(oned, nlines=-1, sigthresh=2.0, thresh=None, squareData=True, gaussWidth=2):
@@ -1903,30 +1974,30 @@ def findAndFitLines(oned, nlines=-1, sigthresh=2.0, thresh=None, squareData=True
     lines = []
     refCut = oned.copy()
     while (refCut.max() > thresh and (nlines < 0 or nlines > len(lines))):
-        blref = where(refCut == refCut.max())[0][0]
+        blref = np.where(refCut == refCut.max())[0][0]
         if (blref < 10 or blref > len(refCut)-11):
             refCut[blref] = 0
             continue
         tempCut = refCut[blref-10:blref+11]
         if (squareData):
             tempCut = tempCut**2
-        p = zeros(4, dtype=float64)
-        p[0] = max(tempCut)
+        p = np.zeros(4, dtype=np.float64)
+        p[0] = np.max(tempCut)
         p[1] = 10
-        p[2] = gaussWidth/sqrt(2)
+        p[2] = gaussWidth/np.sqrt(2)
         p[3] = gpu_arraymedian(tempCut)
         try:
-            lsq = leastsq(gaussResiduals, p, args=(arange(len(tempCut), dtype=float64), tempCut))
+            lsq = leastsq(gaussResiduals, p, args=(np.arange(len(tempCut), dtype=np.float64), tempCut))
         except Exception as ex:
             #Error centroiding, continue to next line
-            refCut -= gaussFunction(p, arange(len(refCut), dtype=float32))
+            refCut -= gaussFunction(p, np.arange(len(refCut), dtype=np.float32))
             refCut[refCut < 0] = 0
             continue
-        p = zeros(4)
-        p[0] = sqrt(abs(lsq[0][0]))
+        p = np.zeros(4)
+        p[0] = np.sqrt(np.abs(lsq[0][0]))
         p[1] = lsq[0][1]+blref-10
-        p[2] = abs(lsq[0][2]*sqrt(2))
-        refCut -= gaussFunction(p, arange(len(refCut), dtype=float32))
+        p[2] = np.abs(lsq[0][2]*np.sqrt(2))
+        refCut -= gaussFunction(p, np.arange(len(refCut), dtype=np.float32))
         refCut[refCut < 0] = 0
         lines.append(p)
     return lines
@@ -1946,6 +2017,7 @@ def findMef(image):
 def findRegions(data, nslits, fdu, gpu=True, log=None, regFile=None):
     #First read region file if given to get slitx, slitw.
     #Do first so it doesn't overwrite sylo, syhi
+    nslits = int(nslits)
     if (regFile is not None):
         #Read region file
         if (regFile.endswith(".reg")):
@@ -1979,14 +2051,14 @@ def findRegions(data, nslits, fdu, gpu=True, log=None, regFile=None):
         sylo = []
         syhi = []
         for slitidx in range(nslits):
-            b = where(data == slitidx+1)
+            b = np.where(data == slitidx+1)
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                 sylo.append(b[0].min())
                 syhi.append(b[0].max())
             else:
                 sylo.append(b[1].min())
                 syhi.append(b[1].max())
-    return (array(sylo), array(syhi), array(slitx), array(slitw))
+    return (np.array(sylo), np.array(syhi), np.array(slitx), np.array(slitw))
 #end findRegions
 
 #Use scipy.polyval to fit 1d polynomial along axis of 2-d data
@@ -2000,35 +2072,35 @@ def fit1d(input, outfile=None, axis="X", order=3, lsigma=None, hsigma=None, nite
             if (log is not None):
                 log.writeLog(__name__, "File "+data+" does not exist!", type=fatboyLog.ERROR)
             return None
-    elif (isinstance(input, ndarray)):
+    elif (isinstance(input, np.ndarray)):
         if (outfile is not None):
             outimage = pyfits.HDUList()
             hdu = pyfits.PrimaryHDU()
             outimage.append(hdu)
     else:
-        print("fit1d> Error: Input must be a FITS file or a raw array.")
+        print("fit1d> Error: Input must be a FITS file or a raw np.array.")
         if (log is not None):
-            log.writeLog(__name__, "Input must be a FITS file or a raw array.", type=fatboyLog.ERROR)
+            log.writeLog(__name__, "Input must be a FITS file or a raw np.array.", type=fatboyLog.ERROR)
         return None
     ny = input.shape[0]
     nx = input.shape[1]
-    out = zeros((ny,nx), dtype=float32)
+    out = np.zeros((ny,nx), dtype=np.float32)
     if (axis == "X"):
-        xs = arange(nx, dtype=float32)
+        xs = np.arange(nx, dtype=np.float32)
         for j in range(ny):
             iter = 0
             nold = 0
-            b = ones(nx,bool)
+            b = np.ones(nx,bool)
             if (mask is not None):
                 b *= mask[j,:]
             n = b.sum()
-            fit = zeros(nx)
+            fit = np.zeros(nx)
             while (iter < niter and n != nold and n > 100):
                 coeffs = np.polyfit(xs[b], input[j,b], order)
                 fit = np.polyval(coeffs, xs)
                 resid = input[j,:]-fit
                 m = resid[b].sum()*(1./n)
-                sd = sqrt(add.reduce(resid[b]*resid[b])*(1./(n-1))-m*n*(1./(n-1)))
+                sd = np.sqrt(add.reduce(resid[b]*resid[b])*(1./(n-1))-m*n*(1./(n-1)))
                 if (lsigma is not None):
                     b *= resid >= m-lsigma*sd
                 if (hsigma is not None):
@@ -2038,21 +2110,21 @@ def fit1d(input, outfile=None, axis="X", order=3, lsigma=None, hsigma=None, nite
                 iter+=1
             out[j,:] = fit
     elif (axis == "Y"):
-        ys = arange(ny, dtype=float32)
+        ys = np.arange(ny, dtype=np.float32)
         for j in range(nx):
             iter = 0
             nold = 0
-            b = ones(ny,bool)
+            b = np.ones(ny,bool)
             if (mask is not None):
                 b *= mask[:,j]
             n = b.sum()
-            fit = zeros(ny)
+            fit = np.zeros(ny)
             while (iter < niter and n != nold and n > 100):
                 coeffs = scipy.polyfit(ys[b], input[b,j], order)
                 fit = scipy.polyval(coeffs, ys)
                 resid = input[:,j]-fit
                 m = resid[b].sum()*(1./n)
-                sd = sqrt(add.reduce(resid[b]*resid[b])*(1./(n-1))-m*n*(1./(n-1)))
+                sd = np.sqrt(add.reduce(resid[b]*resid[b])*(1./(n-1))-m*n*(1./(n-1)))
                 if (lsigma is not None):
                     b *= resid >= m-lsigma*sd
                 if (hsigma is not None):
@@ -2072,13 +2144,13 @@ def fit1d(input, outfile=None, axis="X", order=3, lsigma=None, hsigma=None, nite
 #Fit a 1-d Gaussian to data
 def fitGaussian(data, maskNeg=False, maxWidth=None, guess=None):
     if (len(data) == 0):
-        return [ zeros(4, float64), False ]
+        return [ np.zeros(4, np.float64), False ]
     if (guess is not None):
         p = guess
     else:
-        p = zeros(4, float64)
+        p = np.zeros(4, np.float64)
         p[0] = data.max()
-        b = where(data == p[0])
+        b = np.where(data == p[0])
         if (b[0].size != 0):
             p[1] = b[0][0]
         p[2] = fwhm1d(data)*0.425 #convert from FWHM in pixels
@@ -2091,7 +2163,7 @@ def fitGaussian(data, maskNeg=False, maxWidth=None, guess=None):
         p[3] = 0
     elif (guess is not None):
         p[3] = gpu_arraymedian(data)
-    xs = arange(len(data), dtype=float64)
+    xs = np.arange(len(data), dtype=np.float64)
     try:
         lsq = leastsq(gaussResiduals, p, args=(xs, data))
     except Exception as ex:
@@ -2103,13 +2175,13 @@ def fitGaussian(data, maskNeg=False, maxWidth=None, guess=None):
 #Fit a 2-d Gaussian to data
 def fitGaussian2d(data, maskNeg=False, maxWidth=None, guess=None):
     if (len(data) == 0):
-        return [ zeros(5, float64), False ]
+        return [ np.zeros(5, np.float64), False ]
     if (guess is not None):
         p = guess
     else:
-        p = zeros(5, float64)
+        p = np.zeros(5, np.float64)
         p[0] = data.max()
-        b = where(data == p[0])
+        b = np.where(data == p[0])
         if (b[0].size != 0):
             p[1] = b[1][0]
             p[2] = b[0][0]
@@ -2123,8 +2195,8 @@ def fitGaussian2d(data, maskNeg=False, maxWidth=None, guess=None):
         p[4] = 0
     elif (guess is not None):
         p[4] = gpu_arraymedian(data)
-    xin = (arange(data.size) % data.shape[1]).astype(float64)
-    yin = (arange(data.size) // data.shape[1]).astype(float64)
+    xin = (np.arange(data.size) % data.shape[1]).astype(np.float64)
+    yin = (np.arange(data.size) // data.shape[1]).astype(np.float64)
     try:
         lsq = leastsq(gaussResiduals2d, p, args=(xin, yin, data.ravel()))
     except Exception as ex:
@@ -2138,17 +2210,17 @@ def fitLines(data, nlines, quartileFilter=True, maskNeg=False, maxWidth=2, guess
     totalWidth = 0
     nfit = 0
 
-    fitData = zeros(data.size, dtype=float64)
+    fitData = np.zeros(data.size, dtype=np.float64)
     if (maskNeg):
         #Correct for big negative values
-        data[where(data < -100)] = 1.e-6
+        data[np.where(data < -100)] = 1.e-6
     if (quartileFilter):
         #Filter the 1-d cut!
         #Use quartile instead of median to get better estimate of background levels!
         #Use 2 passes of quartile filter
         badpix = data == 0 #First find bad pixels
         for i in range(2):
-            tempcut = zeros(len(data))
+            tempcut = np.zeros(len(data))
             nh = 25-badpix[:51].sum()//2 #Instead of defaulting to 25 for quartile, use median of bottom half of *nonzero* pixels
             for k in range(25):
                 tempcut[k] = data[k] - gpu_arraymedian(data[:51],nonzero=True,nhigh=nh)
@@ -2162,7 +2234,7 @@ def fitLines(data, nlines, quartileFilter=True, maskNeg=False, maxWidth=2, guess
             tempcut[tempcut == 0] = 1.e-6
             if (maskNeg):
                 #Correct for big negative values
-                tempcut[where(tempcut < -100)] = 1.e-6
+                tempcut[np.where(tempcut < -100)] = 1.e-6
             data = tempcut
         #Set bad pixels back to 0
         data[badpix] = 0
@@ -2172,34 +2244,34 @@ def fitLines(data, nlines, quartileFilter=True, maskNeg=False, maxWidth=2, guess
         #Find and fit brightest line in resid
         for i in range(nlines):
             resid = data - fitData
-            blref = where(resid == max(resid[edge+5:-1*edge-5]))[0][0]
+            blref = np.where(resid == np.max(resid[edge+5:-1*edge-5]))[0][0]
             keepLine = False
             while (not keepLine):
                 keepLine = True
                 for k in range(len(fitParams)):
-                    if (abs(blref-fitParams[k][1]) < 15):
+                    if (np.abs(blref-fitParams[k][1]) < 15):
                         #Too close to another line
                         keepLine = False
                 if (not keepLine):
                     resid[blref-2:blref+3] = 0
-                    blref = where(resid == max(resid[edge+5:-1*edge-5]))[0][0]
+                    blref = np.where(resid == np.max(resid[edge+5:-1*edge-5]))[0][0]
             #Lines given to match
             if (len(linesToMatch) > i):
                 blref = int(linesToMatch[i][1]+0.5)
             #Centroid line for subpixel accuracy
             #Square data to ensure bright line dominates fit
             tempCut = resid[blref-10:blref+11]**2
-            p = zeros(4, dtype=float64)
-            p[0] = max(tempCut)
+            p = np.zeros(4, dtype=np.float64)
+            p[0] = np.max(tempCut)
             p[1] = 10
             p[2] = 2
             if (nfit > 0):
-                p[2] = totalWidth/nfit/sqrt(2)
+                p[2] = totalWidth/nfit/np.sqrt(2)
             p[3] = gpu_arraymedian(tempCut)
-            lsq = leastsq(gaussResiduals, p, args=(arange(len(tempCut), dtype=float64), tempCut))
+            lsq = leastsq(gaussResiduals, p, args=(np.arange(len(tempCut), dtype=np.float64), tempCut))
             mcor = lsq[0][1]
             #Check each component's width
-            currWidth = abs(lsq[0][2]*sqrt(2))
+            currWidth = np.abs(lsq[0][2]*np.sqrt(2))
             if (currWidth > maxWidth*1.25):
                 #2.5 -> 1.5 default
                 currWidth = maxWidth*0.75
@@ -2209,12 +2281,12 @@ def fitLines(data, nlines, quartileFilter=True, maskNeg=False, maxWidth=2, guess
             totalWidth += currWidth
             nfit += 1
             #Add line to lineParams
-            p = zeros(4)
-            p[0] = sqrt(abs(lsq[0][0]))
+            p = np.zeros(4)
+            p[0] = np.sqrt(np.abs(lsq[0][0]))
             p[1] = blref+mcor-10
             p[2] = currWidth
-            fitData += gaussFunction(p, arange(len(fitData), dtype=float64))
-            p[3] = sqrt(abs(lsq[0][3]))
+            fitData += gaussFunction(p, np.arange(len(fitData), dtype=np.float64))
+            p[3] = np.sqrt(np.abs(lsq[0][3]))
             #Keep track of Gaussian params for line
             fitParams.append(p)
         return fitParams
@@ -2222,7 +2294,7 @@ def fitLines(data, nlines, quartileFilter=True, maskNeg=False, maxWidth=2, guess
 
 #format a list as a string including each number therein
 def formatList(x, ndec=3):
-    if (not isinstance(x, list) and not isinstance(x, ndarray)):
+    if (not isinstance(x, list) and not isinstance(x, np.ndarray)):
         return str(x)
     s = '['
     for j in range(len(x)):
@@ -2254,21 +2326,21 @@ def formatNum(val, ndec=3):
 def fwhm1d(data, halfMax=None):
     if (halfMax is None):
         halfMax = data.max()/2.0
-    maxIdx = where(data == data.max())[0][0]
+    maxIdx = np.where(data == data.max())[0][0]
 
     if (halfMax < 0):
         print("fwhm1d> WARNING: Could not calculate FWHM")
         return 1
 
     #Find last data point < half max
-    b = where(data[:maxIdx] < halfMax)
+    b = np.where(data[:maxIdx] < halfMax)
     if (len(b[0]) == 0):
         startIdx = 0
     else:
         startIdx = b[0][-1]
 
     #Find first data point after max that is < half max
-    b = where(data[maxIdx+1:] < halfMax)
+    b = np.where(data[maxIdx+1:] < halfMax)
     if (len(b[0]) == 0):
         endIdx = len(data)-1
     else:
@@ -2290,20 +2362,20 @@ def fwhm1d(data, halfMax=None):
         xstart = startIdx
     if (xend > endIdx+1 or xend < startIdx-1):
         xend = endIdx
-    return abs(xend-xstart)
+    return np.abs(xend-xstart)
 #end fwhm1d
 
 #estimate 2-d fwhm of data
 def fwhm2d(data, estimateBackground=False):
-    #returned tuple contains: (fwhm_mean, fwhm_stddev, array of 4 FWHMs, background value used as zero level)
+    #returned tuple contains: (fwhm_mean, fwhm_stddev, np.array of 4 FWHMs, background value used as zero level)
     # fwhm1ds[0] = FWHM of X cut.
     # fwhm1ds[1] = FWHM of Y cut.
     # fwhm1ds[2] = FWHM of Y = X cut.
     # fwhm1ds[3] = FWHM of Y = -X cut.
 
-    fwhm1ds = zeros(4, float32)
+    fwhm1ds = np.zeros(4, np.float32)
 
-    b = where(data == data.max())
+    b = np.where(data == data.max())
     xpos = b[1][0]
     ypos = b[0][0]
 
@@ -2329,27 +2401,27 @@ def fwhm2d(data, estimateBackground=False):
     fwhm1ds[0] = fwhm1d(data[ypos,:], halfMax=halfmax)
     fwhm1ds[1] = fwhm1d(data[:,xpos], halfMax=halfmax)
 
-    #diagonals are sqrt(2) times larger:
-    sq2 = sqrt(2)
-    xystart = min(xpos, ypos)
+    #diagonals are np.sqrt(2) times larger:
+    sq2 = np.sqrt(2)
+    xystart = np.min(xpos, ypos)
     xyend = min( nx-1-xpos, ny-1-ypos );
     ncut = xystart+xyend+1;
-    dcutxy = zeros(ncut, float32)
+    dcutxy = np.zeros(ncut, np.float32)
     for j in range(ncut):
         dcutxy[j] = data[ypos-xystart+j, xpos-xystart+j] #y=x
     fwhm1ds[2] = sq2*fwhm1d(dcutxy, halfMax=halfmax)
 
-    negxystart = min(xpos, ny-1-ypos)
+    negxystart = np.min(xpos, ny-1-ypos)
     negxyend = min( nx-1-xpos, ypos );
     ncut = negxystart+negxyend+1
-    dcutnegxy = zeros(ncut, float32)
+    dcutnegxy = np.zeros(ncut, np.float32)
     for j in range(ncut):
         dcutnegxy[j] = data[ypos+negxystart-j, xpos-negxystart+j] #y=-x
     fwhm1ds[3] = sq2 * fwhm1d(dcutnegxy, halfMax=halfmax)
 
     if (estimateBackground):
         #recompute average background rejecting larger region using new estimate of FWHM:
-        rejSize = (int)(ceil(fwhm1ds[0] + fwhm1ds[1]))
+        rejSize = (int)(np.ceil(fwhm1ds[0] + fwhm1ds[1]))
         if (rejSize > 1):
             xmin = xpos - rejSize
             xmax = xpos + rejSize
@@ -2379,40 +2451,40 @@ def fwhm2d(data, estimateBackground=False):
 #Compute fwhm2ds of a data cube
 def fwhm2d_cube_gpu(data, flag=None, estimateBackground=False, log=None):
     if (len(data.shape) != 3):
-        print("fatboyLibs::fwhm2d_cube_gpu> Error: data array must have 3 dimensions")
+        print("fatboyLibs::fwhm2d_cube_gpu> Error: data np.array must have 3 dimensions")
         if (log is not None):
-            log.writeLog(__name__, "data array must have 3 dimensions", type=fatboyLog.ERROR)
+            log.writeLog(__name__, "data np.array must have 3 dimensions", type=fatboyLog.ERROR)
         #Return None
         return None
     if (flag is None):
-        flag = ones(data.shape, dtype=int32)
+        flag = np.ones(data.shape, dtype=np.int32)
     (depth, ny, nx) = data.shape
     blocks = depth//512
     if (depth % 512 != 0):
         blocks += 1
-    fwhms = zeros((depth, 7), dtype=float32)
+    fwhms = np.zeros((depth, 7), dtype=np.float32)
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
         fatboy_mod = get_fatboy_mod()
     fwhm2d_cube_float = fatboy_mod.get_function("fwhm2d_cube_float")
-    fwhm2d_cube_float(drv.In(data.astype(float32)), drv.In(flag.astype(int32)), int32(depth), int32(nx), int32(ny), int32(estimateBackground), drv.Out(fwhms), grid=(blocks,1), block=(block_size,1,1))
+    fwhm2d_cube_float((blocks,1), (block_size,1,1), (cp.asarray(np.float32(data)), cp.asarray(np.int32(flag)), np.int32(depth), np.int32(nx), np.int32(ny), np.int32(estimateBackground), cp.empty(fwhms)))
     fwhms[:,1] = fwhms[:,2:6].std(1) #calc std dev here, only takes 1-2ms
     return fwhms
 #end fwhm2d_cube_gpu
 
 def gaussFunction(p, x):
-    f = zeros(len(x), float64)
-    x = x.astype(float64)
+    f = np.zeros(len(x), np.float64)
+    x = np.float64(x)
     z = (x-p[1])/p[2]
     f = p[3]+p[0]*math.e**(-z**2/2)
     return f
 #end gaussFunction
 
 def gaussFunction2d(p, x, y):
-    f = zeros(x.shape, float64)
-    x = x.astype(float64)
-    y = y.astype(float64)
+    f = np.zeros(x.shape, np.float64)
+    x = np.float64(x)
+    y = y.astype(np.float64)
     zx = (x-p[1])/p[3]
     zy = (y-p[2])/p[3]
     f = p[4]+p[0]*math.e**(-(zx**2/2+zy**2/2))
@@ -2420,29 +2492,33 @@ def gaussFunction2d(p, x, y):
 #end gaussFunction2d
 
 def gaussResiduals(p, x, out):
-    f = zeros(len(x), float64)
-    x = x.astype(float64)
+    if hasattr(out, 'get'):
+        out = out.get()
+    f = np.zeros(len(x), np.float64)
+    x = np.float64(x)
     z = (x-p[1])/p[2]
     f = p[3]+p[0]*math.e**(-z**2/2)
     err = out-f
-    return err
+    return np.asarray(err)
 #end gaussResiduals
 
 def gaussResiduals2d(p, x, y, out):
-    f = zeros(len(x), float64)
-    x = x.astype(float64)
-    y = y.astype(float64)
+    if hasattr(out, 'get'):
+        out = out.get()
+    f = np.zeros(len(x), np.float64)
+    x = np.float64(x)
+    y = y.astype(np.float64)
     zx = (x-p[1])/p[3]
     zy = (y-p[2])/p[3]
     f = p[4]+p[0]*math.e**(-(zx**2/2+zy**2/2))
     err = out-f
-    return err
+    return np.asarray(err)
 #end gaussResiduals2d
 
 def generateQAData(data, xcoords, ycoords, sylo, syhi, horizontal=True):
-    data = float32(data)
-    ycoords = float32(ycoords)
-    xcoords = float32(xcoords)
+    data = data.astype(np.float32)
+    ycoords = ycoords.astype(np.float32)
+    xcoords = xcoords.astype(np.float32)
     blocks = data.size//block_size
     if (data.size % 512 != 0):
         blocks += 1
@@ -2456,8 +2532,8 @@ def generateQAData(data, xcoords, ycoords, sylo, syhi, horizontal=True):
     else:
         fatboy_mod = get_fatboy_mod()
     generateQADataFunc = fatboy_mod.get_function("generateQAData_float")
-    output = empty(data.shape, data.dtype)
-    generateQADataFunc(drv.InOut(data), drv.In(xcoords), drv.In(ycoords), drv.In(float32(sylo)), drv.In(float32(syhi)), int32(xcoords.size), int32(xcoords.size*sylo.size*18), int32(sylo.size), int32(cols), int32(horizontal), grid=(blocks,1), block=(block_size,1,1))
+    output = np.empty(data.shape, data.dtype)
+    generateQADataFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.asarray(xcoords), cp.asarray(ycoords), cp.asarray(np.float32(sylo)), cp.asarray(np.float32(syhi)), np.int32(xcoords.size), np.int32(xcoords.size*sylo.size*18), np.int32(sylo.size), np.int32(cols), np.int32(horizontal)))
     return data
 #end generateQAData
 
@@ -2481,11 +2557,11 @@ def getCentroid(img, mx, my, fwhm, verbose=False):
         return (xcen, ycen)
 
     starbox = img[my-nhalf:my+nhalf+1, mx-nhalf:mx+nhalf+1]
-    ir = max(nhalf-1, 1)
-    dd = arange(nbox-1, dtype=float64)+0.5-nhalf
+    ir = np.max(nhalf-1, 1)
+    dd = np.arange(nbox-1, dtype=np.float64)+0.5-nhalf
     ddsq = dd*dd
 
-    w = (1.0 - 0.5 * (abs(dd)-0.5) / (nhalf-0.5))
+    w = (1.0 - 0.5 * (np.abs(dd)-0.5) / (nhalf-0.5))
     sumc = w.sum()
 
     # Y partial derivative:
@@ -2499,7 +2575,7 @@ def getCentroid(img, mx, my, fwhm, verbose=False):
 
     if (sumxd < 0):
         dy = sumxsq*sumd/(sumc*sumxd)
-        if (abs(dy) <= nhalf):
+        if (np.abs(dy) <= nhalf):
             #ycen = my-dy+0.5
             ycen = my-dy #Do not add 0.5 by convention
         elif (verbose):
@@ -2518,7 +2594,7 @@ def getCentroid(img, mx, my, fwhm, verbose=False):
 
     if( sumxd < 0 ):
         dx = sumxsq*sumd/(sumc*sumxd)
-        if (abs(dx) <= nhalf):
+        if (np.abs(dx) <= nhalf):
             #xcen = mx-dx+0.5
             xcen = mx-dx #Do not add 0.5 by convention
         elif (verbose):
@@ -2531,24 +2607,24 @@ def getCentroid(img, mx, my, fwhm, verbose=False):
 #Use GPU to compute centroids of cuts in 3-d data cube
 def getCentroid_cube_gpu(data, mx, my, fwhm, flag=None, verbose=False, log=None):
     if (len(data.shape) != 3):
-        print("fatboyLibs::getCentroid_cube_gpu> Error: data array must have 3 dimensions")
+        print("fatboyLibs::getCentroid_cube_gpu> Error: data np.array must have 3 dimensions")
         if (log is not None):
-            log.writeLog(__name__, "data array must have 3 dimensions", type=fatboyLog.ERROR)
+            log.writeLog(__name__, "data np.array must have 3 dimensions", type=fatboyLog.ERROR)
         #Return None
         return None
     if (flag is None):
-        flag = ones(data.shape, dtype=int32)
+        flag = np.ones(data.shape, dtype=np.int32)
     (depth, ysize, xsize) = data.shape
     blocks = depth//512
     if (depth % 512 != 0):
         blocks += 1
-    cens = zeros((depth, 2), dtype=float32)
+    cens = np.zeros((depth, 2), dtype=np.float32)
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
         fatboy_mod = get_fatboy_mod()
     getcentroid_cube_float = fatboy_mod.get_function("getCentroid_cube_float")
-    getcentroid_cube_float(drv.In(data.astype(float32)), drv.In(flag.astype(int32)), int32(mx), int32(my), float32(fwhm), int32(depth), int32(xsize), int32(ysize), drv.Out(cens), grid=(blocks,1), block=(block_size,1,1))
+    getcentroid_cube_float((blocks,1), (block_size,1,1), (cp.asarray(np.float32(data)), cp.asarray(np.int32(flag)), np.int32(mx), np.int32(my), np.float32(fwhm), np.int32(depth), np.int32(xsize), np.int32(ysize), cp.empty(cens)))
     return cens
 #end getCentroid_cube_gpu
 
@@ -2595,11 +2671,11 @@ def getRADec(s,log=None, rel=False, dec=False, file=None):
     return x
 #end getRADec
 
-#return a 1-d array with wavelengths from the wavelength solution info in the header
+#return a 1-d np.array with wavelengths from the wavelength solution info in the header
 def getWavelengthSolution(fdu, islit, xsize):
-    xs = arange(xsize, dtype=float32)
+    xs = np.arange(xsize, dtype=np.float32)
     #Calculate wavelength solution
-    wave = zeros(xsize, dtype=float32)
+    wave = np.zeros(xsize, dtype=np.float32)
     if (isinstance(fdu, pyfits.header.Header) or isinstance(fdu, dict)):
         if ('PORDER' in fdu):
             wave[:] = fdu['PCOEFF_0']
@@ -2628,7 +2704,7 @@ def getWavelengthSolution(fdu, islit, xsize):
                 if (seg == nseg-1 and xsize % nseg != 0):
                     stride = xsize - startidx
                     endidx = xsize
-                segws = zeros(stride, dtype=float32)
+                segws = np.zeros(stride, dtype=np.float32)
                 segws[:] = fdu['PCF0_S'+slitStr+'_SEG'+str(seg)]
                 for i in range(1, fdu['PORDER'+slitStr+'_SEG'+str(seg)]+1):
                     segws += fdu['PCF'+str(i)+'_S'+slitStr+'_SEG'+str(seg)]*xs[:stride]**i
@@ -2664,7 +2740,7 @@ def getWavelengthSolution(fdu, islit, xsize):
             wave = fdu['CRVAL1']+xs*fdu['CDELT1']
             return wave
         print("fatboyLibs::getWavelengthSolution> Error: could not find wavelength solution.")
-        return arange(xsize)
+        return np.arange(xsize)
     try:
         if (fdu.hasProperty("wcHeader")):
             hd = fdu.getProperty("wcHeader")
@@ -2695,7 +2771,7 @@ def getWavelengthSolution(fdu, islit, xsize):
                     if (seg == nseg-1 and xsize % nseg != 0):
                         stride = xsize - startidx
                         endidx = xsize
-                    segws = zeros(stride, dtype=float32)
+                    segws = np.zeros(stride, dtype=np.float32)
                     segws[:] = hd['HIERARCH PCF0_S'+slitStr+'_SEG'+str(seg)]
                     for i in range(1, hd['HIERARCH PORDER'+slitStr+'_SEG'+str(seg)]+1):
                         segws += hd['HIERARCH PCF'+str(i)+'_S'+slitStr+'_SEG'+str(seg)]*xs[:stride]**i
@@ -2759,7 +2835,7 @@ def getWavelengthSolution(fdu, islit, xsize):
                 if (seg == nseg-1 and xsize % nseg != 0):
                     stride = xsize - startidx
                     endidx = xsize
-                segws = zeros(stride, dtype=float32)
+                segws = np.zeros(stride, dtype=np.float32)
                 segws[:] = fdu.getHeaderValue('PCF0_S'+slitStr+"_SEG"+str(seg))
                 for i in range(1, fdu.getHeaderValue('PORDER'+slitStr+"_SEG"+str(seg))+1):
                     segws += fdu.getHeaderValue('PCF'+str(i)+'_S'+slitStr+"_SEG"+str(seg))*xs[:stride]**i
@@ -2795,25 +2871,25 @@ def getWavelengthSolution(fdu, islit, xsize):
             wave = fdu.getHeaderValue('CRVAL1')+xs*fdu.getHeaderValue('CDELT1')
             return wave
         print("fatboyLibs::getWavelengthSolution> Error: could not find wavelength solution.")
-        return arange(xsize)
+        return np.arange(xsize)
     except Exception as ex:
         print(str(ex))
         print("fatboyLibs::getWavelengthSolution> Error: datatype must be fatboyDataUnit or pyfits Header object.")
-    return arange(xsize)
+    return np.arange(xsize)
 #end getWavelengthSolution
 
 def gpusum(data, lthreshold=None, hthreshold=None, nonzero=False):
     gpu_data = gpuarray.to_gpu(data)
     if (lthreshold is None and hthreshold is None and not nonzero):
-        x = gpuarray.sum(gpu_data, float64)
+        x = gpuarray.sum(gpu_data, np.float64)
     else:
         expr = ""
         argu = "float *x"
-        if (data.dtype == float64):
+        if (data.dtype == np.float64):
             argu = "double *x"
-        elif (data.dtype == int32):
+        elif (data.dtype == np.int32):
             argu = "int *x"
-        elif (data.dtype == int64):
+        elif (data.dtype == np.int64):
             argu = "long *x"
         if (lthreshold is not None and hthreshold is not None and nonzero):
             expr = "x[i] >= "+str(lthreshold)+" && x[i] <= "+str(hthreshold)+" && x[i] != 0 ? x[i]:0"
@@ -2829,7 +2905,7 @@ def gpusum(data, lthreshold=None, hthreshold=None, nonzero=False):
             expr = "x[i] <= "+str(hthreshold)+" ? x[i]:0"
         elif (nonzero):
             expr = "x[i] != 0 ? x[i]:0"
-        sumKernel = ReductionKernel(float64, neutral="0", reduce_expr="a+b", map_expr = expr, arguments = argu)
+        sumKernel = ReductionKernel(np.float64, neutral="0", reduce_expr="a+b", map_expr = expr, arguments = argu)
         x = sumKernel(gpu_data)
     return float(x.get())
 #end gpusum
@@ -2996,8 +3072,8 @@ def lacos_spec(indata, outfile, outmask, mef=0, gain=4.1, readn=30.0, xorder = 9
         outimage = pyfits.open(fname)
         mef = findMef(outimage)
         data = outimage[mef].data
-    elif (isinstance(indata, ndarray)):
-        #Input is raw array
+    elif (isinstance(indata, np.ndarray)):
+        #Input is raw np.array
         data = indata
         if (outfile is not None or outmask is not None):
             outimage = pyfits.HDUList()
@@ -3027,7 +3103,7 @@ def lacos_spec(indata, outfile, outmask, mef=0, gain=4.1, readn=30.0, xorder = 9
 
     #Mask
     if (mask is None):
-        mask = ones(data.shape, dtype=bool)
+        mask = np.ones(data.shape, dtype=bool)
     elif (isinstance(mask, str)):
         temp = pyfits.open(mask)
         mmef = findMef(temp)
@@ -3036,10 +3112,10 @@ def lacos_spec(indata, outfile, outmask, mef=0, gain=4.1, readn=30.0, xorder = 9
     mask = mask.astype(bool)
 
     # create Laplacian kernel
-    kernel = array([[0,-1,0],[-1,4,-1],[0,-1,0]], float32)
+    kernel = np.array([[0,-1,0],[-1,4,-1],[0,-1,0]], np.float32)
 
     # create growth kernel
-    gkernel = ones((3,3), float32)
+    gkernel = np.ones((3,3), np.float32)
 
     # initialize loop
     i = 1
@@ -3047,8 +3123,8 @@ def lacos_spec(indata, outfile, outmask, mef=0, gain=4.1, readn=30.0, xorder = 9
     previous = 0
 
     shp = data.shape
-    oldoutput = float32(data)
-    tempOmask = zeros(data.shape, dtype=float32)
+    oldoutput = data.astype(np.float32)
+    tempOmask = np.zeros(data.shape, dtype=np.float32)
 
     print(oldoutput.mean())
 
@@ -3063,7 +3139,7 @@ def lacos_spec(indata, outfile, outmask, mef=0, gain=4.1, readn=30.0, xorder = 9
         galaxy = smooth1d2d(galaxy, 5, 10, axis=0)
         oldoutput -= galaxy
     else:
-        galaxy = zeros(shp, float32)
+        galaxy = np.zeros(shp, np.float32)
 
     #subtract sky lines
     if (yorder > 0):
@@ -3076,7 +3152,7 @@ def lacos_spec(indata, outfile, outmask, mef=0, gain=4.1, readn=30.0, xorder = 9
         skymod = smooth1d2d(skymod, 5, 10, axis=1)
         oldoutput -= skymod
     else:
-        skymod = zeros(shp, float32)
+        skymod = np.zeros(shp, np.float32)
 
     print(oldoutput.mean())
     #add object spectra to sky model
@@ -3133,7 +3209,7 @@ def lacos_spec(indata, outfile, outmask, mef=0, gain=4.1, readn=30.0, xorder = 9
         #discard if CR flux <= objlim * object flux
 
         #grow CRs by one pixel and check in original sigma map
-        gfirstsel = float32(convolve2d(firstsel,gkernel))
+        gfirstsel = np.float32(convolve2d(firstsel,gkernel))
         del firstsel
         lacosSelect(gfirstsel, sigmap, 0.5, sigclip, 0.1, doCount=False)
         print(gfirstsel.mean(), sigmap.mean())
@@ -3141,7 +3217,7 @@ def lacos_spec(indata, outfile, outmask, mef=0, gain=4.1, readn=30.0, xorder = 9
         sigcliplow = sigfrac*sigclip
         if (verbose):
             print("\tFinding neighboring pixels affected by cosmic rays...")
-        finalsel = float32(convolve2d(gfirstsel,gkernel))
+        finalsel = np.float32(convolve2d(gfirstsel,gkernel))
         del gfirstsel
         (inputmask, npix) = lacosSelect(finalsel, sigmap, 0.5, sigcliplow, 0.1, doCount=True, mask=tempOmask, oldoutput=oldoutput)
         print(finalsel.mean(), inputmask.mean())
@@ -3189,8 +3265,8 @@ def lacos_spec(indata, outfile, outmask, mef=0, gain=4.1, readn=30.0, xorder = 9
 ############# LA Cosmic helper routines #################
 def lacosFirstSel(sigmap, med5, sigclip):
     #Returns (sigmap, firstsel)
-    sigmap = sigmap.astype(float32)
-    firstsel = empty(sigmap.shape, dtype=float32)
+    sigmap = sigmap.astype(np.float32)
+    firstsel = np.empty(sigmap.shape, dtype=np.float32)
     blocks = sigmap.size//512
     if (sigmap.size % 512 != 0):
         blocks += 1
@@ -3199,16 +3275,16 @@ def lacosFirstSel(sigmap, med5, sigclip):
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("lacosFirstSel_float")
-    kernel(drv.InOut(sigmap), drv.In(med5), drv.Out(firstsel), float32(sigclip), grid=(blocks,1), block=(block_size,1,1))
+    kernel((blocks,1), (block_size,1,1), (cp.asarray(sigmap), cp.asarray(med5), cp.empty(firstsel), np.float32(sigclip)))
     return (sigmap, firstsel)
 #end lacosFirstSel
 
 def lacosNoiseModel(med5, deriv2, gain, readn):
     #Returns (noise, sigmap)
-    noise = empty(med5.shape, dtype=float32)
-    sigmap = empty(med5.shape, dtype=float32)
-    med5 = med5.astype(float32)
-    deriv2 = deriv2.astype(float32)
+    noise = np.empty(med5.shape, dtype=np.float32)
+    sigmap = np.empty(med5.shape, dtype=np.float32)
+    med5 = med5.astype(np.float32)
+    deriv2 = deriv2.astype(np.float32)
     blocks = med5.size//512
     if (med5.size % 512 != 0):
         blocks += 1
@@ -3217,15 +3293,15 @@ def lacosNoiseModel(med5, deriv2, gain, readn):
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("lacosNoiseModel_float")
-    kernel(drv.In(med5), drv.In(deriv2), drv.Out(noise), drv.Out(sigmap), float32(gain), float32(readn), grid=(blocks,1), block=(block_size,1,1))
+    kernel((blocks,1), (block_size,1,1), (cp.asarray(med5), cp.asarray(deriv2), cp.empty(noise), cp.empty(sigmap), np.float32(gain), np.float32(readn)))
     return (noise, sigmap)
 #end lacosNoiseModel
 
 def lacosSelect(sel, sigmap, lower1, sigclip, lower2, doCount=False, mask=None, oldoutput=None):
     #Returns count if doCount = True
     blocks = sel.size//512
-    sel = sel.astype(float32)
-    sigmap = sigmap.astype(float32)
+    sel = sel.astype(np.float32)
+    sigmap = sigmap.astype(np.float32)
     if (sel.size % 512 != 0):
         blocks += 1
     if (not superFATBOY.threaded()):
@@ -3233,21 +3309,21 @@ def lacosSelect(sel, sigmap, lower1, sigclip, lower2, doCount=False, mask=None, 
     else:
         fatboy_mod = get_fatboy_mod()
     if (doCount and mask is not None):
-        npix = zeros(1, dtype=int32)
-        inputmask = empty(sel.shape, dtype=float32)
+        npix = np.zeros(1, dtype=np.int32)
+        inputmask = np.empty(sel.shape, dtype=np.float32)
         kernel = fatboy_mod.get_function("lacosSelectAndCount_float")
-        kernel(drv.In(sel), drv.In(sigmap), float32(lower1), float32(sigclip), float32(lower2), drv.InOut(mask), drv.Out(inputmask), drv.In(oldoutput), drv.InOut(npix), grid=(blocks,1), block=(block_size,1,1))
+        kernel((blocks,1), (block_size,1,1), (cp.asarray(sel), cp.asarray(sigmap), np.float32(lower1), np.float32(sigclip), np.float32(lower2), cp.asarray(mask), cp.empty(inputmask), cp.asarray(oldoutput), cp.asarray(npix)))
         return (inputmask, npix[0])
     else:
         kernel = fatboy_mod.get_function("lacosSelect_float")
-        kernel(drv.InOut(sel), drv.In(sigmap), float32(lower1), float32(sigclip), float32(lower2), grid=(blocks,1), block=(block_size,1,1))
+        kernel((blocks,1), (block_size,1,1), (cp.asarray(sel), cp.asarray(sigmap), np.float32(lower1), np.float32(sigclip), np.float32(lower2)))
 #end lacosSelect
 
 def lacosStarReject(med3, med7, noise, firstsel, sigmap, objlim):
     #Returns firstsel
-    med3 = med3.astype(float32)
-    med7 = med7.astype(float32)
-    noise = noise.astype(float32)
+    med3 = med3.astype(np.float32)
+    med7 = med7.astype(np.float32)
+    noise = noise.astype(np.float32)
     blocks = med3.size//512
     if (med3.size % 512 != 0):
         blocks += 1
@@ -3256,15 +3332,15 @@ def lacosStarReject(med3, med7, noise, firstsel, sigmap, objlim):
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("lacosStarReject_float")
-    kernel(drv.In(med3), drv.In(med7), drv.In(noise), drv.InOut(firstsel), drv.In(sigmap), float32(objlim), grid=(blocks,1), block=(block_size,1,1))
+    kernel((blocks,1), (block_size,1,1), (cp.asarray(med3), cp.asarray(med7), cp.asarray(noise), cp.asarray(firstsel), cp.asarray(sigmap), np.float32(objlim)))
     return firstsel
 #end lacosStarReject
 
 def lacosUpdateOutput(oldoutput, tempOmask, med5, skymod):
-    oldoutput = oldoutput.astype(float32)
-    tempOmask = tempOmask.astype(float32)
-    med5 = med5.astype(float32)
-    skymod = skymod.astype(float32)
+    oldoutput = oldoutput.astype(np.float32)
+    tempOmask = tempOmask.astype(np.float32)
+    med5 = med5.astype(np.float32)
+    skymod = skymod.astype(np.float32)
     blocks = oldoutput.size//512
     if (oldoutput.size % 512 != 0):
         blocks += 1
@@ -3273,7 +3349,7 @@ def lacosUpdateOutput(oldoutput, tempOmask, med5, skymod):
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("lacosUpdateOutput_float")
-    kernel(drv.InOut(oldoutput), drv.In(tempOmask), drv.In(med5), drv.In(skymod), grid=(blocks,1), block=(block_size,1,1))
+    kernel((blocks,1), (block_size,1,1), (cp.asarray(oldoutput), cp.asarray(tempOmask), cp.asarray(med5), cp.asarray(skymod)))
 #end lacosUpdateOutput
 
 ############# end LA Cosmic helper routines #################
@@ -3281,8 +3357,8 @@ def lacosUpdateOutput(oldoutput, tempOmask, med5, skymod):
 
 #residuals to linear fit for use with leastsq
 def linResiduals(p, x, out):
-    f = (p[0]+p[1]*x).astype(float64)
-    x = x.astype(float64)
+    f = (p[0]+p[1]*x).astype(np.float64)
+    x = np.float64(x)
     err = out-f
     return err
 #end linResiduals
@@ -3295,12 +3371,12 @@ def linterp_gpu(data, x, gpm, iter=100, log=None):
     else:
         fatboy_mod = get_fatboy_mod()
     linInterp = fatboy_mod.get_function("linInterp_float")
-    output = empty(data.shape, float32)
+    output = np.empty(data.shape, np.float32)
     rows = data.shape[0]
     cols = data.shape[1]
-    gpm = gpm.astype(int32)
-    ict = zeros(1, int32)
-    nfound = zeros(1, int32)
+    gpm = gpm.astype(np.int32)
+    ict = np.zeros(1, np.int32)
+    nfound = np.zeros(1, np.int32)
     blocks = data.size//512
     if (data.size % 512 != 0):
         blocks += 1
@@ -3323,14 +3399,14 @@ def linterp_gpu(data, x, gpm, iter=100, log=None):
     while (p < iter):
         p += 1
         print("\tPass "+str(p))
-        linInterp(drv.In(data.astype(float32)), drv.Out(output), drv.In(gpm), float32(x), int32(rows), int32(cols), drv.InOut(ict), drv.InOut(nfound), grid=(blocks,1), block=(block_size,1,1))
+        linInterp((blocks,1), (block_size,1,1), (cp.asarray(np.float32(data)), cp.empty(output), cp.asarray(gpm), np.float32(x), np.int32(rows), np.int32(cols), cp.asarray(ict), cp.asarray(nfound)))
         print("\t\t"+str(nfound) + " found; "+str(ict)+" replaced.")
         write_fatboy_log(log, logtype, "Pass "+str(p)+": "+str(nfound) + " found; "+str(ict)+" replaced.", __name__, printCaller=False, tabLevel=1)
         if (ict == 0 or ict == nfound):
             break
         data = output
-        ict = zeros(1, int32)
-        nfound = zeros(1, int32)
+        ict = np.zeros(1, np.int32)
+        nfound = np.zeros(1, np.int32)
     print("Interpolation time: "+str(time.time()-t))
     return output
 #end linterp_gpu
@@ -3340,8 +3416,8 @@ def linterp_cpu(data, x, gpm, iter=100, log=None):
     nx = shape(data)[0]
     ny = shape(data)[1]
     z = -1
-    initys = arange(nx*ny).reshape(nx,ny) % ny
-    initxs = arange(nx*ny).reshape(nx,ny) // ny
+    initys = np.arange(nx*ny).reshape(nx,ny) % ny
+    initxs = np.arange(nx*ny).reshape(nx,ny) // ny
     p = 0
 
     #set log type
@@ -3383,7 +3459,7 @@ def linterp_cpu(data, x, gpm, iter=100, log=None):
                         if (data[xc,yc] != 0):
                             temp.append(data[xc,yc])
             if (len(temp) != 0):
-                temp = array(temp)
+                temp = np.array(temp)
                 newData[j,l] = gpu_arraymedian(temp, kernel=fatboyclib.median)
                 ict+=1
         data = newData
@@ -3401,19 +3477,19 @@ def maskNegatives(data):
     else:
         fatboy_mod = get_fatboy_mod()
     maskNegativesFunc = fatboy_mod.get_function("maskNegatives_float")
-    outtype = float32
-    if (data.dtype == int32):
+    outtype = np.float32
+    if (data.dtype == np.int32):
         maskNegativesFunc = fatboy_mod.get_function("maskNegatives_int")
-    elif (data.dtype == int64):
+    elif (data.dtype == np.int64):
         maskNegativesFunc = fatboy_mod.get_function("maskNegatives_long")
-    elif (data.dtype == float64):
+    elif (data.dtype == np.float64):
         maskNegativesFunc = fatboy_mod.get_function("maskNegatives_double")
-        outtype = float64
+        outtype = np.float64
     blocks = data.size//block_size
     if (data.size % 512 != 0):
         blocks += 1
-    output = empty(data.shape, data.dtype)
-    maskNegativesFunc(drv.In(data), drv.Out(output), grid=(blocks,1), block=(block_size,1,1))
+    output = np.empty(data.shape, data.dtype)
+    maskNegativesFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(output)))
     return output
 #end maskNegatives
 
@@ -3426,13 +3502,13 @@ def maskNegativesAndZeros(data, zeroRep, negRep):
     else:
         fatboy_mod = get_fatboy_mod()
     maskNegativesFunc = fatboy_mod.get_function("maskNegativesAndZeros_float")
-    data = float32(data)
+    data = data.astype(np.float32)
     blocks = data.size//block_size
     if (data.size % 512 != 0):
         blocks += 1
-    output = empty(data.shape, data.dtype)
-    maskNegativesFunc(drv.In(data), drv.Out(output), float32(zeroRep), float32(negRep), grid=(blocks,1), block=(block_size,1,1))
-    return output
+    output = cp.empty(data.shape, data.dtype)
+    maskNegativesFunc((blocks,1), (block_size,1,1), (cp.asarray(data), output, np.float32(zeroRep), np.float32(negRep)))
+    return output.get()
 #end maskNegativesAndZeros
 
 def maskNegativesCPU(data):
@@ -3462,15 +3538,15 @@ def medfilt2d(data, width, outfile=None, zlo=0, zhi=0, mef=0, log=None):
             if (log is not None):
                 log.writeLog(__name__, "File "+data+" does not exist!", type=fatboyLog.ERROR)
             return None
-    elif (isinstance(data, ndarray)):
+    elif (isinstance(data, np.ndarray)):
         if (outfile is not None):
             outimage = pyfits.HDUList()
             hdu = pyfits.PrimaryHDU()
             outimage.append(hdu)
     else:
-        print("medfilt2d> Error: Input must be a FITS file or a raw array.")
+        print("medfilt2d> Error: Input must be a FITS file or a raw np.array.")
         if (log is not None):
-            log.writeLog(__name__, "Input must be a FITS file or a raw array.", type=fatboyLog.ERROR)
+            log.writeLog(__name__, "Input must be a FITS file or a raw np.array.", type=fatboyLog.ERROR)
         return None
 
     rows = data.shape[0]
@@ -3481,12 +3557,12 @@ def medfilt2d(data, width, outfile=None, zlo=0, zhi=0, mef=0, log=None):
     else:
         fatboy_mod = get_fatboy_mod()
     medfiltFunc = fatboy_mod.get_function("medfilt2d_float")
-    outtype = float32
-    out = empty(data.shape, outtype)
+    outtype = np.float32
+    out = np.empty(data.shape, outtype)
     blocks = data.size//512
     if (data.size % 512 != 0):
         blocks += 1
-    medfiltFunc(drv.In(data), drv.Out(out), int32(rows), int32(cols), int32(w), int32(zlo), int32(zhi), grid=(blocks,1), block=(block_size,1,1))
+    medfiltFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(out), np.int32(rows), np.int32(cols), np.int32(w), np.int32(zlo), np.int32(zhi)))
 
     if (outfile is not None):
         outimage[mef].data = out
@@ -3497,7 +3573,7 @@ def medfilt2d(data, width, outfile=None, zlo=0, zhi=0, mef=0, log=None):
 #end medfilt2d
 
 def medianfilterCPU(cut, boxsize=25, nhigh=0):
-    tempcut = zeros(len(cut))
+    tempcut = np.zeros(len(cut))
     tempcut[:boxsize] = cut[:boxsize] - arraymedian(cut[:2*boxsize], kernel=fatboyclib.median, nhigh=nhigh)
     for j in range(boxsize, len(cut)-boxsize):
         tempcut[j] = cut[j] - arraymedian(cut[j-boxsize:j+boxsize+1], kernel=fatboyclib.median, nhigh=nhigh)
@@ -3512,7 +3588,7 @@ def medianfilter2dCPU(data, axis="X", boxsize=51, nhigh=0):
     elif (boxsize % 2 == 0):
         boxsize += 1
         print("Boxsize must be odd!  Using "+str(boxsize))
-    temp = zeros(data.shape)
+    temp = np.zeros(data.shape)
     bshalf = boxsize//2
     bshalfplus = bshalf+1
     if (axis == "Y"):
@@ -3538,7 +3614,7 @@ def mediansmooth1d(data, width):
     if (width % 2 == 0):
         width += 1
     w = width//2
-    newdata = zeros((width, n), float32)
+    newdata = np.zeros((width, n), np.float32)
     newdata [w,:] = data[:]
     for j in range(w):
         newdata[j,w-j:] = data[:j-w]
@@ -3560,12 +3636,12 @@ def mediansmooth1d2d(data, width, axis=0):
     else:
         fatboy_mod = get_fatboy_mod()
     smoothFunc = fatboy_mod.get_function("mediansmooth1d2d_float")
-    outtype = float32
+    outtype = np.float32
     blocks = data.size//512
     if (data.size % 512 != 0):
         blocks += 1
-    smoothed = empty(data.shape, outtype)
-    smoothFunc(drv.In(data), drv.Out(smoothed), int32(rows), int32(cols), int32(w), int32(axis), grid=(blocks,1), block=(block_size,1,1))
+    smoothed = np.empty(data.shape, outtype)
+    smoothFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(smoothed), np.int32(rows), np.int32(cols), np.int32(w), np.int32(axis)))
     return smoothed
 #end mediansmooth1d2d
 
@@ -3573,8 +3649,8 @@ def mediansmooth1d2d(data, width, axis=0):
 def medReplace2d(data, mask, boxsize):
     out = data.copy()
     z = int(boxsize/2) #boxsize typically 3 = 8 neighboring pixels
-    b = where(mask[z:-z,z:-z]) #mask should be true if pixel is zero (or otherwise should be replaced)
-    repVals = zeros((b[0].size, boxsize**2-1))
+    b = np.where(mask[z:-z,z:-z]) #mask should be true if pixel is zero (or otherwise should be replaced)
+    repVals = np.zeros((b[0].size, boxsize**2-1))
     i = 0
     for j in range(boxsize):
         for l in range(boxsize):
@@ -3588,11 +3664,11 @@ def medReplace2d(data, mask, boxsize):
 
 #Used for point_replace.  Calculate scaling of neighboring pixels in point vs turbo images
 def medScale2d(data1, data2, mask, boxsize):
-    out = zeros(data1.shape)
+    out = np.zeros(data1.shape)
     z = int(boxsize/2) #boxsize typically 3 = 8 neighboring pixels
-    b = where(mask[z:-z,z:-z]) #mask should be true if pixel is zero in point image and nonzero in turbo
-    scaleVals1 = zeros((b[0].size, boxsize**2-1))
-    scaleVals2 = zeros((b[0].size, boxsize**2-1))
+    b = np.where(mask[z:-z,z:-z]) #mask should be true if pixel is zero in point image and nonzero in turbo
+    scaleVals1 = np.zeros((b[0].size, boxsize**2-1))
+    scaleVals2 = np.zeros((b[0].size, boxsize**2-1))
     i = 0
     for j in range(boxsize):
         for l in range(boxsize):
@@ -3604,7 +3680,7 @@ def medScale2d(data1, data2, mask, boxsize):
     #output is median of neighboring pixels in point image to that in turbo image for scaling replaced pixels
     out[b[0]+z, b[1]+z] = gpu_arraymedian(scaleVals1, axis="X", nonzero=True)/gpu_arraymedian(scaleVals2, axis="X", nonzero=True)
     #Handle NaNs where there is no neighboring data
-    out[isnan(out)] = 0
+    out[np.isnan(out)] = 0
     return out
 #end medScale2d
 
@@ -3612,77 +3688,92 @@ def noisemaps_ds_gpu(nm, nmdark):
     blocks = nm.size//512
     if (nm.size % 512 != 0):
         blocks += 1
-    if (nm.dtype != 'float32'):
-        nm = nm.astype(float32)
-    if (nmdark.dtype != 'float32'):
-        nmdark = nmdark.astype(float32)
+    if (nm.dtype != np.float32):
+        nm = nm.astype(np.float32)
+    if (nmdark.dtype != np.float32):
+        nmdark = nmdark.astype(np.float32)
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("noisemaps_ds_float")
-    kernel(drv.InOut(nm), drv.In(nmdark), int32(nm.size), grid=(blocks,1), block=(block_size,1,1))
-    return nm
+    nm_gpu = cp.asarray(nm)
+    nmdark_gpu = cp.asarray(nmdark)
+    kernel((blocks,1), (block_size,1,1), (nm_gpu, nmdark_gpu, np.int32(nm.size)))
+    if isinstance(nm, np.ndarray):
+        return nm_gpu.get()
+    return nm_gpu
 #end noisemaps_ds_gpu
 
 def noisemaps_fd_gpu(image, nm, oldimage, nmflat, masterFlat):
     blocks = nm.size//512
     if (nm.size % 512 != 0):
         blocks += 1
-    if (nm.dtype != 'float32'):
-        nm = nm.astype(float32)
-    if (image.dtype != 'float32'):
-        image = image.astype(float32)
-    if (nmflat.dtype != 'float32'):
-        nmflat = nmflat.astype(float32)
-    if (oldimage.dtype != 'float32'):
-        oldimage = oldimage.astype(float32)
-    if (masterFlat.dtype != 'float32'):
-        masterFlat = masterFlat.astype(float32)
+    if (nm.dtype != 'np.float32'):
+        nm = nm.astype(np.float32)
+    if (image.dtype != 'np.float32'):
+        image = image.astype(np.float32)
+    if (nmflat.dtype != 'np.float32'):
+        nmflat = nmflat.astype(np.float32)
+    if (oldimage.dtype != 'np.float32'):
+        oldimage = oldimage.astype(np.float32)
+    if (masterFlat.dtype != 'np.float32'):
+        masterFlat = masterFlat.astype(np.float32)
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("noisemaps_fd_float")
-    kernel(drv.In(image), drv.InOut(nm), drv.In(oldimage), drv.In(nmflat), drv.In(masterFlat), int32(nm.size), grid=(blocks,1), block=(block_size,1,1))
-    return nm
+    image_gpu = cp.asarray(image)
+    nm_gpu = cp.asarray(nm)
+    oldimage_gpu = cp.asarray(oldimage)
+    nmflat_gpu = cp.asarray(nmflat)
+    masterFlat_gpu = cp.asarray(masterFlat)
+    kernel((blocks,1), (block_size,1,1), (image_gpu, nm_gpu, oldimage_gpu, nmflat_gpu, masterFlat_gpu, np.int32(nm.size)))
+    if isinstance(nm, np.ndarray):
+        return nm_gpu.get()
+    return nm_gpu
 #end noisemaps_fd_gpu
 
 def noisemaps_mflat_dome_on_off_gpu(on, off, ncomb1, ncomb2):
-    nm = empty(on.shape, float32)
+    nm = np.empty(on.shape, np.float32)
     blocks = nm.size//512
     if (nm.size % 512 != 0):
         blocks += 1
-    if (nm.dtype != 'float32'):
-        nm = nm.astype(float32)
-    if (on.dtype != 'float32'):
-        on = on.astype(float32)
-    if (off.dtype != 'float32'):
-        off = off.astype(float32)
+    if (nm.dtype != 'np.float32'):
+        nm = nm.astype(np.float32)
+    if (on.dtype != 'np.float32'):
+        on = on.astype(np.float32)
+    if (off.dtype != 'np.float32'):
+        off = off.astype(np.float32)
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
         fatboy_mod = get_fatboy_mod()
-    kernel = fatboy_mod.get_function("noisemaps_mflat_dome_on_off_float")
-    kernel(drv.Out(nm), drv.In(on), drv.In(off), float32(ncomb1), float32(ncomb2), int32(nm.size), grid=(blocks,1), block=(block_size,1,1))
-    return nm
+    kernel = fatboy_mod.get_function("noisemaps_twilight_float")
+    nm_gpu = cp.empty(on.shape, np.float32)
+    on_gpu = cp.asarray(on)
+    off_gpu = cp.asarray(off)
+    kernel((blocks,1), (block_size,1,1), (nm_gpu, on_gpu, off_gpu, np.float32(ncomb1), np.float32(ncomb2), np.int32(nm.size)))
+    return nm_gpu.get()
+
 #end noisemaps_mflat_dome_on_off_gpu
 
-#Take the sqrt(dividend) / divisor
+#Take the np.sqrt(dividend) / divisor
 def noisemaps_sqrtAndDivide_float(dividend, divisor):
     blocks = dividend.size//512
     if (dividend.size % 512 != 0):
         blocks += 1
-    if (dividend.dtype != 'float32'):
-        dividend = dividend.astype(float32)
-    if (divisor.dtype != 'float32'):
-        divisor = divisor.astype(float32)
+    if (dividend.dtype != 'np.float32'):
+        dividend = dividend.astype(np.float32)
+    if (divisor.dtype != 'np.float32'):
+        divisor = divisor.astype(np.float32)
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("noisemaps_sqrtAndDivide_float")
-    kernel(drv.InOut(dividend), drv.In(divisor), int32(dividend.size), grid=(blocks,1), block=(block_size,1,1))
+    kernel((blocks,1), (block_size,1,1), (cp.asarray(dividend), cp.asarray(divisor), np.int32(dividend.size)))
     return dividend
 #end noisemaps_sqrtAndDivide_float
 
@@ -3694,18 +3785,18 @@ def normalizeFlat(masterFlat, medVal, lowThresh, lowReplace, hiThresh, hiReplace
         doNM = True
         nm = masterFlat.getProperty("noisemap")
     else:
-        nm = empty(1, dtype=float32)
+        nm = np.empty(1, dtype=np.float32)
     blocks = (flat.size)//512
     if (flat.size % 512 != 0):
         blocks += 1
-    lowct = zeros(1, int32)
-    hict = zeros(1, int32)
+    lowct = np.zeros(1, np.int32)
+    hict = np.zeros(1, np.int32)
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("normalizeFlat_float")
-    kernel(drv.InOut(flat), float32(medVal), float32(lowThresh), float32(lowReplace), float32(hiThresh), float32(hiReplace), drv.InOut(lowct), drv.InOut(hict), int32(doNM), drv.InOut(nm), int32(flat.size), grid=(blocks,1), block=(block_size,1,1))
+    kernel((blocks,1), (block_size,1,1), (cp.asarray(flat), np.float32(medVal), np.float32(lowThresh), np.float32(lowReplace), np.float32(hiThresh), np.float32(hiReplace), cp.asarray(lowct), cp.asarray(hict), np.int32(doNM), cp.asarray(nm), np.int32(flat.size)))
     if (lowct > 0):
         print("normalizeFlat> Replaced "+str(lowct)+" pixels below "+str(lowThresh))
         if (log is not None):
@@ -3728,12 +3819,12 @@ def normalizeMOSFlat(masterFlat, slitmask, nslits, lowThresh=0, lowReplace=0, hi
         doNM = True
         nm = masterFlat.getProperty("noisemap")
     else:
-        nm = empty(1, dtype=float32)
+        nm = np.empty(1, dtype=np.float32)
     blocks = (flat.size)//512
     if (flat.size % 512 != 0):
         blocks += 1
-    lowct = zeros(1, int32)
-    hict = zeros(1, int32)
+    lowct = np.zeros(1, np.int32)
+    hict = np.zeros(1, np.int32)
     trans = False
     if (masterFlat.dispersion == masterFlat.DISPERSION_VERTICAL):
         trans = True #transpose data first
@@ -3755,7 +3846,7 @@ def normalizeMOSFlat(masterFlat, slitmask, nslits, lowThresh=0, lowReplace=0, hi
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("normalizeMOSFlat_float")
-    kernel(drv.InOut(flat), drv.In(int32(slitmask)), drv.In(medians), float32(lowThresh), float32(lowReplace), float32(hiThresh), float32(hiReplace), drv.InOut(lowct), drv.InOut(hict), int32(doNM), drv.InOut(nm), int32(flat.size), grid=(blocks,1), block=(block_size,1,1))
+    kernel((blocks,1), (block_size,1,1), (cp.asarray(flat), cp.asarray(np.int32(slitmask)), cp.asarray(medians), np.float32(lowThresh), np.float32(lowReplace), np.float32(hiThresh), np.float32(hiReplace), cp.asarray(lowct), cp.asarray(hict), np.int32(doNM), cp.asarray(nm), np.int32(flat.size)))
     if (lowct > 0):
         print("normalizeMOSFlat> Replaced "+str(lowct)+" pixels below "+str(lowThresh))
         if (log is not None):
@@ -3787,7 +3878,7 @@ def normalizeMOSSource(sourceFDU, slitmask, nslits, log=None):
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("normalizeMOSSource_float")
-    kernel(drv.InOut(data), drv.In(int32(slitmask)), drv.In(medians), int32(data.size), grid=(blocks,1), block=(block_size,1,1))
+    kernel((blocks,1), (block_size,1,1), (cp.asarray(data), cp.asarray(np.int32(slitmask)), cp.asarray(medians), np.int32(data.size)))
     sourceFDU.updateData(data)
 #end normalizeMOSSource
 
@@ -3795,16 +3886,16 @@ def polyFunction(p, x, order):
     if (isinstance(x, float) or isinstance(x, int)):
         f = 0.
     else:
-        f = zeros(x.shape, float64)
-        x = x.astype(float64)
+        f = np.zeros(x.shape, np.float64)
+        x = np.float64(x)
     for j in range(0,order+1):
         f+=p[j]*x**j
     return f
 #end polyFunction
 
 def polyResiduals(p, x, out, order):
-    f = zeros(x.shape, float64)
-    x = x.astype(float64)
+    f = np.zeros(x.shape, np.float64)
+    x = np.float64(x)
     for j in range(0,order+1):
         f+=p[j]*x**j
     err = out-f
@@ -3836,7 +3927,7 @@ def readCoeffsFile(coeffFile, log=None):
     xcoeffs = []
     ycoeffs = []
     if (isinstance(coeffFile, str) and os.access(coeffFile, os.F_OK)):
-        #Leave empty lines in list
+        #Leave np.empty lines in list
         f = open(coeffFile, 'r')
         lines = f.read().split('\n')
         f.close()
@@ -3847,7 +3938,7 @@ def readCoeffsFile(coeffFile, log=None):
             while (currCoeff != ''):
                 xcoeffs.append(float(currCoeff))
                 currCoeff = lines.pop(0)
-            #Read ycoeffs until lines is empty
+            #Read ycoeffs until lines is np.empty
             while (len(lines) > 0):
                 currCoeff = lines.pop(0)
                 if (currCoeff != ''):
@@ -3906,11 +3997,11 @@ def readRegionFile(regfile, horizontal=True, log=None):
                 syhi.append(int(float(temp[0])+float(temp[2])/2.-1))
                 slitw.append(float(temp[3]))
     #Deal with non-sequential region file entries by sorting
-    sorted = array(sylo).argsort()
-    sylo = array(sylo)[sorted]
-    syhi = array(syhi)[sorted]
-    slitx = array(slitx)[sorted]
-    slitw = array(slitw)[sorted]
+    sorted = np.array(sylo).argsort()
+    sylo = np.array(sylo)[sorted]
+    syhi = np.array(syhi)[sorted]
+    slitx = np.array(slitx)[sorted]
+    slitw = np.array(slitw)[sorted]
     return (sylo, syhi, slitx, slitw)
 #end readRegionFile
 
@@ -3945,11 +4036,11 @@ def readRegionFileText(regfile, horizontal=True, log=None):
                 syhi.append(int(float(temp[0])+float(temp[2])/2.))
                 slitw.append(float(temp[3]))
     #Deal with non-sequential region file entries by sorting
-    sorted = array(sylo).argsort()
-    sylo = array(sylo)[sorted]
-    syhi = array(syhi)[sorted]
-    slitx = array(slitx)[sorted]
-    slitw = array(slitw)[sorted]
+    sorted = np.array(sylo).argsort()
+    sylo = np.array(sylo)[sorted]
+    syhi = np.array(syhi)[sorted]
+    slitx = np.array(slitx)[sorted]
+    slitw = np.array(slitw)[sorted]
     return (sylo, syhi, slitx, slitw)
 #end readRegionFileText
 
@@ -4000,31 +4091,13 @@ def readRegionFileXML(regfile, horizontal=True, log=None):
             syhi.append(int(xcenter+width/2.))
             slitw.append(height)
     #Deal with non-sequential region file entries by sorting
-    sorted = array(sylo).argsort()
-    sylo = array(sylo)[sorted]
-    syhi = array(syhi)[sorted]
-    slitx = array(slitx)[sorted]
-    slitw = array(slitw)[sorted]
+    sorted = np.array(sylo).argsort()
+    sylo = np.array(sylo)[sorted]
+    syhi = np.array(syhi)[sorted]
+    slitx = np.array(slitx)[sorted]
+    slitw = np.array(slitw)[sorted]
     return (sylo, syhi, slitx, slitw)
 #end readRegionFileXML
-
-#Use a sigma clipping algorithm to remove outliers from a 1d array
-def removeOutliersSigmaClip(origData, sig, iter):
-    n = 0
-    oldstddev = 0
-    data = origData.copy()
-    while (n < iter and len(data) > 0):
-        mean = data.mean()
-        stddev = data.std()
-        if (stddev == oldstddev):
-            break
-        lo = mean-sig*stddev
-        hi = mean+sig*stddev
-        oldstddev = stddev
-        data = data[logical_and(data > lo, data < hi)]
-        n+=1
-    return data 
-#end removeOutliersSigmaClip
 
 def removeEmpty(s):
     while(s.count('') > 0):
@@ -4033,19 +4106,19 @@ def removeEmpty(s):
 
 #Find the low and high row/column values of each slit
 def shiftAddSlitmask(slitmask, nslits, horizontal=True):
-    slitmask = int32(slitmask)
+    slitmask = slitmask.astype(np.int32)
     rows = slitmask.shape[0]
     cols = slitmask.shape[1]
     blocks = slitmask.size//512
-    ylo = ones(nslits, int32)*rows
-    yhi = zeros(nslits, int32)
+    ylo = cp.ones(nslits, np.int32)*rows
+    yhi = cp.zeros(nslits, np.int32)
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("shiftAddSlitmask")
-    kernel(drv.In(slitmask), drv.InOut(ylo), drv.InOut(yhi), int32(cols), int32(nslits), int32(slitmask.size), int32(horizontal), grid=(blocks,1), block=(block_size,1,1))
-    return (ylo, yhi)
+    kernel((blocks,1), (block_size,1,1), (cp.asarray(slitmask), ylo, yhi, np.int32(cols), np.int32(nslits), np.int32(slitmask.size), np.int32(horizontal)))
+    return (ylo.get(), yhi.get())
 #end shiftAddSlitmask
 
 #Return a mean, median, and std using a sigma clipping algorithm
@@ -4061,7 +4134,7 @@ def sigmaFromClipping(origData, sig, iter):
         lo = mean-sig*stddev
         hi = mean+sig*stddev
         oldstddev = stddev
-        data = data[logical_and(data > lo, data < hi)]
+        data = data[np.logical_and(data > lo, data < hi)]
         n+=1
     med = gpu_arraymedian(data)
     return [mean, med, stddev]
@@ -4075,9 +4148,9 @@ def smooth1dCPU(data, width, niter):
     if (width % 2 == 0):
         width+=1
     w = width//2
-    divisor = ones(data.shape, dtype=float32)*width
-    divisor[:w] -= (w-arange(w))
-    divisor[-w:] -= (1+arange(w))
+    divisor = np.ones(data.shape, dtype=np.float32)*width
+    divisor[:w] -= (w-np.arange(w))
+    divisor[-w:] -= (1+np.arange(w))
     for k in range(niter):
         newdata = data.copy()
         for j in range(1,w+1):
@@ -4103,20 +4176,20 @@ def smooth1d(data, width, niter):
     else:
         fatboy_mod = get_fatboy_mod()
     smooth1dFunc = fatboy_mod.get_function("smooth1d_float")
-    outtype = float32
-    if (data.dtype == int32):
+    outtype = np.float32
+    if (data.dtype == np.int32):
         smooth1dFunc = fatboy_mod.get_function("smooth1d_int")
-    elif (data.dtype == int64):
+    elif (data.dtype == np.int64):
         smooth1dFunc = fatboy_mod.get_function("smooth1d_long")
-    elif (data.dtype == float64):
+    elif (data.dtype == np.float64):
         smooth1dFunc = fatboy_mod.get_function("smooth1d_double")
-        outtype = float64
+        outtype = np.float64
     blocks = data.size//512
     if (data.size % 512 != 0):
         blocks += 1
     for k in range(niter):
-        smoothed = empty(data.shape, outtype)
-        smooth1dFunc(drv.In(data), drv.Out(smoothed), int32(n), int32(w), grid=(blocks,1), block=(block_size,1,1))
+        smoothed = np.empty(data.shape, outtype)
+        smooth1dFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(smoothed), np.int32(n), np.int32(w)))
         data = smoothed
     return data
 #end smooth1d
@@ -4136,31 +4209,31 @@ def smooth1d2d(data, width, niter, axis=0):
     else:
         fatboy_mod = get_fatboy_mod()
     smoothFunc = fatboy_mod.get_function("smooth1d2d_float")
-    outtype = float32
+    outtype = np.float32
     blocks = data.size//512
     if (data.size % 512 != 0):
         blocks += 1
     for k in range(niter):
-        smoothed = empty(data.shape, outtype)
-        smoothFunc(drv.In(data), drv.Out(smoothed), int32(rows), int32(cols), int32(w), int32(axis), grid=(blocks,1), block=(block_size,1,1))
+        smoothed = np.empty(data.shape, outtype)
+        smoothFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(smoothed), np.int32(rows), np.int32(cols), np.int32(w), np.int32(axis)))
         data = smoothed
     return data
 #end smooth1d2d
 
 #CPU version of 2d smoothing algorithm
-def smooth_cpu(data, width, niter, type = float32):
+def smooth_cpu(data, width, niter, type = np.float32):
     if (niter == 0):
         return data
     m = data.shape[1]
     n = data.shape[0]
     if (width % 2 == 0): width+=1
     w = width//2
-    tot = zeros((n+2*w,m+2*w), type)
-    sdata = zeros(data.shape, type)
-    a = zeros(data.shape, float32)
-    b = zeros(data.shape, float32)
-    c = zeros(data.shape, float32)
-    d = zeros(data.shape, float32)
+    tot = np.zeros((n+2*w,m+2*w), type)
+    sdata = np.zeros(data.shape, type)
+    a = np.zeros(data.shape, np.float32)
+    b = np.zeros(data.shape, np.float32)
+    c = np.zeros(data.shape, np.float32)
+    d = np.zeros(data.shape, np.float32)
     for i in range(niter):
         for l in range(m):
             if (l > 0):
@@ -4179,8 +4252,8 @@ def smooth_cpu(data, width, niter, type = float32):
         b[0:-w-1,:] = tot[2*w+1:n+w,2*w:]
         c[:,w+1:] = tot[0:n,w:m-1]
         d[0:-w-1,w+1:] = tot[2*w+1:n+w,w:m-1]
-        j = arange(n*m).reshape(n,m) % m
-        l = arange(n*m).reshape(n,m) // m
+        j = np.arange(n*m).reshape(n,m) % m
+        l = np.arange(n*m).reshape(n,m) // m
         jw1 = j+w+1
         jw = j-w
         lw = l+w
@@ -4209,13 +4282,13 @@ def smooth2d(data, width, niter):
     else:
         fatboy_mod = get_fatboy_mod()
     smooth2dFunc = fatboy_mod.get_function("smooth2d_float")
-    outtype = float32
+    outtype = np.float32
     blocks = data.size//512
     if (data.size % 512 != 0):
         blocks += 1
     for k in range(niter):
-        smoothed = empty(data.shape, outtype)
-        smooth2dFunc(drv.In(data), drv.Out(smoothed), int32(rows), int32(cols), int32(w), grid=(blocks,1), block=(block_size,1,1))
+        smoothed = np.empty(data.shape, outtype)
+        smooth2dFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(smoothed), np.int32(rows), np.int32(cols), np.int32(w)))
         data = smoothed
     return data
 #end smooth2d
@@ -4231,22 +4304,22 @@ def subtractImages(image1, image2, gpm=None, scale=None):
         fatboy_mod = get_fatboy_mod()
     if (scale is not None):
         subArrays = fatboy_mod.get_function("subtractArrays_scaled_float")
-        subArrays(drv.InOut(image1), drv.In(image2), float32(scale), grid=(blocks,1), block=(block_size,1,1))
+        subArrays((blocks,1), (block_size,1,1), (cp.asarray(image1), cp.asarray(image2), np.float32(scale)))
     elif (gpm is not None):
         subArrays = fatboy_mod.get_function("subtractArrays_gpm_float")
-        subArrays(drv.InOut(image1), drv.In(image2), drv.In(gpm), grid=(blocks,1), block=(block_size,1,1))
+        subArrays((blocks,1), (block_size,1,1), (cp.asarray(image1), cp.asarray(image2), cp.asarray(gpm)))
     else:
         subArrays = fatboy_mod.get_function("subtractArrays_float")
-        subArrays(drv.InOut(image1), drv.In(image2), grid=(blocks,1), block=(block_size,1,1))
+        subArrays((blocks,1), (block_size,1,1), (cp.asarray(image1), cp.asarray(image2)))
     print("Subtraction time: ",time.time()-t)
     return image1
 #end subtractImages
 
 def surface3dFunction(coeffs, x, y, z, order):
-    out = zeros(x.shape, float64)
-    x = x.astype(float64)
-    y = y.astype(float64)
-    z = z.astype(float64)
+    out = np.zeros(x.shape, np.float64)
+    x = np.float64(x)
+    y = y.astype(np.float64)
+    z = z.astype(np.float64)
     i = 0
     for j in range(order+1):
         for l in range(1,j+2):
@@ -4257,10 +4330,10 @@ def surface3dFunction(coeffs, x, y, z, order):
 #end surface3dFunction
 
 def surface3dResiduals(p, x, y, z, out, order):
-    f = zeros(x.shape, float64)
-    x = x.astype(float64)
-    y = y.astype(float64)
-    z = z.astype(float64)
+    f = np.zeros(x.shape, np.float64)
+    x = np.float64(x)
+    y = y.astype(np.float64)
+    z = z.astype(np.float64)
     n = 1
     for j in range(1,order+1):
         for l in range(1,j+2):
@@ -4272,11 +4345,11 @@ def surface3dResiduals(p, x, y, z, out, order):
 #end surface3dResiduals
 
 def surfaceFunction(coeffs, x, y, order):
-    out = zeros(x.shape, float64)
+    out = np.zeros(x.shape, np.float64)
     if (len(out.shape) == 1 or out.shape[0] == out.size):
-        out = zeros(y.shape, float64)
-    x = x.astype(float64)
-    y = y.astype(float64)
+        out = np.zeros(y.shape, np.float64)
+    x = np.float64(x)
+    y = y.astype(np.float64)
     i = 0
     for j in range(order+1):
         for l in range(j+1):
@@ -4286,11 +4359,11 @@ def surfaceFunction(coeffs, x, y, order):
 #end surfaceFunction
 
 def surfaceResiduals(p, x, y, out, order):
-    f = zeros(x.shape, float64)
+    f = np.zeros(x.shape, np.float64)
     if (len(f.shape) == 1 or f.shape[0] == f.size):
-        f = zeros(y.shape, float64)
-    x = x.astype(float64)
-    y = y.astype(float64)
+        f = np.zeros(y.shape, np.float64)
+    x = np.float64(x)
+    y = y.astype(np.float64)
     n = 1
     for j in range(1,order+1):
         for l in range(j+1):
@@ -4301,11 +4374,11 @@ def surfaceResiduals(p, x, y, out, order):
 #end surfaceResiduals
 
 def surfaceResidualsWithOffset(p, x, y, out, order):
-    f = zeros(x.shape, float64)
+    f = np.zeros(x.shape, np.float64)
     if (len(f.shape) == 1 or f.shape[0] == f.size):
-        f = zeros(y.shape, float64)
-    x = x.astype(float64)
-    y = y.astype(float64)
+        f = np.zeros(y.shape, np.float64)
+    x = np.float64(x)
+    y = y.astype(np.float64)
     f += p[0]
     n = 1
     for j in range(1,order+1):
@@ -4382,19 +4455,22 @@ def whereEqual(data, val):
     else:
         fatboy_mod = get_fatboy_mod()
     whereEqualFunc = fatboy_mod.get_function("whereEqual_float")
-    outtype = float32
-    idx = int32([-1])
-    if (data.dtype == int32):
+    outtype = np.float32
+    idx = [-1].astype(np.int32)
+    if (data.dtype == np.int32):
         whereEqualFunc = fatboy_mod.get_function("whereEqual_int")
-    elif (data.dtype == int64):
+    elif (data.dtype == np.int64):
         whereEqualFunc = fatboy_mod.get_function("whereEqual_long")
-    elif (data.dtype == float64):
+    elif (data.dtype == np.float64):
         whereEqualFunc = fatboy_mod.get_function("whereEqual_double")
-        outtype = float64
+        outtype = np.float64
     blocks = data.size//block_size
     if (data.size % block_size != 0):
         blocks += 1
-    whereEqualFunc(drv.In(data), outtype(val), drv.InOut(idx), grid=(blocks,1), block=(block_size,1,1))
+    idx_gpu = cp.asarray(idx)
+    data_gpu = cp.asarray(data)
+    whereEqualFunc((blocks,1), (block_size,1,1), (data_gpu, outtype(val), idx_gpu))
+    idx = int(idx_gpu[0])
     if (len(data.shape) == 1):
         idx = idx,
     elif (len(data.shape) == 2):
@@ -4416,7 +4492,7 @@ def write_fatboy_log(log, logtype, message, name, printCaller=True, tabLevel=0, 
         log.writeLog(name, message, printCaller=printCaller, tabLevel=tabLevel, verbosity=verbosity, callerLevel=2, type=messageType)
 #end write_fatboy_log
 
-def write_fits_file(filename, data, dtype="float32", header=None, headerExt=None, overwrite=False, fitsobj=None, mef=0, log=None):
+def write_fits_file(filename, data, dtype="np.float32", header=None, headerExt=None, overwrite=False, fitsobj=None, mef=0, log=None):
     if (fitsobj is None):
         #hdulist is already given
         fitsobj = pyfits.HDUList()
@@ -4430,6 +4506,8 @@ def write_fits_file(filename, data, dtype="float32", header=None, headerExt=None
         #Get rid of extraneous extensions in data like CIRCE/Newfirm
         prepMefForWriting(fitsobj, mef)
         hdu = fitsobj[mef]
+    if (hasCuda and isinstance(data, cp.ndarray)):
+        data = data.get()
     hdu.data = data.astype(dtype)
     if (header is not None):
         updateHeader(fitsobj[0].header, header)

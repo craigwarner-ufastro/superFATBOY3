@@ -85,7 +85,7 @@ class sinfoniCalcLinearityProcess(fatboyProcess):
             return True
 
         #Call get calibs to return dict() of calibration frames.
-        #For sinfoniLinearity, this dict should have one entry 'linearityCoeffs' which is an FDU with a 3D array N x M x order
+        #For sinfoniLinearity, this dict should have one entry 'linearityCoeffs' which is an FDU with a 3D np.array N x M x order
         calibs = self.getCalibs(fdu, prevProc)
         if (not 'linearity_coeffs' in calibs or not 'fduList' in calibs):
             #Failed to obtain coeffs

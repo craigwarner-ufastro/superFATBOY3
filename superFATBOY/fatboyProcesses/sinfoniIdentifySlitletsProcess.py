@@ -182,7 +182,7 @@ class sinfoniIdentifySlitletsProcess(fatboyProcess):
         #Use fdu.getSlitmask() here to look for slitmask specfic to the FDU
         slitmask = fdu.getSlitmask()
         data = slitmask.getData()
-        #create a new slitmask of zeros
+        #create a new slitmask of np.zeros
         newmask = np.zeros(data.shape, dtype=data.dtype)
         doCalib = False
         doResampFDU = False
@@ -201,7 +201,7 @@ class sinfoniIdentifySlitletsProcess(fatboyProcess):
             fduResampData = resamp_slitmask.getData()
             newResampFDUData = np.zeros(fduResampData.shape, dtype=fduResampData.dtype)
 
-        #populate with new slitnums array
+        #populate with new slitnums np.array
         for j in range(len(slitnums)):
             newmask[data == (j+1)] = slitnums[j]
             if (doCalib):

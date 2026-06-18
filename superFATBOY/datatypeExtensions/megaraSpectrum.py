@@ -57,7 +57,7 @@ class megaraSpectrum(fatboySpectrum):
         fibers = []
         for sid in self._fiberDict:
             fibers.append(self._fiberDict[sid].toArray())
-        fibers = array(fibers)
+        fibers = np.array(fibers)
         return fibers
 
     def getNFibers(self):
@@ -266,7 +266,7 @@ class megaraFiber:
         return s
 
     def toArray(self):
-        x = zeros(11, dtype=float32)
+        x = np.zeros(11, dtype=np.float32)
         x[0] = self._id
         x[1] = self._sid
         x[2] = self._sky

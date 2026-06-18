@@ -27,7 +27,7 @@ def getProcessDict():
     processDict['trimWindow'] = trimWindowProcess.trimWindowProcess
 
     #Spectroscopy
-    processDict['badPixelMaskSpec'] = badPixelMaskSpecProcess.badPixelMaskSpecProcess
+    processDict['badPixelMaskSpec'] = badPixelMaskSpecProcess.BadPixelMaskSpecProcess
     processDict['calibStarDivide'] = calibStarDivideProcess.calibStarDivideProcess
     processDict['cosmicRaysSpec'] = removeCosmicRaysSpecProcess.removeCosmicRaysSpecProcess
     processDict['createCleanSkies'] = createCleanSkyProcess.createCleanSkyProcess
