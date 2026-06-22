@@ -833,9 +833,9 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         except Exception as ex:
             print("wavelengthCalibrateProcess::wavelengthCalibrate> WARNING: leastsq fit failed at pixel "+str(blref)+"; Using gaussWidth=1.5.")
             gaussWidth = 1.5
-        #Multiply by np.sqrt(2) because we fit squared data.  This will
+        #Multiply by math.sqrt(2) because we fit squared data.  This will
         #give us the width of the emission lines.
-        gaussWidth = abs(lsq[0][2]*np.sqrt(2))
+        gaussWidth = abs(lsq[0][2]*math.sqrt(2))
         if (gaussWidth > 2.5):
             gaussWidth = 1.5
             #If its a broad line for some reason, use 1.5 as default
@@ -917,7 +917,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                     p = np.zeros(4, dtype=np.float64)
                     p[0] = tempCut.max()
                     p[1] = 10
-                    p[2] = gaussWidth/np.sqrt(2)
+                    p[2] = gaussWidth/math.sqrt(2)
                     p[3] = gpu_arraymedian(tempCut)
                     try:
                         lsq = leastsq(gaussResiduals, p, args=(np.arange(len(tempCut), dtype=np.float64), tempCut))
@@ -927,7 +927,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                     p = np.zeros(4)
                     p[0] = np.sqrt(abs(lsq[0][0]))
                     p[1] = lsq[0][1]+blref-10
-                    p[2] = abs(lsq[0][2]*np.sqrt(2))
+                    p[2] = abs(lsq[0][2]*math.sqrt(2))
                     refCut -= gaussFunction(p, np.arange(len(refCut), dtype=np.float32))
                     refCut[refCut < 0] = 0
                     #refCut[blref-2:blref+3] = 0
@@ -939,7 +939,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             p = np.zeros(4, dtype=np.float64)
             p[0] = tempCut.max()
             p[1] = 10
-            p[2] = gaussWidth/np.sqrt(2)
+            p[2] = gaussWidth/math.sqrt(2)
             p[3] = gpu_arraymedian(tempCut)
             try:
                 lsq = leastsq(gaussResiduals, p, args=(np.arange(len(tempCut), dtype=np.float64), tempCut))
@@ -952,7 +952,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             wccentroids.append(blref+mcor-10) #Actual centroid
             wclines.append(int(blref+mcor-9.5)) #Rounded to nearest pixel
             #Check each component's width rather than the average
-            currWidth = abs(lsq[0][2]*np.sqrt(2))
+            currWidth = abs(lsq[0][2]*math.sqrt(2))
             if (currWidth > 2.5):
                 currWidth = 1.5
             elif (currWidth > 2):
@@ -962,7 +962,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             p = np.zeros(4)
             p[0] = np.sqrt(abs(lsq[0][0]))
             p[1] = lsq[0][1]+blref-10
-            p[2] = abs(lsq[0][2]*np.sqrt(2))
+            p[2] = abs(lsq[0][2]*math.sqrt(2))
             #subtract Gaussian fitted to line rather than zeroing out 21 pixel
             #box 8/29/19.  Also ensure no negative points
             refCut -= gaussFunction(p, np.arange(len(refCut), dtype=np.float32))
@@ -995,7 +995,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             p = np.zeros(4, dtype=np.float64)
             p[0] = tempCut.max()
             p[1] = 10
-            p[2] = gaussWidth/np.sqrt(2)
+            p[2] = gaussWidth/math.sqrt(2)
             p[3] = gpu_arraymedian(tempCut)
             try:
                 lsq = leastsq(gaussResiduals, p, args=(np.arange(len(tempCut), dtype=np.float64), tempCut))
@@ -1224,7 +1224,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             p = np.zeros(4, dtype=np.float64)
             p[0] = np.max(refCut)
             p[1] = 10
-            p[2] = gaussWidth/np.sqrt(2)
+            p[2] = gaussWidth/math.sqrt(2)
             p[3] = gpu_arraymedian(refCut)
             try:
                 lsq = leastsq(gaussResiduals, p, args=(np.arange(len(refCut), dtype=np.float64), refCut))
@@ -1405,7 +1405,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                 p = np.zeros(4, dtype=np.float64)
                 p[0] = np.max(refCut)
                 p[1] = 10
-                p[2] = gaussWidth/np.sqrt(2)
+                p[2] = gaussWidth/math.sqrt(2)
                 p[3] = gpu_arraymedian(refCut)
                 try:
                     lsq = leastsq(gaussResiduals, p, args=(np.arange(len(refCut), dtype=np.float64), refCut))

@@ -1,5 +1,6 @@
 #!/usr/bin/python -u
 from math import *
+import math
 import numpy as np
 import numpy.version
 from .fatboyLibs import *
@@ -154,10 +155,10 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
         dropsize = 1
         print("drihizzle> Dropsize > 1 not allowed for "+kernel+" kernel.  Using dropsize = 1.")
         write_fatboy_log(log, logtype, "Dropsize > 1 not allowed for "+kernel+" kernel.  Using dropsize = 1.", __name__)
-    if (dropsize < np.sqrt(2) and kernel == 'tophat'):
-        print("Dropsize < np.sqrt(2) should not be used for the tophat kernel.  Using dropsize = np.sqrt(2).")
-        write_fatboy_log(log, logtype, "Dropsize < np.sqrt(2) should not be used for the tophat kernel.  Using dropsize = np.sqrt(2).", __name__)
-        dropsize = np.sqrt(2)
+    if (dropsize < math.sqrt(2) and kernel == 'tophat'):
+        print("Dropsize < math.sqrt(2) should not be used for the tophat kernel.  Using dropsize = math.sqrt(2).")
+        write_fatboy_log(log, logtype, "Dropsize < math.sqrt(2) should not be used for the tophat kernel.  Using dropsize = math.sqrt(2).", __name__)
+        dropsize = math.sqrt(2)
 
     xcoeffs = []
     ycoeffs = []

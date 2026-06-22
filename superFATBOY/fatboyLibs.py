@@ -1984,7 +1984,7 @@ def findAndFitLines(oned, nlines=-1, sigthresh=2.0, thresh=None, squareData=True
         p = np.zeros(4, dtype=np.float64)
         p[0] = np.max(tempCut)
         p[1] = 10
-        p[2] = gaussWidth/np.sqrt(2)
+        p[2] = gaussWidth/math.sqrt(2)
         p[3] = gpu_arraymedian(tempCut)
         try:
             lsq = leastsq(gaussResiduals, p, args=(np.arange(len(tempCut), dtype=np.float64), tempCut))
@@ -1996,7 +1996,7 @@ def findAndFitLines(oned, nlines=-1, sigthresh=2.0, thresh=None, squareData=True
         p = np.zeros(4)
         p[0] = np.sqrt(np.abs(lsq[0][0]))
         p[1] = lsq[0][1]+blref-10
-        p[2] = np.abs(lsq[0][2]*np.sqrt(2))
+        p[2] = np.abs(lsq[0][2]*math.sqrt(2))
         refCut -= gaussFunction(p, np.arange(len(refCut), dtype=np.float32))
         refCut[refCut < 0] = 0
         lines.append(p)
@@ -2266,12 +2266,12 @@ def fitLines(data, nlines, quartileFilter=True, maskNeg=False, maxWidth=2, guess
             p[1] = 10
             p[2] = 2
             if (nfit > 0):
-                p[2] = totalWidth/nfit/np.sqrt(2)
+                p[2] = totalWidth/nfit/math.sqrt(2)
             p[3] = gpu_arraymedian(tempCut)
             lsq = leastsq(gaussResiduals, p, args=(np.arange(len(tempCut), dtype=np.float64), tempCut))
             mcor = lsq[0][1]
             #Check each component's width
-            currWidth = np.abs(lsq[0][2]*np.sqrt(2))
+            currWidth = np.abs(lsq[0][2]*math.sqrt(2))
             if (currWidth > maxWidth*1.25):
                 #2.5 -> 1.5 default
                 currWidth = maxWidth*0.75
@@ -2401,8 +2401,8 @@ def fwhm2d(data, estimateBackground=False):
     fwhm1ds[0] = fwhm1d(data[ypos,:], halfMax=halfmax)
     fwhm1ds[1] = fwhm1d(data[:,xpos], halfMax=halfmax)
 
-    #diagonals are np.sqrt(2) times larger:
-    sq2 = np.sqrt(2)
+    #diagonals are math.sqrt(2) times larger:
+    sq2 = math.sqrt(2)
     xystart = np.min(xpos, ypos)
     xyend = min( nx-1-xpos, ny-1-ypos );
     ncut = xystart+xyend+1;
