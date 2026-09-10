@@ -32,6 +32,13 @@ class findSlitletProcess(fatboyProcess):
         use_peak_local_max = False
         if (self.getOption("autodetect_peak_local_max", fdu.getTag()).lower() == "yes"):
             use_peak_local_max = True
+        use_threshold = False
+        if (self.getOption("autodetect_use_threshold", fdu.getTag()).lower() == "yes"):
+            use_threshold = True
+        threshold = float(self.getOption("threshold_value", fdu.getTag()))
+        thresh_is_pct = False
+        if (self.getOption("threshold_is_pct", fdu.getTag()).lower() == "yes"):
+            thresh_is_pct = True
         fiber_width = int(self.getOption("fiber_width", fdu.getTag()))
         do_subtract_bkg = False
         if (self.getOption("subtract_background_level", fdu.getTag()).lower() == "yes"):
@@ -96,7 +103,13 @@ class findSlitletProcess(fatboyProcess):
             slitw = array([boxsize]*len(sylo))
             return (sylo, syhi, slitx, slitw)
 
-        if (normal):
+        if (use_threshold):
+            if (thresh_is_pct):
+                threshold = threshold*cut1d.max() 
+            cut1d[cut1d < threshold] = 0
+            print ("findSlitletProcess::autoDetectSlitlets> Using threshold "+str(threshold))
+            slitlets = extractNonzeroRegions(cut1d, min_width)
+        elif (normal):
             #if normalized, slitlets have already been found, easy to detect nonzero points
             slitlets = extractNonzeroRegions(cut1d, min_width)
         else:
@@ -419,6 +432,8 @@ class findSlitletProcess(fatboyProcess):
         self._options.setdefault('debug_mode', 'no')
         self._options.setdefault('autodetect_peak_local_max', 'no')
         self._optioninfo.setdefault('autodetect_peak_local_max', 'For fiber data such as MEGARA,\nuse peak local max to find fiber locations')
+        self._options.setdefault('autodetect_use_threshold', 'no')
+        self._optioninfo.setdefault('autodetect_use_threshold', 'For data with tiny gaps between slitlets, use a threshold\nvalue to determine where gaps between slitlets are located.')
         self._options.setdefault('background_boxcar_width', 25)
         self._optioninfo.setdefault('background_boxcar_width', 'Width in pixels of the boxcar used to subtract off background level\nin 1-d cut.  Should be just under 2 x slit width.')
         self._options.setdefault('boundary', 10)
@@ -475,6 +490,10 @@ class findSlitletProcess(fatboyProcess):
         self._optioninfo.setdefault('slitlet_trace_yhi', 'Upper bound in cross-dispersion direction of 1-d cut for tracing in group mode (-1 = 3/4 ysize)')
         self._options.setdefault('subtract_background_level', 'no')
         self._optioninfo.setdefault('subtract_background_level', 'Subtract a running boxcar min from the 1-d cut\tbefore attempting to find slitlets')
+        self._options.setdefault('threshold_is_pct', 'yes')
+        self._optioninfo.setdefault('threshold_is_pct', 'Is the threshold given in pct of max value or an absolute level')
+        self._options.setdefault('threshold_value', '0.01')
+        self._optioninfo.setdefault('threshold_value', 'Value for autodetect_use_threshold')
         self._options.setdefault('trace_peak_local_max', 'no')
         self._optioninfo.setdefault('trace_peak_local_max', 'Set to yes for MEGARA or other fiber data where the curvature changes between fibers')
         self._options.setdefault('trace_slitlets_individually', 'yes')
@@ -1488,6 +1507,7 @@ class findSlitletProcess(fatboyProcess):
         else:
             regFile = self.getCalib("region_file", fdu.getTag())
         edge_thresh = int(self.getOption("edge_threshold", fdu.getTag()))
+        xinit = -1
 
         #Check that region file exists
         if (regFile is None or not os.access(regFile, os.F_OK)):
@@ -1499,11 +1519,12 @@ class findSlitletProcess(fatboyProcess):
                 #has been normalized already
                 isNormalized = True
             (sylo, syhi, slitx, slitw) = self.autoDetectSlitlets(fdu, masterFlat.getData().copy(), normal=isNormalized)
+            xinit = slitx[0]
 
             nslits = len(sylo)
             nslits_ref = int(self.getOption("slitlet_autodetect_nslits", fdu.getTag()))
-            print("findSlitletProcess::traceSlitlets> Found "+str(nslits)+" slitlets.")
-            self._log.writeLog(__name__, "Found "+str(nslits)+" slitlets.")
+            print("findSlitletProcess::traceSlitlets> Found "+str(nslits)+" slitlets: "+str(list(zip(sylo, syhi))))
+            self._log.writeLog(__name__, "Found "+str(nslits)+" slitlets: "+str(list(zip(sylo, syhi))))
 
             if ((nslits_ref > 0 and nslits != nslits_ref) or nslits == 0):
                 print("findSlitletProcess::traceSlitlets> ERROR: Could not find region file associated with "+fdu.getFullId()+"! Discarding Image!")
@@ -1594,7 +1615,8 @@ class findSlitletProcess(fatboyProcess):
             slitlet_trace_yhi = tmp
         cen = (slitlet_trace_yhi-slitlet_trace_ylo)/2.0 #Center of 1-d cut
         #Start in middle and step by 5 pixels
-        xinit = xsize//2
+        if (xinit == -1):
+            xinit = xsize//2
         step = 5
 
         #1-d cut of central 11 pixels of flat in cross-dispersion direction
