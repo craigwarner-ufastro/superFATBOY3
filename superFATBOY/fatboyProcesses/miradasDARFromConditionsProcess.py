@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
@@ -69,7 +70,7 @@ class miradasDARFromConditionsProcess(fatboyProcess):
             x_i = 64.328+29498.1/(146-(1/wave)**2)+255.4/(41-(1/wave)**2)
             y_i = (x_i/1.e+6)*(pressure*(1+(1.049-0.0157*temperature)*1.e-6*pressure))/(720.883*(1+0.003661*temperature))
             n_i = 1 + (y_i - (0.0624-0.000680/wave**2)/(1+0.003661*temperature)*watervapor*1.e-6)
-            R_i = 206265*(n_i - n_5000)*tan(zenith)
+            R_i = 206265*(n_i - n_5000)*math.tan(zenith)
             #R_i in arcsec, we want pixels
             dar_i = R_i/pixscale
             fdu.tagDataAs("dar_slit_"+str(islit), dar_i)

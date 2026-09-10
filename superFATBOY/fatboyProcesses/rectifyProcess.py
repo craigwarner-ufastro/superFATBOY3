@@ -4149,7 +4149,7 @@ class rectifyProcess(fatboyProcess):
                         p = np.zeros(4)
                         p[0] = math.sqrt(abs(lsq[0][0]))
                         p[1] = b+lsq[0][1]-10
-                        p[2] = abs(lsq[0][2]*sqrt(2))
+                        p[2] = abs(lsq[0][2]*math.sqrt(2))
                         z -= gaussFunction(p, np.arange(len(z), dtype=np.float32))
                         z[int(b-lsq[0][2]):int(b+lsq[0][2]+0.5)] = 0
                     #Update median and std dev

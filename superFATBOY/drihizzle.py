@@ -1,5 +1,4 @@
 #!/usr/bin/python -u
-from math import *
 import math
 import numpy as np
 import numpy.version
@@ -397,19 +396,19 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 if (pixscale != 0):
                     hasWCS = True
                     pixscale /= 3600.
-                    theta = theta*pi/180.
+                    theta = theta*math.pi/180.
                     if (inport == 2):
                         #side port
-                        cd11 = -1*pixscale*sin(theta)
-                        cd21 = -1*pixscale*cos(theta)
-                        cd12 = -1*pixscale*cos(theta)
-                        cd22 = pixscale*sin(theta)
+                        cd11 = -1*pixscale*math.sin(theta)
+                        cd21 = -1*pixscale*math.cos(theta)
+                        cd12 = -1*pixscale*math.cos(theta)
+                        cd22 = pixscale*math.sin(theta)
                     else:
                         #up port, F1
-                        cd11 = -1*pixscale*cos(theta)
-                        cd21 = pixscale*sin(theta)
-                        cd12 = -1*pixscale*sin(theta)
-                        cd22 = -1*pixscale*cos(theta)
+                        cd11 = -1*pixscale*math.cos(theta)
+                        cd21 = pixscale*math.sin(theta)
+                        cd12 = -1*pixscale*math.sin(theta)
+                        cd22 = -1*pixscale*math.cos(theta)
 
         tmpexp = None
         if (inunits == 'cps'):
@@ -2602,7 +2601,7 @@ def getLanczosLut(order, inc):
     y = np.zeros(x.shape, np.float32)
     y[x == 0] = 1
     b = (x != 0)
-    y[b] = order*sin(pi*x[b]) * sin(pi*x[b]/order) / (pi**2*x[b]*x[b])
+    y[b] = order*np.sin(np.pi*x[b]) * np.sin(np.pi*x[b]/order) / (np.pi**2*x[b]*x[b])
     y[x >= order] = 0.
     y[x <+ -order] = 0.
     return y

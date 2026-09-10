@@ -16,7 +16,6 @@ try:
 except Exception:
     print("removeCosmicRayProcess> Warning: CuPy not installed")
     hasCuda = False
-from numpy import *
 import os, time
 
 block_size = 512
@@ -49,8 +48,8 @@ class removeCosmicRaysProcess(fatboyProcess):
 
     def removeCosmicRays_cpu(self, fdu, npass):
         data = fdu.getData()
-        nx = shape(data)[0]
-        ny = shape(data)[1]
+        nx = data.shape[0]
+        ny = data.shape[1]
         totict = 0
         for k in range(npass):
             print('Pass ',k)
