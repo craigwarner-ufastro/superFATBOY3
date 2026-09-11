@@ -9,6 +9,62 @@ improve error handling) and the specific algorithms flagged for later improvemen
 (findSlitletProcess, removeCosmicRaysSpecProcess, rectifyProcess, wavelengthCalibrateProcess).
 Work happens on the `refactor` branch, one commit per meaningful change.
 
+## Top-level error-handling audit (goal #4, 2026-09-11)
+
+Per the user's request, audited the framework's failure design as a whole (not yet individual
+algorithms — that's a separate later pass the user will drive with specific bad-data examples),
+starting from the `fatboyDatabase.py` entry point. The question was: why does an otherwise-mature
+pipeline (used on a dozen+ instruments) still crash outright on "unexpected bad data" instead of
+degrading gracefully? Found three real gaps and fixed them:
+
+1. **`fatboyDatabase.executeProcesses()`** (the per-image process loop): its exception handler
+   called `input("Press ENTER to continue")` *unconditionally*. In any unattended/scripted run
+   (cron, cluster, a shell loop over many nights) stdin is closed, so `input()` raises `EOFError`
+   immediately — uncaught, since it's outside the `try` that caught the original error — crashing
+   the whole batch on top of whatever originally failed. Now gated behind a new `interactive_on_error`
+   param (default `'no'`, matching the existing `prompt_for_missing_dark`-style opt-in pattern) and
+   wrapped in its own `try/except EOFError` even when opted in. Also now calls `image.disable()` on
+   an unexpected exception, since the FDU's data state after a partial crash mid-process is unknown
+   and shouldn't be trusted for later steps.
+2. **`fatboyProcess.recursivelyExecute()`**: the method ~23 calibration-building processes
+   (darkSubtract, flatDivide, biasSubtract, etc.) use to pre-process raw calibration frames (e.g.
+   linearity-correcting individual darks before combining into a master dark). Had *zero* exception
+   handling and discarded the process's success/failure return value entirely — so one corrupt
+   calibration frame crashed the whole run, bypassing the graceful "no master dark found → disable
+   this one science frame, keep going" fallback that callers like `darkSubtractProcess.execute()`
+   already implement correctly one level up. Now catches exceptions and honors a `False` return,
+   disabling and discarding just that one calibration frame either way.
+3. **Both of the above, plus `executeProcesses()`**, now add a lightweight postcondition check: a
+   process reporting `success=True` is no longer trusted blindly — if it left the FDU with no
+   readable data, that's caught and disabled right where it broke, instead of letting corrupted
+   state silently propagate through the rest of the process chain until something unrelated crashes
+   far from the root cause. All three fixes verified with synthetic tests exercising the actual code
+   paths (partial vs. all-failed for `initializeAll`; raise/`False`/lied-about-success/genuine-success
+   for `recursivelyExecute`), not just import-time checks.
+
+**Deliberately different from a "just disable and continue" approach — ingestion (`initializeAll`,
+which calls `fdu.readHeader()`/`initialize()`/`reformatData()` before any processing starts):** the
+user pushed back that a malformed input FITS file is usually a *user/config* error worth knowing
+about immediately, not something to quietly paper over. Landed on a hybrid: a single bad file (or a
+few) is isolated — logged loudly (`ERROR` with filename + exception), that one FDU disabled, run
+continues — but if **more than `max_init_failures` files fail (default 3), or literally every file
+fails** (covers small batches, e.g. 2 of 2, that wouldn't trip a `>3` threshold), that's treated as
+systemic (wrong directory, wrong instrument, bad file list) and the run aborts with `sys.exit(-1)`
+rather than silently limping along on whatever's left. `max_init_failures` is a normal XML-overridable
+param. This went through two iterations — first "abort only if literally everything failed," which
+the user correctly pointed out was too narrow (15 bad files out of 20 wouldn't have tripped it) —
+so if this threshold needs tuning again, that's expected; it's a judgment call, not a derived constant.
+
+**Not in scope for this pass, noted but not touched:** `newFindSlitletProcess.py`'s bare `except:`
+around a spline fallback (low severity, and that file — along with any other `new...Process.py` —
+is explicitly out of scope: the user said these were Gemini's experimental designs, not to worry
+about them for now). Also not touched: the ~6 processes with option-gated `input()` prompts for
+picking a calib file (`prompt_for_missing_dark` etc.) — those are already opt-in, not a default
+hazard. Also not touched: the broader "no enforced success/failure contract across ~80 process
+files" observation (e.g. `removeCosmicRaysProcess.execute()` always returns `True` regardless of
+what happened inside) — the postcondition check above is a generic safety net for this, but making
+every individual process honest about its own success is algorithm-specific work for the later pass.
+
 ## Status of the numpy/math disambiguation pass (goal #1)
 
 As of 2026-09-10, `from numpy import *` and `from math import *` no longer appear anywhere in
