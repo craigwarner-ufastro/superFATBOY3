@@ -1243,6 +1243,47 @@ class rectifyProcess(fatboyProcess):
         return rect_coeffs
     #end calcLongslitRectification
 
+    ## Sanity-check a surfaceFunction continuum trace fit against a maximum allowed transform
+    ## value, and retry once with a linear fit if it extrapolates to unreasonable values --
+    ## e.g. a runaway high-order fit that would make drihizzle allocate a hugely oversized
+    ## output image (a 2048x2048 input "rectifying" to something like 9216x12288).
+    ## evalFunc(coeffs, order) must return the actual transform values that will be written
+    ## out, already restricted to whatever pixels/mask this fit applies to.
+    ## Returns (coeffs, order, ok) -- ok is False if even the linear fallback is unusable.
+    def checkFitSanity(self, coeffs, order, xin, yin, yout, evalFunc, maxAbsVal, label):
+        vals = evalFunc(coeffs, order)
+        if (vals.size == 0 or np.abs(vals).max() <= maxAbsVal):
+            return (coeffs, order, True)
+        print("rectifyProcess::checkFitSanity> WARNING: "+label+" fit produced out-of-range transform values (max abs = "+formatNum(np.abs(vals).max())+", limit = "+formatNum(maxAbsVal)+").  Retrying with a linear fit.")
+        self._log.writeLog(__name__, label+" fit produced out-of-range transform values (max abs = "+formatNum(np.abs(vals).max())+", limit = "+formatNum(maxAbsVal)+").  Retrying with a linear fit.", type=fatboyLog.WARNING)
+        if (order <= 1):
+            print("rectifyProcess::checkFitSanity> ERROR: "+label+" fit is unusable even at linear order.  This region will not be rectified!")
+            self._log.writeLog(__name__, label+" fit is unusable even at linear order.  This region will not be rectified!", type=fatboyLog.ERROR)
+            return (coeffs, order, False)
+        lowOrder = 1
+        lowTerms = 0
+        for j in range(lowOrder+2):
+            lowTerms += j
+        p = np.zeros(lowTerms)
+        #Initial guess is f(x_in, y_in) = x_in, matching the convention used for the original fit
+        p[1] = 1
+        try:
+            lsq = leastsq(surfaceResiduals, p, args=(xin, yin, yout, lowOrder))
+        except Exception as ex:
+            print("rectifyProcess::checkFitSanity> ERROR: "+label+" linear fallback fit failed: "+str(ex)+".  This region will not be rectified!")
+            self._log.writeLog(__name__, label+" linear fallback fit failed: "+str(ex)+".  This region will not be rectified!", type=fatboyLog.ERROR)
+            return (coeffs, order, False)
+        newCoeffs = lsq[0]
+        newVals = evalFunc(newCoeffs, lowOrder)
+        if (newVals.size == 0 or np.abs(newVals).max() <= maxAbsVal):
+            print("\t\tLinear fallback fit succeeded for "+label+".")
+            self._log.writeLog(__name__, "Linear fallback fit succeeded for "+label+".", printCaller=False, tabLevel=2)
+            return (newCoeffs, lowOrder, True)
+        print("rectifyProcess::checkFitSanity> ERROR: "+label+" fit is unusable even at linear order.  This region will not be rectified!")
+        self._log.writeLog(__name__, label+" fit is unusable even at linear order.  This region will not be rectified!", type=fatboyLog.ERROR)
+        return (coeffs, order, False)
+    #end checkFitSanity
+
     def calculateMOSContinuaTrans(self, fdu, coords, mosMode, calibs):
         if (isinstance(coords, str) and os.access(coords, os.F_OK)):
             #This is a coord_list filename
@@ -1276,6 +1317,7 @@ class rectifyProcess(fatboyProcess):
         fit_order = int(self.getOption("mos_fit_order", fdu.getTag()))
         maxSlitWidth = float(self.getOption("mos_max_slit_width", fdu.getTag()))
         n_segments = int(self.getOption("n_segments", fdu.getTag()))
+        maxTransformFactor = float(self.getOption("rectify_max_transform_factor", fdu.getTag()))
         useCenterAsZero = False
         if (self.getOption("use_zero_as_center_fitting", fdu.getTag()).lower() == "yes"):
             useCenterAsZero = True
@@ -1439,11 +1481,53 @@ class rectifyProcess(fatboyProcess):
             for slitidx in range(nslits):
                 z[calibs['slitmask'].getData() == (slitidx+1)] = slitx[slitidx]
 
+            #Sanity-check this fit before using it to build the transform (same rationale as
+            #checkFitSanity, but this is a 3-variable surface fit so it can't reuse that
+            #helper directly).  Only check within actual slit pixels (z != 0) since those are
+            #the only ones that end up in the final transform.
+            def evalTrans3d(cf, ordr):
+                return surface3dFunction(cf, xind, yind, z, ordr)[z != 0]
+            maxAbsVal = maxTransformFactor*ysize
+            vals = evalTrans3d(coeffs, fit_order)
+            usedOrder = fit_order
+            fitOk = True
+            if (vals.size > 0 and np.abs(vals).max() > maxAbsVal):
+                print("rectifyProcess::calculateMOSContinuaTrans> WARNING: use_slitpos continuum trace fit produced out-of-range transform values (max abs = "+formatNum(np.abs(vals).max())+", limit = "+formatNum(maxAbsVal)+").  Retrying with a linear fit.")
+                self._log.writeLog(__name__, "use_slitpos continuum trace fit produced out-of-range transform values (max abs = "+formatNum(np.abs(vals).max())+", limit = "+formatNum(maxAbsVal)+").  Retrying with a linear fit.", type=fatboyLog.WARNING)
+                lowOrder = 1
+                lowTerms = 0
+                lowNterms = 0
+                for i in range(lowOrder+2):
+                    lowNterms += i
+                    lowTerms += lowNterms
+                p = np.zeros(lowTerms)
+                p[2] = 1
+                lowVals = None
+                try:
+                    lowLsq = leastsq(surface3dResiduals, p, args=(xin, yin, xslitin, yout, lowOrder))
+                    lowCoeffs = lowLsq[0]
+                    lowVals = evalTrans3d(lowCoeffs, lowOrder)
+                except Exception as ex:
+                    pass
+                if (lowVals is not None and (lowVals.size == 0 or np.abs(lowVals).max() <= maxAbsVal)):
+                    print("\t\tLinear fallback fit succeeded for use_slitpos continuum trace.")
+                    self._log.writeLog(__name__, "Linear fallback fit succeeded for use_slitpos continuum trace.", printCaller=False, tabLevel=2)
+                    coeffs = lowCoeffs
+                    usedOrder = lowOrder
+                else:
+                    print("rectifyProcess::calculateMOSContinuaTrans> ERROR: use_slitpos continuum trace fit is unusable even at linear order! Discarding Image "+fdu.getFullId()+"!")
+                    self._log.writeLog(__name__, "use_slitpos continuum trace fit is unusable even at linear order!  Discarding Image "+fdu.getFullId()+"!", type=fatboyLog.ERROR)
+                    fitOk = False
+            if (not fitOk):
+                #disable this FDU
+                fdu.disable()
+                return None
+
             if (self._fdb.getGPUMode()):
                 #Use GPU for ytransData calculation, CPU for others
-                ytransData = calcTrans3d(xind, yind, z, coeffs, fit_order)
+                ytransData = calcTrans3d(xind, yind, z, coeffs, usedOrder)
             i = 0
-            for x in range(fit_order+1):
+            for x in range(usedOrder+1):
                 for l in range(1,x+2):
                     for k in range(1,l+1):
                         if (useCenterAsZero):
@@ -1542,16 +1626,28 @@ class rectifyProcess(fatboyProcess):
             self._log.writeLog(__name__, "After "+str(niter)+" passes, kept "+str(len(yout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=1)
             self._log.writeLog(__name__, "Data - fit mean: "+formatNum(residmean)+"\tsigma: "+formatNum(residstddev), printCaller=False, tabLevel=1)
 
-            ytransData = surfaceFunction(lsq[0], xind, yind, fit_order)
+            def evalTrans(cf, ordr):
+                return surfaceFunction(cf, xind, yind, ordr)
+            (coeffs, usedOrder, fitOk) = self.checkFitSanity(coeffs, fit_order, xin, yin, yout, evalTrans, maxTransformFactor*ysize, "whole_chip continuum trace")
+            if (not fitOk):
+                #Even a linear fit was unusable -- for whole_chip mode this is one fit for
+                #the entire frame, so there's no single bad slit to fall back around; treat
+                #it the same as having no usable continuum at all.
+                print("rectifyProcess::calculateMOSContinuaTrans> ERROR: Could not find a usable continuum fit for whole_chip mode! Discarding Image "+fdu.getFullId()+"!")
+                self._log.writeLog(__name__, "Could not find a usable continuum fit for whole_chip mode!  Discarding Image "+fdu.getFullId()+"!", type=fatboyLog.ERROR)
+                #disable this FDU
+                fdu.disable()
+                return None
+            ytransData = evalTrans(coeffs, usedOrder)
             i = 0
-            for j in range(fit_order+1):
+            for j in range(usedOrder+1):
                 for l in range(j+1):
                     if (useCenterAsZero):
-                        rylo += lsq[0][i]*(slitx-x0)**(j-l)*sylo**l
-                        ryhi += lsq[0][i]*(slitx-x0)**(j-l)*syhi**l
+                        rylo += coeffs[i]*(slitx-x0)**(j-l)*sylo**l
+                        ryhi += coeffs[i]*(slitx-x0)**(j-l)*syhi**l
                     else:
-                        rylo += lsq[0][i]*slitx**(j-l)*sylo**l
-                        ryhi += lsq[0][i]*slitx**(j-l)*syhi**l
+                        rylo += coeffs[i]*slitx**(j-l)*sylo**l
+                        ryhi += coeffs[i]*slitx**(j-l)*syhi**l
                     i+=1
         elif (mosMode == "independent_slitlets"):
             #Convert to arrays
@@ -1680,29 +1776,46 @@ class rectifyProcess(fatboyProcess):
                     #f.write(str(slitidx)+'\t'+str(seg)+'\t'+str(fit_order)+'\t'+str(len(slityout))+'\t'+str(norig)+'\t'+str(residstddev)+'\n')
                     #f.close()
 
-                    if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                        if (useCenterAsZero):
-                            ytransData[ylo:yhi,sxlo:sxhi][currMask] = surfaceFunction(coeffs, xind[sxlo:sxhi]-x0, yind[ylo:yhi,sxlo:sxhi], fit_order)[currMask]
+                    #evalTrans returns the actual transform values that will be written to
+                    #ytransData for this slit/segment, for the sanity check below
+                    def evalTrans(cf, ordr):
+                        if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
+                            xarg = (xind[sxlo:sxhi]-x0) if useCenterAsZero else xind[sxlo:sxhi]
+                            return surfaceFunction(cf, xarg, yind[ylo:yhi,sxlo:sxhi], ordr)[currMask]
                         else:
-                            ytransData[ylo:yhi,sxlo:sxhi][currMask] = surfaceFunction(coeffs, xind[sxlo:sxhi], yind[ylo:yhi,sxlo:sxhi], fit_order)[currMask]
-                    elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                        if (useCenterAsZero):
-                            ytransData[sxlo:sxhi,ylo:yhi][currMask] = surfaceFunction(coeffs, xind[sxlo:sxhi]-x0, yind[sxlo:sxhi,ylo:yhi], fit_order)[currMask]
-                        else:
-                            ytransData[sxlo:sxhi,ylo:yhi][currMask] = surfaceFunction(coeffs, xind[sxlo:sxhi], yind[sxlo:sxhi,ylo:yhi], fit_order)[currMask]
+                            xarg = (xind[sxlo:sxhi]-x0) if useCenterAsZero else xind[sxlo:sxhi]
+                            return surfaceFunction(cf, xarg, yind[sxlo:sxhi,ylo:yhi], ordr)[currMask]
+                    (coeffs, segFitOrder, fitOk) = self.checkFitSanity(coeffs, fit_order, slitxin, slityin, slityout, evalTrans, maxTransformFactor*ysize, seg_name+"Slit "+str(slitidx+1))
 
-                    i = 0
-                    seg_rylo = 1 #+1 because region files start at corner=(1,1) not (0,0)
-                    seg_ryhi = 1
-                    for j in range(fit_order+1):
-                        for l in range(j+1):
-                            if (useCenterAsZero):
-                                seg_rylo += lsq[0][i]*(slitx[slitidx]-x0)**(j-l)*sylo[slitidx]**l
-                                seg_ryhi += lsq[0][i]*(slitx[slitidx]-x0)**(j-l)*syhi[slitidx]**l
-                            else:
-                                seg_rylo += lsq[0][i]*(slitx[slitidx])**(j-l)*sylo[slitidx]**l
-                                seg_ryhi += lsq[0][i]*(slitx[slitidx])**(j-l)*syhi[slitidx]**l
-                            i+=1
+                    if (fitOk):
+                        transVals = evalTrans(coeffs, segFitOrder)
+                        if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
+                            ytransData[ylo:yhi,sxlo:sxhi][currMask] = transVals
+                        elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
+                            ytransData[sxlo:sxhi,ylo:yhi][currMask] = transVals
+
+                        i = 0
+                        seg_rylo = 1 #+1 because region files start at corner=(1,1) not (0,0)
+                        seg_ryhi = 1
+                        for j in range(segFitOrder+1):
+                            for l in range(j+1):
+                                if (useCenterAsZero):
+                                    seg_rylo += coeffs[i]*(slitx[slitidx]-x0)**(j-l)*sylo[slitidx]**l
+                                    seg_ryhi += coeffs[i]*(slitx[slitidx]-x0)**(j-l)*syhi[slitidx]**l
+                                else:
+                                    seg_rylo += coeffs[i]*(slitx[slitidx])**(j-l)*sylo[slitidx]**l
+                                    seg_ryhi += coeffs[i]*(slitx[slitidx])**(j-l)*syhi[slitidx]**l
+                                i+=1
+                    else:
+                        #Even a linear fit was unusable -- fall back to an untransformed
+                        #(straight) region for this slit/segment rather than write a runaway
+                        #transform, same treatment as the "no data to fit" case above.
+                        if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
+                            ytransData[ylo:yhi,sxlo:sxhi][currMask] = yind[ylo:yhi,sxlo:sxhi][currMask]
+                        elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
+                            ytransData[sxlo:sxhi,ylo:yhi][currMask] = yind[sxlo:sxhi,ylo:yhi][currMask]
+                        seg_rylo = sylo[slitidx]
+                        seg_ryhi = syhi[slitidx]
                     if (seg == 0):
                         rylo[slitidx] = seg_rylo
                         ryhi[slitidx] = seg_ryhi
@@ -3112,6 +3225,8 @@ class rectifyProcess(fatboyProcess):
         self._optioninfo.setdefault('mos_find_lines_alternate_method', 'Use alternate method to find sky/lamp lines in slitlets.\nShould be yes if slits are extremely curved like fire data.')
         self._options.setdefault('mos_fit_order', 2)
         self._optioninfo.setdefault('mos_fit_order', 'MOS only.  Order of polynomial to use to fit continua.')
+        self._options.setdefault('rectify_max_transform_factor', 2.0)
+        self._optioninfo.setdefault('rectify_max_transform_factor', 'If a continuum trace fit extrapolates to transform values\nmore than this many times the image size, retry with a linear\nfit rather than risk a hugely oversized rectified output image.')
         self._options.setdefault('mos_max_slit_width', 10)
         self._optioninfo.setdefault('mos_max_slit_width', 'Anything with a greater width is assumed to be a guide star\nbox and will be blanked out at this stage.')
         self._options.setdefault('mos_mode', 'use_slitpos')
