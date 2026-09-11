@@ -1107,13 +1107,15 @@ class fatboyDatabase:
         if (nfailed > 0):
             print("fatboyDatabase::initializeAll> WARNING: "+str(nfailed)+" of "+str(len(fdus))+" files failed to initialize and were disabled.  See errors above.")
             self._log.writeLog(__name__, str(nfailed)+" of "+str(len(fdus))+" files failed to initialize and were disabled.", type=fatboyLog.WARNING)
-            if (nfailed == len(fdus)):
-                #Every single file failed.  This is unlikely to be "one bad frame" among many good
-                #ones -- far more likely a misconfiguration (wrong directory, wrong instrument,
-                #bad file list) that needs a human to fix, so fail loudly rather than silently
-                #continuing on to process zero images.
-                print("fatboyDatabase::initializeAll> FATAL: All "+str(len(fdus))+" input files failed to initialize.  This usually indicates a configuration or data problem rather than a single bad file -- see the errors above.  Exiting.")
-                self._log.writeLog(__name__, "All "+str(len(fdus))+" input files failed to initialize.  Exiting.", type=fatboyLog.ERROR)
+            maxfailures = int(self.getParam('max_init_failures'))
+            if (nfailed > maxfailures or nfailed == len(fdus)):
+                #More than a handful of failures (or literally every file, even if that's a small
+                #number) is unlikely to be "a few bad frames" among many good ones -- far more
+                #likely a misconfiguration (wrong directory, wrong instrument, bad file list) that
+                #needs a human to fix, so fail loudly rather than silently continuing on with
+                #whatever is left.
+                print("fatboyDatabase::initializeAll> FATAL: "+str(nfailed)+" of "+str(len(fdus))+" input files failed to initialize (max_init_failures="+str(maxfailures)+").  This usually indicates a configuration or data problem rather than a few bad files -- see the errors above.  Exiting.")
+                self._log.writeLog(__name__, str(nfailed)+" of "+str(len(fdus))+" input files failed to initialize (max_init_failures="+str(maxfailures)+").  Exiting.", type=fatboyLog.ERROR)
                 sys.exit(-1)
     #end initializeAll
 
@@ -1427,6 +1429,10 @@ class fatboyDatabase:
         #If yes, pause for user input when a process raises an unexpected exception, in case a
         #human is watching and can intervene.  Defaults to no since most runs are unattended.
         self._params.setdefault('interactive_on_error', 'no')
+        #If more than this many files fail to initialize (readHeader/initialize), treat it as a
+        #systemic problem (misconfiguration, wrong instrument, bad file list) rather than a few
+        #bad frames, and abort instead of continuing on with whatever is left.
+        self._params.setdefault('max_init_failures', 3)
 
         #FITS Keywords
         self._params.setdefault('date_keyword',['DATE', 'DATE-OBS'])
