@@ -9,6 +9,60 @@ improve error handling) and the specific algorithms flagged for later improvemen
 (findSlitletProcess, removeCosmicRaysSpecProcess, rectifyProcess, wavelengthCalibrateProcess).
 Work happens on the `refactor` branch, one commit per meaningful change.
 
+## Algorithm-specific failure hardening: findSlitletProcess + rectifyProcess (2026-09-11)
+
+**Status: implemented, NOT YET validated against real data.** The user is checking both against
+real data next session — if either produces a visibly wrong slitmask/rectified frame, look here
+first before assuming it's an unrelated bug. `new...Process.py` files (Gemini's experimental
+designs) are explicitly out of scope for this and were not touched.
+
+**`findSlitletProcess.traceOrders()`** used one shared `is_error` flag across its entire
+per-slitlet loop — one bad segment out of possibly dozens (out of `nslits` slitlets) discarded
+the *whole* image (`fdu.disable()`), throwing away every successfully-traced slitlet too. Fixed:
+a segment that fails its fit (exception) or quality checks (coverage fraction, residual sigma)
+now gets the same straight/uncurved fallback the code already used for "insufficient data"
+(`np.zeros(xstride)` spliced into `z1`) instead of propagating a bad curve or aborting
+everything. `z1` feeds both the CPU inline slitmask write and the GPU `yloMask`/`yhiMask` arrays
+`createSlitmask` uses afterward, so one code path covers both — confirmed by reading
+`createSlitmask`'s CUDA source (`fatboyLibs.py:317`) and `findRegions`' CPU path
+(`fatboyLibs.py:2053`): the latter does `np.where(data==slitidx+1).min()`, which would crash on
+a *fully empty* slit, which is exactly why the fallback keeps each slit's region present-but-
+straight rather than empty. Only discards the whole image now if literally every slitlet needed
+a fallback. QA file is now written whenever any slitlet was degraded, not only when discarding,
+so partial failures are visible for review.
+
+**`rectifyProcess.calculateMOSContinuaTrans()`** has three `mos_mode` branches
+(`use_slitpos` — the default, `whole_chip`, `independent_slitlets`), each fitting a surface to
+continuum trace points and writing the result into `ytransData`/`xtransData`, which `drihizzle`
+sizes its output array from. None checked the fit's range before writing — a runaway high-order
+extrapolation could turn a 2048x2048 image into something like 9216x12288. Added
+`rectify_max_transform_factor` (default 2.0): after each fit, the transform values actually
+about to be written (already masked to the relevant region) are checked against
+`maxTransformFactor*ysize`; out-of-range triggers one retry at linear order; still-bad falls back
+per-branch — `independent_slitlets` uses an identity transform for just that slit/segment (same
+treatment as "no data"), `whole_chip`/`use_slitpos` discard the image (single global fit, no
+per-slit region to fall back around). Added a shared `checkFitSanity()` method for the
+`surfaceFunction`-based branches; `use_slitpos` uses `surface3dFunction`/`surface3dResiduals` (a
+3-variable fit, different term-counting convention, GPU-accelerated eval via `calcTrans3d`) so it
+has its own inline version rather than a forced/mismatched abstraction. Also escalated the
+existing "no continuum data at all" identity-fallback (the original "out=in" report) from a lone
+`WARNING` to `ERROR` + a per-call summary count (`n_slits_not_rectified`), so it can't quietly
+scroll by.
+
+**Verification performed:** compiles, pyflakes-clean (no new undefined names), and — critically —
+the actual fit/sanity-check math was exercised directly with real `leastsq`/`surfaceFunction`/
+`surface3dFunction` calls on synthetic data (not mocks): a well-behaved fit passes through
+unchanged, an injected runaway high-order coefficient is detected and replaced by a linear
+refit, and an impossibly tight bound correctly reports failure, for both the 2-variable and
+3-variable fit paths. `traceOrders()` was *not* exercised end-to-end (needs real flat-field FITS
+data and a full `fatboyDatabase`/XML setup) — verified by careful manual control-flow trace
+instead. Neither has been run against a real instrument dataset yet.
+
+**Known follow-up, not done tonight:** `calculateMOSSkylineTrans` has the identical "no data ->
+identity, logged as WARNING" pattern at `rectifyProcess.py:2030` (skyline-based rectification,
+sibling to the continuum-based function above) and was not audited for the same runaway-fit risk
+— same class of issue, different function, deferred.
+
 ## Top-level error-handling audit (goal #4, 2026-09-11)
 
 Per the user's request, audited the framework's failure design as a whole (not yet individual
