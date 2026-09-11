@@ -633,10 +633,15 @@ class findSlitletProcess(fatboyProcess):
             os.mkdir(outdir+"/findSlitlets",0o755)
         statsfile = outdir+"/findSlitlets/stats_"+masterFlat._id+".txt"
         f = open(statsfile,'w')
-        is_error = False
+        #Count of slitlets that needed a straight (uncurved) fallback for at least one
+        #segment, because their curvature could not be reliably traced.  A few bad
+        #slitlets shouldn't cost us all the good ones -- see the check after this loop.
+        n_slit_failures = 0
         #Loop over each slitlet and trace out top and bottom of slitlet
         t = time.time()
         for slitidx in range(nslits):
+            #Set for this slitlet if any segment needs a straight fallback
+            slit_degraded = False
             #Trace out both "lower" and "higher" edges of slitlet
             yvals = [sylo[slitidx], syhi[slitidx]]
             #z1 holds zero point corrected output results of traces
@@ -961,6 +966,9 @@ class findSlitletProcess(fatboyProcess):
                 iseg_keep = [] #And for segment number of those kept datapoints
 
                 for seg in range(n_segments):
+                    seg_name = ""
+                    if (n_segments > 1):
+                        seg_name = "segment "+str(seg)+" of "
                     seg_order = order
                     xstride = xsize//n_segments
                     sxlo = xstride*seg
@@ -1001,11 +1009,15 @@ class findSlitletProcess(fatboyProcess):
                     try:
                         lsq = leastsq(polyResiduals, p, args=(seg_xcoords,seg_ycoords,seg_order))
                     except Exception as ex:
-                        print("findSlitletProcess::traceOrders> ERROR: Could not trace Order "+str(slitidx)+" for "+fdu.getFullId()+"! Discarding Image!")
-                        self._log.writeLog(__name__, "Could not trace Order "+str(slitidx)+" for "+fdu.getFullId()+"! Discarding Image!", type=fatboyLog.ERROR)
-                        #disable this FDU
-                        fdu.disable()
-                        return calibs
+                        print("findSlitletProcess::traceOrders> ERROR: Could not trace "+seg_name+"Slit "+str(slitidx+1)+" for "+fdu.getFullId()+": "+str(ex)+".  Using a straight (uncurved) fallback for this segment.")
+                        self._log.writeLog(__name__, "Could not trace "+seg_name+"Slit "+str(slitidx+1)+" for "+fdu.getFullId()+": "+str(ex)+".  Using a straight (uncurved) fallback for this segment.", type=fatboyLog.ERROR)
+                        slit_degraded = True
+                        if (seg == 0):
+                            z1.append(np.zeros(xstride))
+                            yf0 = 0
+                        else:
+                            z1[-1] = concatenate([z1[-1], np.zeros(xstride)-yf0])
+                        continue
 
                     #Compute output offsets and residuals from actual datapoints
                     yoffset = polyFunction(lsq[0], xin, seg_order)
@@ -1023,14 +1035,27 @@ class findSlitletProcess(fatboyProcess):
                     else:
                         print("\trejecting outliers (phase 3). Sigma = "+formatNum(yresid.std())+". Using "+str(len(seg_ycoords))+" datapoints to fit slitlets (Cov. Frac: "+formatNum(covfrac)+")")
                         self._log.writeLog(__name__, "rejecting outliers (phase 3). Sigma = "+formatNum(yresid.std())+". Using "+str(len(seg_ycoords))+" datapoints to fit slitlets (Cov. Frac: "+formatNum(covfrac)+")", printCaller=False, tabLevel=1)
+                    #A segment that fails either quality check gets the same straight
+                    #(uncurved) fallback as an outright fit exception, rather than
+                    #propagating an unreliable curve or discarding the whole image over
+                    #one bad segment of one slitlet.
+                    segBad = False
                     if (covfrac < minCovFrac):
-                        print("findSlitletProcess::traceOrders> Coverage fraction of "+formatNum(covfrac)+"% is below minimnum threshold for Order "+str(slitidx)+" for "+fdu.getFullId()+"! Discarding Image!")
-                        self._log.writeLog(__name__, "Coverage fraction of "+formatNum(covfrac)+"% is below minimnum threshold. for Order "+str(slitidx)+" for "+fdu.getFullId()+"! Discarding Image!", type=fatboyLog.ERROR)
-                        is_error = True
+                        print("findSlitletProcess::traceOrders> "+seg_name+"Slit "+str(slitidx+1)+" for "+fdu.getFullId()+": coverage fraction of "+formatNum(covfrac)+"% is below minimum threshold.  Using a straight (uncurved) fallback for this segment.")
+                        self._log.writeLog(__name__, seg_name+"Slit "+str(slitidx+1)+" for "+fdu.getFullId()+": coverage fraction of "+formatNum(covfrac)+"% is below minimum threshold.  Using a straight (uncurved) fallback for this segment.", type=fatboyLog.ERROR)
+                        segBad = True
                     if (yresid.std() > maxResidualError):
-                        print("findSlitletProcess::traceOrders> Sigma of "+formatNum(yresid.std()) + " is greater than max residual error of "+str(maxResidualError)+" for Order "+str(slitidx)+" for "+fdu.getFullId()+"! Discarding Image!")
-                        self._log.writeLog(__name__, "Sigma of "+formatNum(yresid.std()) + " is greater than max residual error of "+str(maxResidualError)+" for Order "+str(slitidx)+" for "+fdu.getFullId()+"! Discarding Image!", type=fatboyLog.ERROR)
-                        is_error = True
+                        print("findSlitletProcess::traceOrders> "+seg_name+"Slit "+str(slitidx+1)+" for "+fdu.getFullId()+": sigma of "+formatNum(yresid.std())+" is greater than max residual error of "+str(maxResidualError)+".  Using a straight (uncurved) fallback for this segment.")
+                        self._log.writeLog(__name__, seg_name+"Slit "+str(slitidx+1)+" for "+fdu.getFullId()+": sigma of "+formatNum(yresid.std())+" is greater than max residual error of "+str(maxResidualError)+".  Using a straight (uncurved) fallback for this segment.", type=fatboyLog.ERROR)
+                        segBad = True
+                    if (segBad):
+                        slit_degraded = True
+                        if (seg == 0):
+                            z1.append(np.zeros(xstride))
+                            yf0 = 0
+                        else:
+                            z1[-1] = concatenate([z1[-1], np.zeros(xstride)-yf0])
+                        continue
 
                     #Use previous guess
                     p = lsq[0].astype(np.float64)
@@ -1039,11 +1064,15 @@ class findSlitletProcess(fatboyProcess):
                     try:
                         lsq = leastsq(polyResiduals, p, args=(seg_xcoords,seg_ycoords,seg_order))
                     except Exception as ex:
-                        print("findSlitletProcess::traceOrders> ERROR: Could not trace Order "+str(slitidx)+" for "+fdu.getFullId()+"! Discarding Image!")
-                        self._log.writeLog(__name__, "Could not trace Order "+str(slitidx)+" for "+fdu.getFullId()+"! Discarding Image!", type=fatboyLog.ERROR)
-                        #disable this FDU
-                        fdu.disable()
-                        return calibs
+                        print("findSlitletProcess::traceOrders> ERROR: Could not trace "+seg_name+"Slit "+str(slitidx+1)+" for "+fdu.getFullId()+": "+str(ex)+".  Using a straight (uncurved) fallback for this segment.")
+                        self._log.writeLog(__name__, "Could not trace "+seg_name+"Slit "+str(slitidx+1)+" for "+fdu.getFullId()+": "+str(ex)+".  Using a straight (uncurved) fallback for this segment.", type=fatboyLog.ERROR)
+                        slit_degraded = True
+                        if (seg == 0):
+                            z1.append(np.zeros(xstride))
+                            yf0 = 0
+                        else:
+                            z1[-1] = concatenate([z1[-1], np.zeros(xstride)-yf0])
+                        continue
 
                     print("\tFit = "+formatList(lsq[0]))
                     self._log.writeLog(__name__, "Fit = "+formatList(lsq[0]), printCaller=False, tabLevel=1)
@@ -1075,6 +1104,8 @@ class findSlitletProcess(fatboyProcess):
                                 dist = math.sqrt((ycoords[i]-yi)**2+(xcoords[i]-xi)**2)
                                 qaData[xi,yi] = -50000/((1+dist)**2)
             #end for syval
+            if (slit_degraded):
+                n_slit_failures += 1
             #Update slitmask
             ylo = sylo[slitidx]-z1[0][int(slitx[slitidx])]-1-padding
             yhi = syhi[slitidx]-z1[1][int(slitx[slitidx])]+padding
@@ -1098,12 +1129,14 @@ class findSlitletProcess(fatboyProcess):
         #end for slitidx
         #print time.time()-t
         f.close()
-        #Check for errors AFTER writing QA data
-        if (is_error):
-            print("findSlitletProcess::traceOrders> ERROR: Could not trace orders for "+fdu.getFullId()+"! Discarding Image!")
-            self._log.writeLog(__name__, "Could not trace orders for "+fdu.getFullId()+"! Discarding Image!", type=fatboyLog.ERROR)
+        #Check for errors AFTER writing QA data.  A few slitlets needing a straight
+        #fallback (already logged loudly above) shouldn't cost us all the good ones --
+        #only discard the whole image if literally nothing could be traced.
+        if (n_slit_failures > 0):
+            print("findSlitletProcess::traceOrders> WARNING: "+str(n_slit_failures)+" of "+str(nslits)+" slitlets for "+fdu.getFullId()+" needed a straight (uncurved) fallback for at least one segment.  See errors above.")
+            self._log.writeLog(__name__, str(n_slit_failures)+" of "+str(nslits)+" slitlets for "+fdu.getFullId()+" needed a straight (uncurved) fallback for at least one segment.", type=fatboyLog.WARNING)
             qafile = outdir+"/findSlitlets/qa_"+masterFlat.getFullId()
-            #Write out qa file
+            #Write out qa file so degraded/failed slitlets can be visually inspected
             if (not os.access(qafile, os.F_OK)):
                 #TODO - GPU for qa data?
                 #Generate qa data
@@ -1114,9 +1147,14 @@ class findSlitletProcess(fatboyProcess):
                 masterFlat.writeTo(qafile, tag="slitqa")
                 masterFlat.removeProperty("slitqa")
                 del qaData
-            #disable this FDU
-            fdu.disable()
-            return calibs
+            if (n_slit_failures == nslits):
+                #Every single slitlet needed a fallback -- this isn't "a few bad
+                #slitlets," it's nothing usable at all, so discard the image.
+                print("findSlitletProcess::traceOrders> ERROR: Could not trace any slitlets for "+fdu.getFullId()+"! Discarding Image!")
+                self._log.writeLog(__name__, "Could not trace any slitlets for "+fdu.getFullId()+"!  Discarding Image!", type=fatboyLog.ERROR)
+                #disable this FDU
+                fdu.disable()
+                return calibs
 
         #GPU mode - create slitmask at once
         if (self._fdb.getGPUMode()):
