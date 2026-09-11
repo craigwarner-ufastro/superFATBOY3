@@ -77,11 +77,13 @@ and fixed two real bugs, both reachable at runtime (not just style):
 Everything else that matched a PyCUDA-shaped grep turned out to be either a stale comment (harmless)
 or already-correct CuPy (`cp.RawModule`, `cp.fft`, etc.) — see the commit for the full list checked.
 
-**Known pre-existing inconsistency, not touched:** `pysurfit.py`'s CPU path computes std with
-`ddof=1`; `gpu_pysurfit.py`'s GPU path uses CuPy's default `ddof=0`. This predates the refactor
-(same on `main`) — it's an algorithmic discrepancy between the two backends, not something the CuPy
-migration introduced, so it's deferred to the later algorithmic-improvement pass rather than fixed
-here.
+**Pre-existing CPU/GPU inconsistency — fixed 2026-09-11:** `pysurfit.py`'s CPU path computed std with
+`ddof=1` (sample variance / Bessel's correction — the right choice here, since the residuals are a
+sample used to *estimate* the fit's underlying noise, not the whole population); `gpu_pysurfit.py`'s
+GPU path used CuPy's default `ddof=0`, biasing its std estimate low. Predated the refactor (same on
+`main`), so it wasn't part of the original migration bug sweep, but once flagged it was a one-line
+fix: `residb_gpu.std()` → `residb_gpu.std(ddof=1)`. Verified CuPy's `ddof=1` agrees with numpy's to
+float precision on a real GPU.
 
 ## `.sum()/N` sweep (goal #2, 2026-09-11)
 

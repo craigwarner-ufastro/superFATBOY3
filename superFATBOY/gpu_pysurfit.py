@@ -286,7 +286,7 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
 
         residb_gpu = resid_gpu[inmask_gpu]
         tempmean = float(residb_gpu.mean())
-        tempstddev = float(residb_gpu.std())
+        tempstddev = float(residb_gpu.std(ddof=1))
         
         print("\t\tData - fit    mean: "+str(tempmean) + "   sigma: "+str(tempstddev))
         write_fatboy_log(log, logtype, "Data - fit    mean: "+str(tempmean) + "   sigma: "+str(tempstddev), __name__, printCaller=False, tabLevel=1)
