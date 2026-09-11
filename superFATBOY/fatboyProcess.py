@@ -3,7 +3,7 @@
 #
 #
 
-import glob, types
+import glob, traceback, types
 import xml.dom.minidom
 from xml.dom.minidom import Node
 from .fatboyImage import *
@@ -300,7 +300,33 @@ class fatboyProcess:
                 #set default options
                 process.setDefaultOptions()
                 #execute process
-                process.execute(calib, prevProc=prevProcesses)
+                try:
+                    success = process.execute(calib, prevProc=prevProcesses)
+                except Exception as ex:
+                    #A bad calibration frame (corrupt header, wrong shape, etc.) should not crash
+                    #the whole run -- discard just this one calib and move on.
+                    print("fatboyProcess::recursivelyExecute> ERROR: process "+str(process._pname)+" FAILED on "+calib.getFullId()+" with EXCEPTION: "+str(ex)+".  Discarding this calibration frame.")
+                    self._log.writeLog(__name__, "process "+str(process._pname)+" FAILED on "+calib.getFullId()+" with EXCEPTION: "+str(ex)+".  Discarding this calibration frame.", type=fatboyLog.ERROR)
+                    traceback.print_exc()
+                    calib.disable()
+                    continue
+                if (not success):
+                    #Process reported failure.  It has likely already logged why and disabled the
+                    #calib itself, but disable it here too in case it didn't, so a bad calib frame
+                    #doesn't silently keep going through the rest of this recursive chain.
+                    calib.disable()
+                    continue
+                #Sanity check: don't just trust the reported success -- make sure the calib still
+                #has usable data (mirrors the same check in fatboyDatabase::executeProcesses).
+                try:
+                    d = calib.getData()
+                    if (d is None or d.size == 0):
+                        raise ValueError("process left calibration frame with no data")
+                except Exception as ex:
+                    print("fatboyProcess::recursivelyExecute> ERROR: process "+str(process._pname)+" reported success but left "+calib.getFullId()+" with invalid data ("+str(ex)+").  Discarding this calibration frame.")
+                    self._log.writeLog(__name__, "process "+str(process._pname)+" reported success but left "+calib.getFullId()+" with invalid data ("+str(ex)+").  Discarding this calibration frame.", type=fatboyLog.ERROR)
+                    calib.disable()
+                    continue
                 #add process name to _processHistory for this FDU
                 #calib.addProcessToHistory(process._pname)
                 calib.addProcessToHistory(histName)

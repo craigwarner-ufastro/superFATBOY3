@@ -350,8 +350,31 @@ class fatboyDatabase:
                     self._shortlog.writeLog(__name__, "process "+str(process._pname)+" FAILED with EXCEPTION: "+str(ex), type=fatboyLog.ERROR)
                     print("This traceback should be sent to Craig for debugging!")
                     traceback.print_exc()
-                    input("Press ENTER to continue")
+                    if (self.getParam('interactive_on_error').lower() == "yes"):
+                        try:
+                            input("Press ENTER to continue")
+                        except EOFError:
+                            #No interactive terminal attached (e.g. an unattended/scripted run) --
+                            #just continue rather than crash the whole batch on top of the error.
+                            pass
+                    #The process crashed partway through, so its data state is unknown -- disable
+                    #this FDU rather than risk running later processes on a half-mutated image.
+                    image.disable()
                     success = False
+                if (success and process.getOption("create_calib_only", image.getTag()).lower() != "yes" and image.inUse):
+                    #Sanity check: don't just trust a process's reported success.  A process that
+                    #returns True while leaving the FDU with broken/missing data should fail here,
+                    #at the point where it actually broke, rather than silently propagating bad
+                    #state through the rest of the process chain until something unrelated crashes.
+                    try:
+                        d = image.getData()
+                        if (d is None or d.size == 0):
+                            raise ValueError("process left FDU with no data")
+                    except Exception as ex:
+                        print("ERROR: process "+str(process._pname)+" reported success but left "+image.getFullId()+" with invalid data ("+str(ex)+").  Discarding image!")
+                        self._log.writeLog(__name__, "process "+str(process._pname)+" reported success but left "+image.getFullId()+" with invalid data ("+str(ex)+").  Discarding image!", type=fatboyLog.ERROR)
+                        image.disable()
+                        success = False
                 if (not success):
                     #execute failed!  Presumably fdu has been disabled. continue here
                     continue
@@ -1066,10 +1089,32 @@ class fatboyDatabase:
     def initializeAll(self):
         print("fatboyDatabase::initializeAll> reading header information and initializing...")
         self._log.writeLog(__name__, "reading header information and initializing...")
-        for fdu in self.getFDUs(): #use getFDUs to ignore disabled fdus
-            fdu.readHeader() #Read header of each FDU
-            fdu.initialize() #Initialize each FDU
-            fdu.reformatData() #reformat F2 style (1,2048,2048) data as (2048,2048)
+        fdus = self.getFDUs() #use getFDUs to ignore disabled fdus
+        nfailed = 0
+        for fdu in fdus:
+            try:
+                fdu.readHeader() #Read header of each FDU
+                fdu.initialize() #Initialize each FDU
+                fdu.reformatData() #reformat F2 style (1,2048,2048) data as (2048,2048)
+            except Exception as ex:
+                #A single unreadable/malformed FITS file should not take down a whole night's
+                #reduction -- disable just this FDU, log it loudly, and keep going.
+                nfailed += 1
+                print("fatboyDatabase::initializeAll> ERROR: Could not initialize "+fdu.getFilename()+": "+str(ex)+".  Disabling this FDU.")
+                self._log.writeLog(__name__, "Could not initialize "+fdu.getFilename()+": "+str(ex)+".  Disabling this FDU.", type=fatboyLog.ERROR)
+                traceback.print_exc()
+                fdu.disable()
+        if (nfailed > 0):
+            print("fatboyDatabase::initializeAll> WARNING: "+str(nfailed)+" of "+str(len(fdus))+" files failed to initialize and were disabled.  See errors above.")
+            self._log.writeLog(__name__, str(nfailed)+" of "+str(len(fdus))+" files failed to initialize and were disabled.", type=fatboyLog.WARNING)
+            if (nfailed == len(fdus)):
+                #Every single file failed.  This is unlikely to be "one bad frame" among many good
+                #ones -- far more likely a misconfiguration (wrong directory, wrong instrument,
+                #bad file list) that needs a human to fix, so fail loudly rather than silently
+                #continuing on to process zero images.
+                print("fatboyDatabase::initializeAll> FATAL: All "+str(len(fdus))+" input files failed to initialize.  This usually indicates a configuration or data problem rather than a single bad file -- see the errors above.  Exiting.")
+                self._log.writeLog(__name__, "All "+str(len(fdus))+" input files failed to initialize.  Exiting.", type=fatboyLog.ERROR)
+                sys.exit(-1)
     #end initializeAll
 
     ## Set up logging
@@ -1379,6 +1424,9 @@ class fatboyDatabase:
         self._params.setdefault('mef_extension', None)
         self._params.setdefault('overwrite_files','no')
         self._params.setdefault('quick_start_file', None)
+        #If yes, pause for user input when a process raises an unexpected exception, in case a
+        #human is watching and can intervene.  Defaults to no since most runs are unattended.
+        self._params.setdefault('interactive_on_error', 'no')
 
         #FITS Keywords
         self._params.setdefault('date_keyword',['DATE', 'DATE-OBS'])
