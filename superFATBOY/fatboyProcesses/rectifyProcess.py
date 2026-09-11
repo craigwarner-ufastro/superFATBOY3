@@ -1318,6 +1318,11 @@ class rectifyProcess(fatboyProcess):
         maxSlitWidth = float(self.getOption("mos_max_slit_width", fdu.getTag()))
         n_segments = int(self.getOption("n_segments", fdu.getTag()))
         maxTransformFactor = float(self.getOption("rectify_max_transform_factor", fdu.getTag()))
+        #Count of slits/segments left untransformed (no data, or fit unusable even at linear
+        #order) -- only independent_slitlets mode can partially fail like this (use_slitpos
+        #and whole_chip are single global fits with no per-slit fallback), but init this here
+        #so it's always defined for the summary check after the mosMode if/elif chain below.
+        n_slits_not_rectified = 0
         useCenterAsZero = False
         if (self.getOption("use_zero_as_center_fitting", fdu.getTag()).lower() == "yes"):
             useCenterAsZero = True
@@ -1685,9 +1690,13 @@ class rectifyProcess(fatboyProcess):
 
                     b = (islit == slitidx+1)*(iseg == seg)
                     if (b.sum() == 0):
-                        #No data fit for this slitlet.
-                        print("rectifyProcess::calculateMOSContinuaTrans> Warning: No data found to rectify "+seg_name+"slitlet "+str(slitidx+1)+"!  This slitlet will not be rectified!")
-                        self._log.writeLog(__name__, "No data found to rectify "+seg_name+"slitlet "+str(slitidx+1)+"!  This slitlet will not be rectified!", type=fatboyLog.WARNING)
+                        #No data to fit for this slitlet -- leave it untransformed (identity)
+                        #rather than guess, but this is a real quality problem (not just
+                        #informational), so log it as an ERROR and count it for the summary
+                        #below rather than let it pass as a quiet WARNING.
+                        print("rectifyProcess::calculateMOSContinuaTrans> ERROR: No data found to rectify "+seg_name+"slitlet "+str(slitidx+1)+"!  This slitlet will not be rectified!")
+                        self._log.writeLog(__name__, "No data found to rectify "+seg_name+"slitlet "+str(slitidx+1)+"!  This slitlet will not be rectified!", type=fatboyLog.ERROR)
+                        n_slits_not_rectified += 1
                         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                             ytransData[ylo:yhi,sxlo:sxhi][currMask] = yind[ylo:yhi,sxlo:sxhi][currMask]
                         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
@@ -1810,6 +1819,7 @@ class rectifyProcess(fatboyProcess):
                         #Even a linear fit was unusable -- fall back to an untransformed
                         #(straight) region for this slit/segment rather than write a runaway
                         #transform, same treatment as the "no data to fit" case above.
+                        n_slits_not_rectified += 1
                         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                             ytransData[ylo:yhi,sxlo:sxhi][currMask] = yind[ylo:yhi,sxlo:sxhi][currMask]
                         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
@@ -1822,6 +1832,10 @@ class rectifyProcess(fatboyProcess):
                     else:
                         rylo[slitidx] = min(rylo[slitidx],  seg_rylo)
                         ryhi[slitidx] = max(ryhi[slitidx],  seg_ryhi)
+
+        if (n_slits_not_rectified > 0):
+            print("rectifyProcess::calculateMOSContinuaTrans> WARNING: "+str(n_slits_not_rectified)+" slit/segment(s) for "+fdu.getFullId()+" could not be rectified (no data, or fit unusable even at linear order) and were left untransformed.  See errors above.")
+            self._log.writeLog(__name__, str(n_slits_not_rectified)+" slit/segment(s) for "+fdu.getFullId()+" could not be rectified and were left untransformed.", type=fatboyLog.WARNING)
 
         #create fatboySpecCalib and add to calibs dict
         ytrans_name = "ytrans_rect"
