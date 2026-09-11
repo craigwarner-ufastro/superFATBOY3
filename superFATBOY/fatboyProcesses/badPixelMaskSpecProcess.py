@@ -146,7 +146,7 @@ def bpm_replace_linterp_2d(data, bpm=None, niter=1, arg=None):
                 pts.append(data[y,x+2])
             npts = float(len(pts))
             if (npts > 0):
-                newdata[y,x] = np.sum(pts)/npts
+                newdata[y,x] = np.mean(pts)
                 nreplace += 1
         data = newdata.copy()
     #Reset data to 0 that was zero but not bad pixels

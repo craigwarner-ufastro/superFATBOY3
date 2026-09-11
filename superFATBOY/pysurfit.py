@@ -147,8 +147,8 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
                 fit+=lsq[0][n]*xin**(j-l)*yin**l
                 n+=1
         resid = d2b-fit[b]
-        tempmean = resid.sum()/nkeep
-        tempstddev = np.sqrt((resid*resid).sum()*(1./(nkeep-1))-tempmean*tempmean*nkeep/(nkeep-1))
+        tempmean = resid.mean()
+        tempstddev = resid.std(ddof=1)
         print("\t\tData - fit    mean: "+str(tempmean) + "   sigma: "+str(tempstddev))
         write_fatboy_log(log, logtype, "Data - fit    mean: "+str(tempmean) + "   sigma: "+str(tempstddev), __name__, printCaller=False, tabLevel=1)
         keep *= np.logical_and((d2-fit-tempmean)*(1./tempstddev) <= upper, (d2-fit-tempmean)*(1./tempstddev) >= -lower)

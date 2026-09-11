@@ -381,7 +381,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                                 nb = b.sum()
                             imstd = np.sqrt((data*data*b+0.).sum()*1./(nb-1)-immean*immean*nb/(nb-1))
                         else:
-                            imstd = np.sqrt((data*data+0.).sum()/(imsize-1)-immean*immean*imsize/(imsize-1))
+                            imstd = (data+0.).std(ddof=1)
                         if (qsstring is not None):
                             qslist.append(qsstring+': '+str(imstd))
 
