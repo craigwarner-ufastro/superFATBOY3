@@ -8,10 +8,12 @@ sys.path.append('..') #Append parent directory to sys.path
 sfbdir = os.path.dirname(os.path.abspath(__file__))
 sfbdir = sfbdir[:sfbdir.rfind('/superFATBOY')]
 sys.path.append(sfbdir) #Append absoulute path in case script is run from another dir
-#Check for argument specifiying CUDA_DEVICE before anything imports pycuda.autoinit
+#Check for argument specifying the GPU device before anything imports cupy.
+#CuPy selects its device from CUDA_VISIBLE_DEVICES (unlike PyCUDA's CUDA_DEVICE), so this
+#must be set before any transitive cupy import below.
 for j in range(len(sys.argv)):
     if (sys.argv[j] == "-gpu" and len(sys.argv) > j+1):
-        os.environ['CUDA_DEVICE'] = sys.argv[j+1]
+        os.environ['CUDA_VISIBLE_DEVICES'] = sys.argv[j+1]
 
 import superFATBOY
 from superFATBOY.fatboyDatabase import *

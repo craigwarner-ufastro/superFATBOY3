@@ -2879,33 +2879,28 @@ def getWavelengthSolution(fdu, islit, xsize):
 #end getWavelengthSolution
 
 def gpusum(data, lthreshold=None, hthreshold=None, nonzero=False):
-    gpu_data = gpuarray.to_gpu(data)
+    gpu_data = cp.asarray(data)
     if (lthreshold is None and hthreshold is None and not nonzero):
-        x = gpuarray.sum(gpu_data, np.float64)
+        x = cp.sum(gpu_data, dtype=np.float64)
     else:
         expr = ""
-        argu = "float *x"
-        if (data.dtype == np.float64):
-            argu = "double *x"
-        elif (data.dtype == np.int32):
-            argu = "int *x"
-        elif (data.dtype == np.int64):
-            argu = "long *x"
         if (lthreshold is not None and hthreshold is not None and nonzero):
-            expr = "x[i] >= "+str(lthreshold)+" && x[i] <= "+str(hthreshold)+" && x[i] != 0 ? x[i]:0"
+            expr = "x >= "+str(lthreshold)+" && x <= "+str(hthreshold)+" && x != 0 ? x : 0"
         elif (lthreshold is not None and hthreshold is not None):
-            expr = "x[i] >= "+str(lthreshold)+" && x[i] <= "+str(hthreshold)+" ? x[i]:0"
+            expr = "x >= "+str(lthreshold)+" && x <= "+str(hthreshold)+" ? x : 0"
         elif (lthreshold is not None and nonzero):
-            expr = "x[i] >= "+str(lthreshold)+" && x[i] != 0 ? x[i]:0"
+            expr = "x >= "+str(lthreshold)+" && x != 0 ? x : 0"
         elif (hthreshold is not None and nonzero):
-            expr = "x[i] <= "+str(hthreshold)+" && x[i] != 0 ? x[i]:0"
+            expr = "x <= "+str(hthreshold)+" && x != 0 ? x : 0"
         elif (lthreshold is not None):
-            expr = "x[i] >= "+str(lthreshold)+" ? x[i]:0"
+            expr = "x >= "+str(lthreshold)+" ? x : 0"
         elif (hthreshold is not None):
-            expr = "x[i] <= "+str(hthreshold)+" ? x[i]:0"
+            expr = "x <= "+str(hthreshold)+" ? x : 0"
         elif (nonzero):
-            expr = "x[i] != 0 ? x[i]:0"
-        sumKernel = ReductionKernel(np.float64, neutral="0", reduce_expr="a+b", map_expr = expr, arguments = argu)
+            expr = "x != 0 ? x : 0"
+        #CuPy's ReductionKernel takes the element as a scalar ("x"), not a pointer ("x[i]") like
+        #PyCUDA's did, and infers the element type from the input array via the generic "T".
+        sumKernel = cp.ReductionKernel('T x', 'float64 y', expr, 'a + b', 'y = a', '0', 'gpusum_kernel')
         x = sumKernel(gpu_data)
     return float(x.get())
 #end gpusum
