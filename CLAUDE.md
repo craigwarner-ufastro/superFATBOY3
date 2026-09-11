@@ -46,6 +46,66 @@ namespace, not stdlib/numpy collisions. If a future pass wants to clean those up
 "proper python syntax" reasons, treat it as a separate task from this one since pyflakes can't help
 verify it (see point 2 above) and it needs its own review per file.
 
+## Build failure fixed (2026-09-11): setup.py's numpy>=2.0 pin
+
+`sudo python setup.py install` was failing at the `pkg_resources.require()` step (the deprecated
+easy_install console-script wrapper) with a numpy/scipy version conflict. Root cause: the gemini-cli
+refactor commit (5b4bbbd) bumped `install_requires` from `numpy>=1.0` to `numpy>=2.0` in `setup.py`
+with no numpy-2.0-only API actually used anywhere (checked — nothing uses `np.trapezoid`,
+`numpy.exceptions`, `np.astype()`, etc.). That pin conflicted with the environment's scipy 1.11.3,
+which is ABI-locked to `numpy<1.28`. Reverted to `numpy>=1.0`. If a real numpy>=2.0 dependency gets
+introduced later, scipy needs upgrading past 1.11.3 in the same change, or this will break again the
+same way.
+
+## CuPy migration audit (2026-09-11)
+
+Grepped the whole tree for PyCUDA-only APIs (`gpuarray`, `to_gpu`, `mem_alloc`, `ElementwiseKernel`,
+`pycuda.driver`, `.autoinit`, `cumath`) that should have been converted to CuPy equivalents. Found
+and fixed two real bugs, both reachable at runtime (not just style):
+
+- `fatboyLibs.py`'s `gpusum()` still called `gpuarray.to_gpu()`, `gpuarray.sum()`, and a PyCUDA-style
+  `ReductionKernel` — none of which exist without `import pycuda`, so calling it (it's used from
+  `gpu_pysurfit.py`) threw `NameError`. Rewrote with `cp.asarray`/`cp.sum` and `cupy.ReductionKernel`
+  — note CuPy's `map_expr` addresses the element directly as the param name (e.g. `x`), not as a
+  pointer (`x[i]`) like PyCUDA's did. Verified against a real GPU in this environment (thresholded
+  and nonzero cases matched the original semantics exactly).
+- `superFatboy3.py`'s `-gpu N` flag set `CUDA_DEVICE` (PyCUDA's `autoinit` device-selection variable),
+  which CuPy never reads — so the flag silently did nothing post-migration. Fixed to set
+  `CUDA_VISIBLE_DEVICES` instead (verified CuPy actually honors it) and must still be set before any
+  transitive `import cupy` happens later in the script.
+
+Everything else that matched a PyCUDA-shaped grep turned out to be either a stale comment (harmless)
+or already-correct CuPy (`cp.RawModule`, `cp.fft`, etc.) — see the commit for the full list checked.
+
+**Known pre-existing inconsistency, not touched:** `pysurfit.py`'s CPU path computes std with
+`ddof=1`; `gpu_pysurfit.py`'s GPU path uses CuPy's default `ddof=0`. This predates the refactor
+(same on `main`) — it's an algorithmic discrepancy between the two backends, not something the CuPy
+migration introduced, so it's deferred to the later algorithmic-improvement pass rather than fixed
+here.
+
+## `.sum()/N` sweep (goal #2, 2026-09-11)
+
+Audited for the numarray-era `x.sum()/N` (instead of `x.mean()`) and manually-expanded variance
+formulas per GEMINI.md item 2. Fixed three call sites where the divisor is provably the full size of
+the array being summed (verified numerically that the manual formula and `.mean()`/`.std(ddof=1)`
+agree to float precision): `pysurfit.py`'s `tempmean`/`tempstddev`, `imcombine.py`'s unmasked
+per-image std branch, and `badPixelMaskSpecProcess.py`'s `np.sum(pts)/npts` on a plain list.
+
+**Deliberately left alone** — these look like the same pattern but aren't:
+- `imcombine.py`'s *masked* mean/std branches (`immean = ((data+0.)*b).sum()/nb`, threshold/nonzero
+  cases) — `nb` is a threshold-mask count, not the array's full size, so this is a masked mean/std
+  that `.mean()`/`.std()` can't reproduce without first materializing `data[b]`.
+- `imcombine.py`'s per-pixel frame-stack combine (`reduce(np.add, inp*inp) ... avg*avg*n/nm1`,
+  ~15 call sites across the file) — `n`/`nm1`/`tmask` are **per-pixel** valid-frame counts that vary
+  spatially because different input frames can mask different pixels. This is the pipeline's core
+  co-add statistics engine; a plain axis-wise `.mean()`/`.std()` cannot reproduce per-pixel ragged
+  masking, and getting this wrong would corrupt science reduction. Don't touch it without dedicated
+  test data and the user's sign-off — this belongs in the algorithmic-improvement phase, not cleanup.
+- Anywhere a `.sum()` is counting a boolean mask (e.g. `badpix[:51].sum()//2`) or computing a ratio
+  of two sums (`cut1d.sum()/islit.sum()`) — not a mean at all, skip.
+- `arraymedian.py`/`gpu_arraymedian.py` and their quickselect implementations — explicitly excluded
+  per GEMINI.md item 2, keep as-is.
+
 ## Untracked files present at session start (not yet triaged)
 
 `GEMINI.md`, `test`, `test.py`, `superFATBOY/data/config/wc_miradas_sos_rev*.xml`,
