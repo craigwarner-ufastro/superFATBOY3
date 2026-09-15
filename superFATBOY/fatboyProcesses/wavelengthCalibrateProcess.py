@@ -1760,7 +1760,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
                 maxPeak = np.max(oned)
                 #Fit a Gaussian to find shape.  Square data first to ensure that
                 #bright line dominates fit
-                refCut = oned[blref-10:blref+11]**2
+                refCut = oned[max(blref-10,0):blref+11]**2
                 p = np.zeros(4, dtype=np.float64)
                 p[0] = np.max(refCut)
                 p[1] = 10
@@ -1913,7 +1913,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
                                 keepLine = False
                         if (not keepLine):
                             #Fit Gaussian and remove line 8/29/19
-                            tempCut = refCut[blref-10:blref+11]**2
+                            tempCut = refCut[max(blref-10,0):blref+11]**2
                             p = np.zeros(4, dtype=np.float64)
                             p[0] = np.max(tempCut)
                             p[1] = 10
@@ -1935,7 +1935,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
 
                     #Centroid line for subpixel accuracy
                     #Square data to ensure bright line dominates fit
-                    tempCut = refCut[blref-10:blref+11]**2
+                    tempCut = refCut[max(blref-10,0):blref+11]**2
                     p = np.zeros(4, dtype=np.float64)
                     p[0] = np.max(tempCut)
                     p[1] = 10
@@ -1972,7 +1972,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
                     #Keep track of Gaussian params for line
                     lineParams.append(p)
                     #zero out 21 pixel box centered at this line
-                    #refCut[blref-10:blref+11] = 0
+                    #refCut[max(blref-10,0):blref+11] = 0
 
                 #Find n_brightest_lines (default 14) brightest lines in "dummy" template
                 dlines = []
@@ -1991,7 +1991,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
                         continue
                     #Centroid line for subpixel accuracy
                     #Square data to ensure bright line dominates fit
-                    tempCut = dumCut[blref-10:blref+11]**2
+                    tempCut = dumCut[max(blref-10,0):blref+11]**2
                     p = np.zeros(4, dtype=np.float64)
                     p[0] = np.max(tempCut)
                     p[1] = 10
@@ -2024,7 +2024,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
                     dumCut -= gaussFunction(p, np.arange(len(dumCut), dtype=np.float32))
                     dumCut[dumCut < 0] = 0
                     #zero out 21 pixel box centered at this line
-                    #dumCut[blref-10:blref+11] = 0
+                    #dumCut[max(blref-10,0):blref+11] = 0
 
                 #Use helper method to match 3 brightest lines in image with
                 #corresponding lines in template
@@ -2285,7 +2285,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
                         continue
                     #Centroid line for subpixel accuracy
                     #Square data to ensure bright line dominates fit
-                    refCut = resid[blref-10:blref+11]**2
+                    refCut = resid[max(blref-10,0):blref+11]**2
                     p = np.zeros(4, dtype=np.float64)
                     p[0] = np.max(refCut)
                     p[1] = 10
@@ -2468,7 +2468,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
                         currDummy = blref+xoffGuess-mcor+searchbox
                         #Centroid line for subpixel accuracy
                         #Square data to ensure bright line dominates fit
-                        refCut = resid[blref-10:blref+11]**2
+                        refCut = resid[max(blref-10,0):blref+11]**2
                         p = np.zeros(4, dtype=np.float64)
                         p[0] = np.max(refCut)
                         p[1] = 10
