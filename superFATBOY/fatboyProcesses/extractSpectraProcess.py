@@ -565,7 +565,7 @@ class extractSpectraProcess(fatboyProcess):
                         slit *= currMask
                     #Instead of taking median, sum so we get short spectra but do a
                     #5 pixel boxcar median smoothing to get rid of hot pixels
-                    tempCut = mediansmooth1d(np.sum(slit[:, extract_xlo:extract_xhi], 1), 5)
+                    tempCut = mediansmooth1d(np.sum(slit, 1), 5)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                     slit = fdu.getData()[:, ymin:ymax].copy()
                     if (slitmask is not None):
@@ -574,7 +574,7 @@ class extractSpectraProcess(fatboyProcess):
                         slit *= currMask
                     #Instead of taking median, sum so we get short spectra but do a
                     #5 pixel boxcar median smoothing to get rid of hot pixels
-                    tempCut = mediansmooth1d(np.sum(slit[extract_xlo:extract_xhi, :], 0), 5)
+                    tempCut = mediansmooth1d(np.sum(slit, 0), 5)
                 tempCut[tempCut < 0] = 0.
                 p = np.zeros(4, dtype=np.float64)
                 p[0] = np.max(tempCut[ylo - ymin : yhi - ymin + 1])
