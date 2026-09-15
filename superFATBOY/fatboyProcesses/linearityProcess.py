@@ -138,7 +138,7 @@ class linearityProcess(fatboyProcess):
         ncoeffs = coeffs_gpu.size
         output_gpu = cp.empty(data.shape, np.float32)
 
-        gpu_linearity((blocks, 1, 1), (block_size, 1, 1), (output_gpu, data_gpu, coeffs_gpu, ncoeffs.astype(np.int32), np.int32(data.size)))
+        gpu_linearity((blocks, 1, 1), (block_size, 1, 1), (output_gpu, data_gpu, coeffs_gpu, np.int32(ncoeffs), np.int32(data.size)))
         if (self._fdb._verbosity == fatboyLog.VERBOSE):
             print("GPU linearize: ",time.time()-t)
 
