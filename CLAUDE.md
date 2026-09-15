@@ -9,6 +9,88 @@ improve error handling) and the specific algorithms flagged for later improvemen
 (findSlitletProcess, removeCosmicRaysSpecProcess, rectifyProcess, wavelengthCalibrateProcess).
 Work happens on the `refactor` branch, one commit per meaningful change.
 
+## First real end-to-end test: specBench.xml PASSED (2026-09-15)
+
+`cd /home/cwarner/work/xml && superFatboy3.py specBench.xml` — a classic Flamingos-1 MOS
+spectroscopy dataset, the user's standard regression test — now runs **all the way through**
+(linearity → noisemap → darkSubtract → createCleanSkies → createMasterArclamps → findSlitlets →
+flatDivideSpec → skySubtractSpec → rectify → wavelengthCalibrate → extractSpectra →
+calibStarDivide, for all 8 science frames plus the hd32008 calibration star) with zero unhandled
+exceptions, and produces real, sane, finite, non-degenerate final flux-calibrated output
+(spot-checked pixel values and table structure directly, not just file existence). Command run
+with `PYTHONPATH=/home/cwarner/work/superFATBOY3` prepended so it picks up this working tree
+instead of whatever is `sudo python setup.py install`-ed system-wide — do that (or reinstall)
+before testing again. **Always `rm -rf` only the `specBench_test` subfolder of
+`../superFATBOYdata/`** before rerunning, per the user's instruction — never the parent dir.
+
+It took 12 iterations (run→crash→diagnose→fix→rerun) to get there. Each run takes ~15-25 minutes
+of real processing, so the fix loop was genuinely slow — don't expect faster than that rerunning
+this same test. One run also hung for ~17 minutes on an unresponsive NFS mount
+(`/net/bolt/home/warner/FATBOY/specBench/`) unrelated to any code issue — confirmed via `ps`
+showing the process in kernel `D` state and a plain `ls` on the same path timing out; it resumed
+on its own once the mount recovered. If a run seems stuck, check `ps -o stat` on the
+`superFatboy3.py` process and try `ls` on the dataset's NFS path before assuming a code bug.
+
+**Bugs found and fixed, in the order they were hit** (all real, all confirmed either by direct
+reproduction with cupy/numpy or by diffing against `main`):
+1. `pow((float)x, n)` with an int exponent in linearityProcess.py's CUDA kernel — NVRTC (which
+   `cp.RawModule` uses) can't resolve it the way offline `nvcc` could. Fixed with `powf` + an
+   explicit `(float)` cast on the exponent.
+2. `cp.np.X` (CuPy has no `np` submodule, ever) in 4 files — likely a mistaken find/replace that
+   prefixed numpy calls with `cp.` instead of replacing them. `cp.np.` → `cp.` throughout.
+3. `ncoeffs.astype(np.int32)` where `ncoeffs = arr.size` — `.size` is a plain Python `int`, no
+   `.astype`. Reverted to `np.int32(ncoeffs)` (`main` had this right before the refactor).
+4. A CUDA kernel name typo: looked up `"noisemaps_twilight_float"`, the real kernel is
+   `noisemaps_mflat_dome_on_off_float`.
+5. Three files (`flatDivideSpecProcess`, `createMasterArclampProcess`, `flatDivideProcess`)
+   assigning a possibly-CuPy array straight into an astropy HDU's `.data` — astropy blocks
+   CuPy's implicit `__array__`. Fixed with `cp.asnumpy(data)` at the write.
+6. rectify's trace-finding functions (`traceMOSContinuaRectification`,
+   `traceMOSSkylineRectification`, `calcLongslitContinuaRectification`, and — missed on the
+   first pass, caught by a *later* run — `calcLongslitSkylineRectification`) are inherently
+   CPU-bound throughout (`medianfilterCPU`, `smooth1dCPU`, `np.correlate`, small-array
+   `gpu_arraymedian`, which itself falls back to a CPU kernel under 2**16 elements). Several
+   `fdu.getData(tag="cleanFrame")`/`skyFDU.getData()` calls in these functions omitted
+   `force_cpu=True` even though a sibling function (skyline MOS) already had it right — added it
+   everywhere in this family. **If you touch any of these four functions again, grep the whole
+   function for every `.getData(` call and check force_cpu, not just the ones near your change.**
+7. `xtrans_rect`/`ytrans_rect` in `rectifyMOS` can be built by different code paths that don't
+   agree on numpy vs cupy (continuum trace vs. skyline trace vs. identity fallback vs. a calib
+   cached from an earlier frame) — normalized both explicitly before combining rather than
+   assuming they match. (An earlier attempt at this same run's crash converted the *mask* side up
+   to cupy instead — wrong direction, reverted; see item 6, the mask was headed into CPU-only
+   consumers.)
+8. A shape-broadcast bug in *this session's own* `use_slitpos` runaway-fit sanity check (1D
+   `xind` vs 2D `yind`/`z` for horizontal dispersion) — not a refactor artifact, a bug in code
+   added earlier this session. Fixed by broadcasting `xind` to `yind`'s shape first.
+9. `gpu_arraymedian()`'s `axis=="both"` branch handed CuPy input straight to
+   `fatboyclib.median`/`fatboycudalib.gpumedian`/`cp_select.cpmedian`, all of which are C
+   extensions needing genuine numpy (they handle GPU dispatch internally themselves; sibling
+   `gpumedianS()` already converted defensively, this one didn't). Fixed *only* inside that
+   branch — the sibling `axis!="both"` branch legitimately uses GPU-native `kernel2d`/`kernel3d`
+   with `gputranspose`, converting there too would have wrongly forced it onto CPU.
+10. `extractSpectra()`'s `'gaussian'` weighting branch referenced `extract_xlo`/`extract_xhi`,
+    never defined anywhere in that function's scope (only in sibling `findSpectra()`). Confirmed
+    via `main` this slicing never existed here pre-refactor at all — reverted to the original
+    unsliced `np.sum(slit, 1)`/`np.sum(slit, 0)` rather than inventing the wiring for a feature
+    that was never actually implemented.
+11. A **pre-existing** (confirmed via `main`, predates this refactor) negative-index slice bug in
+    `wavelengthCalibrateProcess.py`: `oned[blref-10:blref+11]` wraps around instead of clamping
+    when the brightest line lands within 10px of an edge. Fixed all 8 occurrences with
+    `max(blref-10,0)`. Flagged as algorithm-adjacent (this file is one of the four named for later
+    review) but the fix itself is a minimal safety clamp, not a change to the algorithm.
+
+**Not bugs, expected behavior:** a handful of `wavelengthCalibrateProcess` orders (2, 3, 25 for
+`r3c1m2z_jhjh.0001`) logged `ERROR: Could not match 3 brightest lines ... Skipping order!` and
+were gracefully skipped — this is the algorithm correctly giving up on genuinely faint/lineless
+orders, not a crash. A few downstream `KeyError`-shaped prints (`'PCF0_S02'` etc. from
+`getWavelengthSolution`) are the direct, harmless consequence of those same skipped orders having
+no stored wavelength solution — cosmetic, not fatal, don't chase these.
+
+**Validated by this run:** the numpy/math disambiguation pass and the PyCUDA→CuPy migration are
+now confirmed sound end-to-end for MOS + longslit spectroscopy (imaging modes still untested).
+Item 11 above is the only bug that predates this refactor; everything else was introduced by it.
+
 ## Algorithm-specific failure hardening: findSlitletProcess + rectifyProcess (2026-09-11)
 
 **Status: implemented, NOT YET validated against real data.** The user is checking both against
