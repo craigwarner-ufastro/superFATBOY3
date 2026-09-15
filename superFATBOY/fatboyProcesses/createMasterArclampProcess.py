@@ -97,7 +97,7 @@ class createMasterArclampProcess(fatboyProcess):
             #If output written to disk, update FITS file with difference
             if (mlfilename is not None):
                 mlamp = pyfits.open(mlfilename, "update")
-                mlamp[onLamps[0]._mef].data = data
+                mlamp[onLamps[0]._mef].data = cp.asnumpy(data)
                 mlamp.verify('silentfix')
                 mlamp.flush()
                 mlamp.close()

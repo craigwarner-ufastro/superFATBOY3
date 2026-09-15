@@ -84,7 +84,7 @@ class flatDivideProcess(fatboyProcess):
             #If output written to disk, update FITS file with difference
             if (mffilename is not None):
                 mflat = pyfits.open(mffilename, "update")
-                mflat[onFlats[0]._mef].data = data
+                mflat[onFlats[0]._mef].data = cp.asnumpy(data)
                 mflat.verify('silentfix')
                 mflat.flush()
                 mflat.close()
