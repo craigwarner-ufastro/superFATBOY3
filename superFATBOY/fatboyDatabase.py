@@ -1432,7 +1432,7 @@ class fatboyDatabase:
         #If more than this many files fail to initialize (readHeader/initialize), treat it as a
         #systemic problem (misconfiguration, wrong instrument, bad file list) rather than a few
         #bad frames, and abort instead of continuing on with whatever is left.
-        self._params.setdefault('max_init_failures', 3)
+        self._params.setdefault('max_init_failures', '3')
 
         #FITS Keywords
         self._params.setdefault('date_keyword',['DATE', 'DATE-OBS'])
