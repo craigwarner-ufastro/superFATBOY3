@@ -1243,6 +1243,17 @@ class rectifyProcess(fatboyProcess):
         return rect_coeffs
     #end calcLongslitRectification
 
+    ## calibs['slitmask'] data is always plain numpy (createSlitmask always converts to numpy
+    ## via .get() before returning), but masks built from it are often multiplied against
+    ## science data read through fdu.getData(), which is a CuPy array in GPU mode. CuPy raises
+    ## "Unsupported type <class 'numpy.ndarray'>" on a bare elementwise op against a raw numpy
+    ## operand, so any such mask needs converting first.
+    def matchGPUMode(self, mask):
+        if (self._fdb.getGPUMode()):
+            return cp.asarray(mask)
+        return mask
+    #end matchGPUMode
+
     ## Sanity-check a surfaceFunction continuum trace fit against a maximum allowed transform
     ## value, and retry once with a linear fit if it extrapolates to unreasonable values --
     ## e.g. a runaway high-order fit that would make drihizzle allocate a hugely oversized
@@ -3451,11 +3462,11 @@ class rectifyProcess(fatboyProcess):
 
                 #Find the data corresponding to this slit and take 1-d cut
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    currMask = calibs['slitmask'].getData()[ylo:yhi+1,find_xlo:find_xhi] == (slitidx+1)
+                    currMask = self.matchGPUMode(calibs['slitmask'].getData()[ylo:yhi+1,find_xlo:find_xhi] == (slitidx+1))
                     slit = currFDU.getData(tag="cleanFrame")[ylo:yhi+1,find_xlo:find_xhi]*currMask
                     oned = np.sum(slit, 1)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    currMask = calibs['slitmask'].getData()[find_xlo:find_xhi,ylo:yhi+1] == (slitidx+1)
+                    currMask = self.matchGPUMode(calibs['slitmask'].getData()[find_xlo:find_xhi,ylo:yhi+1] == (slitidx+1))
                     slit = currFDU.getData(tag="cleanFrame")[find_xlo:find_xhi,ylo:yhi+1]*currMask
                     oned = np.sum(slit, 0)
 
@@ -3632,17 +3643,17 @@ class rectifyProcess(fatboyProcess):
                             x3 = xstride*(seg+1)+bndry
                             x4 = xstride*(seg+1)+bndry+(find_xhi-find_xlo)
                         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                            currMask = calibs['slitmask'].getData()[ylos[slitidx]:yhis[slitidx]+1,x1:x2] == (slitidx+1)
+                            currMask = self.matchGPUMode(calibs['slitmask'].getData()[ylos[slitidx]:yhis[slitidx]+1,x1:x2] == (slitidx+1))
                             #oned_seg1 = sum(currData[ylos[slitidx]:yhis[slitidx]+1,x1:x2]*currMask, 1) #1-d cut of curr segment
                             oned_seg1 = gpu_arraymedian(currData[ylos[slitidx]:yhis[slitidx]+1,x1:x2]*currMask, axis="X", nonzero=True) #1-d cut of curr segment
-                            currMask = calibs['slitmask'].getData()[ylos[slitidx]:yhis[slitidx]+1,x3:x4] == (slitidx+1)
+                            currMask = self.matchGPUMode(calibs['slitmask'].getData()[ylos[slitidx]:yhis[slitidx]+1,x3:x4] == (slitidx+1))
                             #oned_seg0 = sum(currData[ylos[slitidx]:yhis[slitidx]+1,x3:x4]*currMask, 1) #1-d cut of last segment
                             oned_seg0 = gpu_arraymedian(currData[ylos[slitidx]:yhis[slitidx]+1,x3:x4]*currMask, axis="X", nonzero=True) #1-d cut of curr segment
                         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                            currMask = calibs['slitmask'].getData()[x1:x2,ylos[slitidx]:yhis[slitidx]+1] == (slitidx+1)
+                            currMask = self.matchGPUMode(calibs['slitmask'].getData()[x1:x2,ylos[slitidx]:yhis[slitidx]+1] == (slitidx+1))
                             #oned_seg1 = sum(currData[x1:x2,ylos[slitidx]:yhis[slitidx]+1]*currMask, 0) #1-d cut of curr segment
                             oned_seg1 = gpu_arraymedian(currData[x1:x2,ylos[slitidx]:yhis[slitidx]+1]*currMask, axis="Y") #1-d cut of curr segment
-                            currMask = calibs['slitmask'].getData()[x3:x4,ylos[slitidx]:yhis[slitidx]+1] == (slitidx+1)
+                            currMask = self.matchGPUMode(calibs['slitmask'].getData()[x3:x4,ylos[slitidx]:yhis[slitidx]+1] == (slitidx+1))
                             #oned_seg0 = sum(currData[x3:x4,ylos[slitidx]:yhis[slitidx]+1]*currMask, 0) #1-d cut of curr segment
                             oned_seg0 = gpu_arraymedian(currData[x3:x4,ylos[slitidx]:yhis[slitidx]+1]*currMask, axis="Y") #1-d cut of curr segment
                         ccor = np.correlate(oned_seg0, oned_seg1, mode='same')
@@ -3651,11 +3662,11 @@ class rectifyProcess(fatboyProcess):
 
                 #Find the data corresponding to this slit and take 1-d cut
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    currMask = calibs['slitmask'].getData()[ylo:yhi+1,find_xlo:find_xhi] == (slitidx+1)
+                    currMask = self.matchGPUMode(calibs['slitmask'].getData()[ylo:yhi+1,find_xlo:find_xhi] == (slitidx+1))
                     slit = currFDU.getData(tag="cleanFrame")[ylo:yhi+1,find_xlo:find_xhi]*currMask
                     oned = np.sum(slit, 1)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    currMask = calibs['slitmask'].getData()[find_xlo:find_xhi,ylo:yhi+1] == (slitidx+1)
+                    currMask = self.matchGPUMode(calibs['slitmask'].getData()[find_xlo:find_xhi,ylo:yhi+1] == (slitidx+1))
                     slit = currFDU.getData(tag="cleanFrame")[find_xlo:find_xhi,ylo:yhi+1]*currMask
                     oned = np.sum(slit, 0)
 
@@ -4193,11 +4204,11 @@ class rectifyProcess(fatboyProcess):
 
             #Find the data corresponding to this slit and take 1-d cut
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                currMask = calibs['slitmask'].getData()[ylo:yhi+1,:] == (slitidx+1)
+                currMask = self.matchGPUMode(calibs['slitmask'].getData()[ylo:yhi+1,:] == (slitidx+1))
                 slit = skyData[ylo:yhi+1,:]*currMask
                 oned = np.sum(slit, 0)
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                currMask = calibs['slitmask'].getData()[:,ylo:yhi+1] == (slitidx+1)
+                currMask = self.matchGPUMode(calibs['slitmask'].getData()[:,ylo:yhi+1] == (slitidx+1))
                 slit = skyData[:,ylo:yhi+1]*currMask
                 oned = np.sum(slit, 1)
 
