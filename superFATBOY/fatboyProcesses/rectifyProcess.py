@@ -621,7 +621,7 @@ class rectifyProcess(fatboyProcess):
         print("rectifyProcess::calcLongslitSkylineRectification> Searching for sky/arclamp to trace out, using "+skyFDU.getFullId()+"...")
         self._log.writeLog(__name__, "Searching for sky/arclamp to trace out, using "+skyFDU.getFullId()+"...")
 
-        skyData = skyFDU.getData().copy()
+        skyData = skyFDU.getData(force_cpu=True).copy()
         xcenters = []
         #Take 1-d sum and median filter
         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
@@ -736,7 +736,7 @@ class rectifyProcess(fatboyProcess):
         #Use brightest skyline to trace out range in y np.where skylines are visible
         #(Usually they cut off before the top/bottom of the chip)
         nlines = len(xcenters)
-        skyData = skyFDU.getData()
+        skyData = skyFDU.getData(force_cpu=True)
         bcen = int(xcenters[0])
         #Sum 1-d cut at 5 pixels centered around skyline
         if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
