@@ -34,7 +34,7 @@ class linearityProcess(fatboyProcess):
                 output[i] = input[i]*coeffs[0];
                 for (int j = 1; j < ncoeffs; j++) {
                   n++;
-                  output[i] += coeffs[j] * pow((float)input[i], n);
+                  output[i] += coeffs[j] * powf((float)input[i], (float)n);
                 }
               }
 
@@ -45,7 +45,7 @@ class linearityProcess(fatboyProcess):
                 output[i] = input[i]*coeffs[0];
                 for (int j = 1; j < ncoeffs; j++) {
                   n++;
-                  output[i] += coeffs[j] * pow(input[i], n);
+                  output[i] += coeffs[j] * powf(input[i], (float)n);
                 }
               }
               }
@@ -128,15 +128,15 @@ class linearityProcess(fatboyProcess):
         gpu_mod = self.get_linearity_mod()
         if (data.dtype == np.int32):
             gpu_linearity = gpu_mod.get_function("gpu_linearity_int")
-            data_gpu = cp.np.array(data)
+            data_gpu = cp.array(data)
         else:
             #Cast data
             gpu_linearity = gpu_mod.get_function("gpu_linearity_float")
-            data_gpu = cp.np.array(data.astype(np.float32))
+            data_gpu = cp.array(data.astype(np.float32))
             
-        coeffs_gpu = cp.np.array(coeffs).astype(np.float32)
+        coeffs_gpu = cp.array(coeffs).astype(np.float32)
         ncoeffs = coeffs_gpu.size
-        output_gpu = cp.np.empty(data.shape, np.float32)
+        output_gpu = cp.empty(data.shape, np.float32)
 
         gpu_linearity((blocks, 1, 1), (block_size, 1, 1), (output_gpu, data_gpu, coeffs_gpu, ncoeffs.astype(np.int32), np.int32(data.size)))
         if (self._fdb._verbosity == fatboyLog.VERBOSE):

@@ -214,21 +214,21 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
     n = (ny*nx)//(bin*bin)
     
     is_cpu = isinstance(data, np.ndarray)
-    data_gpu = cp.asarray(data).astype(cp.np.float32)
+    data_gpu = cp.asarray(data).astype(cp.float32)
     
-    xin_gpu = cp.np.empty(n, cp.np.float32)
-    yin_gpu = cp.np.empty(n, cp.np.float32)
-    d2_gpu = cp.np.empty(n, cp.np.float32)
+    xin_gpu = cp.empty(n, cp.float32)
+    yin_gpu = cp.empty(n, cp.float32)
+    d2_gpu = cp.empty(n, cp.float32)
     hasMask = True
     if (inmask is None):
-        inmask_gpu = cp.np.zeros(data.size, dtype=bool) # Original size before binning? 
+        inmask_gpu = cp.zeros(data.size, dtype=bool) # Original size before binning? 
         # Actually binData takes data of size nx*ny and outputs d2 of size n.
         # It takes inmask of size nx*ny.
         hasMask = False
     else:
         inmask_gpu = cp.asarray(inmask).astype(bool)
         
-    binmask_gpu = cp.np.empty(n, bool)
+    binmask_gpu = cp.empty(n, bool)
     
     binData((blocks//(bin*bin), 1), (block_size, 1, 1), (data_gpu, xin_gpu, yin_gpu, d2_gpu, inmask_gpu, binmask_gpu, np.int32(hasMask), np.int32(bin), np.int32(nx)))
     
@@ -279,8 +279,8 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
         print("\t\tFit params: "+str(p))
         write_fatboy_log(log, logtype, "Fit params: "+str(p), __name__, printCaller=False, tabLevel=1)
         
-        resid_gpu = cp.np.empty(d2_gpu.shape, cp.np.float64)
-        p_gpu = cp.asarray(p).astype(cp.np.float64)
+        resid_gpu = cp.empty(d2_gpu.shape, cp.float64)
+        p_gpu = cp.asarray(p).astype(cp.float64)
         
         calcPysurfaceResid((n//512+1,1), (block_size,1,1), (xin_gpu, yin_gpu, d2_gpu, resid_gpu, p_gpu, np.int32(order), np.int32(n)))
 
@@ -303,8 +303,8 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
 
     #reconstruct fit from original data size
     calcPysurface = mod.get_function("calcPysurface")
-    fit_gpu = cp.np.zeros((ny,nx), dtype=cp.np.float32)
-    p_gpu = cp.asarray(p).astype(cp.np.float64)
+    fit_gpu = cp.zeros((ny,nx), dtype=cp.float32)
+    p_gpu = cp.asarray(p).astype(cp.float64)
     
     calcPysurface((data.size//block_size+1, 1), (block_size, 1, 1), (fit_gpu, np.int32(nx), p_gpu, np.int32(order), np.int32(data.size)))
     

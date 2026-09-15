@@ -115,7 +115,7 @@ class badPixelMaskProcess(fatboyProcess):
 
             # Ensure input is np.float32 and on device
             input_data = cp.asarray(sourceFDU.getData(), dtype=np.float32)
-            output_data = cp.np.empty(fdu.getShape(), dtype=np.int32)
+            output_data = cp.empty(fdu.getShape(), dtype=np.int32)
 
             blocks = (output_data.size + block_size - 1) // block_size
 

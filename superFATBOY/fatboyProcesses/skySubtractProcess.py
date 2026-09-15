@@ -932,8 +932,8 @@ class skySubtractProcess(fatboyProcess):
     def skySubtractImage(self, image, sky, scale):
         t = time.time()
         if (self._fdb.getGPUMode()):
-            image_gpu = cp.np.array(image)
-            sky_gpu = cp.np.array(sky)
+            image_gpu = cp.array(image)
+            sky_gpu = cp.array(sky)
             image_gpu -= sky_gpu * scale
             image = cp.asnumpy(image_gpu)
         else:
