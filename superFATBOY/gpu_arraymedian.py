@@ -5362,6 +5362,13 @@ def gpu_arraymedian(input, axis="both", lthreshold=None, hthreshold=None, nlow=0
             #Check after above test for np.array size so that it doesn't crash on CPU-only machines
             #Where no kernel is listed for taking median of smaller arrays
             kernel = defaultKernel #Use defaultKernel, which depends on imports
+        #Unlike the per-axis kernel2d/kernel3d path below (which can use GPU-native
+        #reductions), every possible choice here (fatboyclib.median, fatboycudalib.gpumedian,
+        #cp_select.cpmedian) is a C extension that needs a genuine numpy array -- none accept
+        #a CuPy array directly (they handle GPU dispatch internally themselves), matching the
+        #same convention already used by the sibling gpumedianS().
+        if (hasattr(input, 'get')):
+            input = input.get()
         input = input.copy()
         if (lthreshold is None and hthreshold is None):
             med = kernel(input, nlow=nlow, nhigh=nhigh, nonzero=nonzero, even=even)
