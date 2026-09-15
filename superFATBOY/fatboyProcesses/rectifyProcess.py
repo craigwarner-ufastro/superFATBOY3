@@ -1490,8 +1490,13 @@ class rectifyProcess(fatboyProcess):
             #checkFitSanity, but this is a 3-variable surface fit so it can't reuse that
             #helper directly).  Only check within actual slit pixels (z != 0) since those are
             #the only ones that end up in the final transform.
+            #xind can be 1-d (horizontal dispersion) while yind/z are always 2-d --
+            #surface3dFunction sizes its output array from x's shape alone, so a bare 1-d
+            #xind broadcasts against 2-d yind/z during accumulation but can't be written
+            #back into a 1-d output; broadcast xind to yind's shape first to avoid that.
+            xind3d = np.broadcast_to(xind, yind.shape) if (xind.shape != yind.shape) else xind
             def evalTrans3d(cf, ordr):
-                return surface3dFunction(cf, xind, yind, z, ordr)[z != 0]
+                return surface3dFunction(cf, xind3d, yind, z, ordr)[z != 0]
             maxAbsVal = maxTransformFactor*ysize
             vals = evalTrans3d(coeffs, fit_order)
             usedOrder = fit_order
