@@ -3745,7 +3745,7 @@ def noisemaps_mflat_dome_on_off_gpu(on, off, ncomb1, ncomb2):
         global fatboy_mod
     else:
         fatboy_mod = get_fatboy_mod()
-    kernel = fatboy_mod.get_function("noisemaps_twilight_float")
+    kernel = fatboy_mod.get_function("noisemaps_mflat_dome_on_off_float")
     nm_gpu = cp.empty(on.shape, np.float32)
     on_gpu = cp.asarray(on)
     off_gpu = cp.asarray(off)
