@@ -3448,8 +3448,8 @@ def linterp_gpu(data, x, gpm, iter=100, log=None):
 
 #CPU linear interpolation across a data value (0's for all practical purposes)
 def linterp_cpu(data, x, gpm, iter=100, log=None):
-    nx = shape(data)[0]
-    ny = shape(data)[1]
+    nx = data.shape[0]
+    ny = data.shape[1]
     z = -1
     initys = np.arange(nx*ny).reshape(nx,ny) % ny
     initxs = np.arange(nx*ny).reshape(nx,ny) // ny
