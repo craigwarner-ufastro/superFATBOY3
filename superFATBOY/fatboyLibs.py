@@ -4517,7 +4517,11 @@ def whereEqual(data, val):
     idx_gpu = cp.asarray(idx)
     data_gpu = cp.asarray(data)
     whereEqualFunc((blocks,1), (block_size,1,1), (data_gpu, outtype(val), idx_gpu))
-    idx = int(idx_gpu[0])
+    #Keep idx as a 1-element numpy array (not a plain Python int) here -- main's PyCUDA
+    #version left idx as its original array through this same arithmetic, and callers (e.g.
+    #gpu_xregister.py's b[1][0]) expect each tuple element back as an indexable array of
+    #length 1, matching numpy.where()'s convention, not a bare scalar.
+    idx = idx_gpu.get()
     if (len(data.shape) == 1):
         idx = idx,
     elif (len(data.shape) == 2):
