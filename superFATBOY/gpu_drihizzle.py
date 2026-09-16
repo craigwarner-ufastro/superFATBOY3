@@ -1483,47 +1483,47 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
         if kernel == 'turbo':
             if doPix:
                 turboKernel = mod.get_function("turboKernelPix")
-                turboKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, xsh[j] - np.float32(xshmin), ysh[j] - np.float32(yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
+                turboKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
             else:
                 turboKernel = mod.get_function("turboKernel")
-                turboKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, xsh[j] - np.float32(xshmin), ysh[j] - np.float32(yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
+                turboKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
         elif kernel == 'point':
             if doPix:
                 pointKernel = mod.get_function("pointKernelPix")
-                pointKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, xsh[j] - np.float32(xshmin), ysh[j] - np.float32(yshmin), np.int32(xsize), np.int32(data.size)))
+                pointKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size)))
             else:
                 pointKernel = mod.get_function("pointKernel")
-                pointKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, xsh[j] - np.float32(xshmin), ysh[j] - np.float32(yshmin), np.int32(xsize), np.int32(data.size)))
+                pointKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size)))
         elif kernel == 'tophat':
             if doPix:
                 tophatKernel = mod.get_function("tophatKernelPix")
-                tophatKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, xsh[j] - np.float32(xshmin), ysh[j] - np.float32(yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
+                tophatKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
             else:
                 tophatKernel = mod.get_function("tophatKernel")
-                tophatKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, xsh[j] - np.float32(xshmin), ysh[j] - np.float32(yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
+                tophatKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
         elif kernel == 'gaussian':
             if doPix:
                 gaussianKernel = mod.get_function("gaussianKernelPix")
-                gaussianKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, xsh[j] - np.float32(xshmin), ysh[j] - np.float32(yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
+                gaussianKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
             else:
                 gaussianKernel = mod.get_function("gaussianKernel")
-                gaussianKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, xsh[j] - np.float32(xshmin), ysh[j] - np.float32(yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
+                gaussianKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
         elif kernel == 'fastgauss':
             gausslut_g = cp.array(gausslut).astype(np.float32)
             if doPix:
                 fastGaussKernel = mod.get_function("fastGaussKernelPix")
-                fastGaussKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, xsh[j] - np.float32(xshmin), ysh[j] - np.float32(yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), gausslut_g, gausscen.astype(np.int32)))
+                fastGaussKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), gausslut_g, gausscen.astype(np.int32)))
             else:
                 fastGaussKernel = mod.get_function("fastGaussKernel")
-                fastGaussKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, xsh[j] - np.float32(xshmin), ysh[j] - np.float32(yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), gausslut_g, gausscen.astype(np.int32)))
+                fastGaussKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), gausslut_g, gausscen.astype(np.int32)))
         elif kernel == 'lanczos':
             lanclut_g = cp.array(lanclut).astype(np.float32)
             if doPix:
                 lanczosKernel = mod.get_function("lanczosKernelPix")
-                lanczosKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, xsh[j] - np.float32(xshmin), ysh[j] - np.float32(yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), lanclut_g, lanccen.astype(np.int32)))
+                lanczosKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), lanclut_g, lanccen.astype(np.int32)))
             else:
                 lanczosKernel = mod.get_function("lanczosKernel")
-                lanczosKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, xsh[j] - np.float32(xshmin), ysh[j] - np.float32(yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), lanclut_g, lanccen.astype(np.int32)))
+                lanczosKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), lanclut_g, lanccen.astype(np.int32)))
         elif kernel == 'uniform':
             data_g = data_g.astype(np.int32)
             # newdata is already np.float32, uniformKernel expects int* newdata?
@@ -2461,17 +2461,17 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
         if (kernel == 'turbo'):
             if (doPix):
                 turboKernel = mod.get_function("turboKernel3dPix")
-                turboKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(pixmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), xsh[j]-xshmin.astype(np.float32), ysh[j]-yshmin.astype(np.float32), zsh[j]-zshmin.astype(np.float32), np.int32(xsize), np.int32(ysize), np.int32(data.size), np.float32(dropsize)))
+                turboKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(pixmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), np.float32(xsh[j]-xshmin), np.float32(ysh[j]-yshmin), np.float32(zsh[j]-zshmin), np.int32(xsize), np.int32(ysize), np.int32(data.size), np.float32(dropsize)))
             else:
                 turboKernel = mod.get_function("turboKernel3d")
-                turboKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), xsh[j]-xshmin.astype(np.float32), ysh[j]-yshmin.astype(np.float32), zsh[j]-zshmin.astype(np.float32), np.int32(xsize), np.int32(ysize), np.int32(data.size), np.float32(dropsize)))
+                turboKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), np.float32(xsh[j]-xshmin), np.float32(ysh[j]-yshmin), np.float32(zsh[j]-zshmin), np.int32(xsize), np.int32(ysize), np.int32(data.size), np.float32(dropsize)))
         elif (kernel == 'point'):
             if (doPix):
                 pointKernel = mod.get_function("pointKernel3dPix")
-                pointKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(pixmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), xsh[j]-xshmin.astype(np.float32), ysh[j]-yshmin.astype(np.float32), zsh[j]-zshmin.astype(np.float32), np.int32(xsize), np.int32(ysize), np.int32(data.size)))
+                pointKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(pixmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), np.float32(xsh[j]-xshmin), np.float32(ysh[j]-yshmin), np.float32(zsh[j]-zshmin), np.int32(xsize), np.int32(ysize), np.int32(data.size)))
             else:
                 pointKernel = mod.get_function("pointKernel3d")
-                pointKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), xsh[j]-xshmin.astype(np.float32), ysh[j]-yshmin.astype(np.float32), zsh[j]-zshmin.astype(np.float32), np.int32(xsize), np.int32(ysize), np.int32(data.size)))
+                pointKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), np.float32(xsh[j]-xshmin), np.float32(ysh[j]-yshmin), np.float32(zsh[j]-zshmin), np.int32(xsize), np.int32(ysize), np.int32(data.size)))
         tt = time.time()
 
         #If requested, update FDUs here
