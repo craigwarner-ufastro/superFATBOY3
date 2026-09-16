@@ -1492,7 +1492,7 @@ class findSlitletProcess(fatboyProcess):
                 #Generate qa data
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                     for i in range(len(xcoords)):
-                        yval = ycoords[i]+.5.astype(np.int32)
+                        yval = int(ycoords[i]+.5)
                         xval = int(xcoords[i]+.5)
                         for yi in range(-1,2):
                             for xi in range(-1,2):
@@ -1500,7 +1500,7 @@ class findSlitletProcess(fatboyProcess):
                                 flatData[yval+yi, xval+xi] = -50000/((1+dist)**2)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                     for i in range(len(xcoords)):
-                        yval = ycoords[i]+.5.astype(np.int32)
+                        yval = int(ycoords[i]+.5)
                         xval = int(xcoords[i]+.5)
                         for yi in range(-1,2):
                             for xi in range(-1,2):

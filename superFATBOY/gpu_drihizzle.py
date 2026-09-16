@@ -2264,7 +2264,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             #Compute transformation
             #Do this for the first pass only
             calcTransOpt3d = mod.get_function("calcTransOpt3d")
-            calcTransOpt3d((blocks,1), (block_size,1,1), (cp.asarray(xout), cp.asarray(yout), cp.asarray(zout), cp.asarray(xin), cp.asarray(yin), cp.asarray(zin), cp.asarray(xcoeffs), cp.asarray(ycoeffs), cp.asarray(zcoeffs), np.int32(order), offset.astype(np.float32), nx*ny*np.int32(nz)))
+            calcTransOpt3d((blocks,1), (block_size,1,1), (cp.asarray(xout), cp.asarray(yout), cp.asarray(zout), cp.asarray(xin), cp.asarray(yin), cp.asarray(zin), cp.asarray(xcoeffs), cp.asarray(ycoeffs), cp.asarray(zcoeffs), np.int32(order), np.float32(offset), nx*ny*np.int32(nz)))
             #Compute transformation on refrerence pixels in python
             n = 0
             for i in range(order+1):
@@ -2436,10 +2436,10 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             blocks += 1
         #Scale data by inmask and weight factor
         multArrFloatIntScalar = mod.get_function("multArrFloatIntScalar")
-        multArrFloatIntScalar((blocks,1), (block_size,1,1), (cp.asarray(data), cp.asarray(inmask), scalefac/exptime.astype(np.float32), np.int32(data.size)))
+        multArrFloatIntScalar((blocks,1), (block_size,1,1), (cp.asarray(data), cp.asarray(inmask), scalefac/np.float32(exptime), np.int32(data.size)))
         if (tmpexp is None):
             #Exposure map should be exposure time * good pixel mask unless a previous exposure map has been loaded for inunits = cps
-            tmpexp = inmask*scalefac.astype(np.float32)
+            tmpexp = (inmask*scalefac).astype(np.float32)
         totexp+=exptime
 
         if (_verbosity == fatboyLog.VERBOSE):
@@ -2461,17 +2461,17 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
         if (kernel == 'turbo'):
             if (doPix):
                 turboKernel = mod.get_function("turboKernel3dPix")
-                turboKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(pixmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), xsh[j]-xshmin.astype(np.float32), ysh[j]-yshmin.astype(np.float32), zsh[j]-zshmin.astype(np.float32), xsize.astype(np.int32), ysize.astype(np.int32), np.int32(data.size), dropsize.astype(np.float32)))
+                turboKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(pixmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), xsh[j]-xshmin.astype(np.float32), ysh[j]-yshmin.astype(np.float32), zsh[j]-zshmin.astype(np.float32), np.int32(xsize), np.int32(ysize), np.int32(data.size), np.float32(dropsize)))
             else:
                 turboKernel = mod.get_function("turboKernel3d")
-                turboKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), xsh[j]-xshmin.astype(np.float32), ysh[j]-yshmin.astype(np.float32), zsh[j]-zshmin.astype(np.float32), xsize.astype(np.int32), ysize.astype(np.int32), np.int32(data.size), dropsize.astype(np.float32)))
+                turboKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), xsh[j]-xshmin.astype(np.float32), ysh[j]-yshmin.astype(np.float32), zsh[j]-zshmin.astype(np.float32), np.int32(xsize), np.int32(ysize), np.int32(data.size), np.float32(dropsize)))
         elif (kernel == 'point'):
             if (doPix):
                 pointKernel = mod.get_function("pointKernel3dPix")
-                pointKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(pixmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), xsh[j]-xshmin.astype(np.float32), ysh[j]-yshmin.astype(np.float32), zsh[j]-zshmin.astype(np.float32), xsize.astype(np.int32), ysize.astype(np.int32), np.int32(data.size)))
+                pointKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(pixmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), xsh[j]-xshmin.astype(np.float32), ysh[j]-yshmin.astype(np.float32), zsh[j]-zshmin.astype(np.float32), np.int32(xsize), np.int32(ysize), np.int32(data.size)))
             else:
                 pointKernel = mod.get_function("pointKernel3d")
-                pointKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), xsh[j]-xshmin.astype(np.float32), ysh[j]-yshmin.astype(np.float32), zsh[j]-zshmin.astype(np.float32), xsize.astype(np.int32), ysize.astype(np.int32), np.int32(data.size)))
+                pointKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), xsh[j]-xshmin.astype(np.float32), ysh[j]-yshmin.astype(np.float32), zsh[j]-zshmin.astype(np.float32), np.int32(xsize), np.int32(ysize), np.int32(data.size)))
         tt = time.time()
 
         #If requested, update FDUs here

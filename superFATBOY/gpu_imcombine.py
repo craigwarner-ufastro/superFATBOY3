@@ -514,7 +514,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             if (zero != 'none'):
                 fac = (zpts-zpts[0])
                 subArrVector = mod.get_function("subArrVector_float")
-                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, nfint.astype(np.int32)))
+                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
             if (scale != 'none' or weight != 'none'):
                 fac = cp.ones(nfint, outtype)
                 if (scale != 'none'):
@@ -522,7 +522,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                 if (weight != 'none'):
                     fac *= (w/w[0])
                 multArrVector = mod.get_function("multArrVector_float")
-                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, nfint.astype(np.int32)))
+                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
 
             if (_verbosity == fatboyLog.VERBOSE):
                 print("Scaling: ", time.time()-tt,"; Total: ",time.time()-t)
@@ -577,7 +577,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             if (zero != 'none'):
                 fac = (zpts-zpts[0])
                 subArrVector = mod.get_function("subArrVector_float")
-                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, nfint.astype(np.int32)))
+                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
             if (scale != 'none' or weight != 'none'):
                 fac = cp.ones(nfint, outtype)
                 if (scale != 'none'):
@@ -585,7 +585,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                 if (weight != 'none'):
                     fac *= (w/w[0])
                 multArrVector = mod.get_function("multArrVector_float")
-                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, nfint.astype(np.int32)))
+                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
             if (_verbosity == fatboyLog.VERBOSE):
                 print("Scaling: ", time.time()-tt,"; Total: ",time.time()-t)
                 tt = time.time()
@@ -683,7 +683,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             if (zero != 'none'):
                 fac = (zpts-zpts[0])
                 subArrVector = mod.get_function("subArrVector_float")
-                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, nfint.astype(np.int32)))
+                subArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
             if (scale != 'none' or weight != 'none'):
                 fac = cp.ones(nfint, outtype)
                 if (scale != 'none'):
@@ -691,7 +691,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                 if (weight != 'none'):
                     fac *= (w/w[0])
                 multArrVector = mod.get_function("multArrVector_float")
-                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, nfint.astype(np.int32)))
+                multArrVector((blocks, blocky, 1), (block_size, 1, 1), (inp, fac, np.int32(nfint)))
 
             if (_verbosity == fatboyLog.VERBOSE):
                 print("Scaling: ", time.time()-tt,"; Total: ",time.time()-t)

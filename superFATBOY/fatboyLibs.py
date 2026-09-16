@@ -4451,7 +4451,7 @@ def whereEqual(data, val):
         fatboy_mod = get_fatboy_mod()
     whereEqualFunc = fatboy_mod.get_function("whereEqual_float")
     outtype = np.float32
-    idx = [-1].astype(np.int32)
+    idx = np.int32([-1])
     if (data.dtype == np.int32):
         whereEqualFunc = fatboy_mod.get_function("whereEqual_int")
     elif (data.dtype == np.int64):

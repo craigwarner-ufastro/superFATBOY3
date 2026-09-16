@@ -2107,7 +2107,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
         data = data*(inmask*(scalefac/exptime)) #Don't use *= because of stupid numpy "feature" throwing exception
         if (tmpexp is None):
             #Exposure map should be exposure time * good pixel mask unless a previous exposure map has been loaded for inunits = cps
-            tmpexp = inmask*scalefac.astype(np.float32)
+            tmpexp = (inmask*scalefac).astype(np.float32)
         totexp+=exptime
         if (_verbosity == fatboyLog.VERBOSE):
             print("Scale data and expmask: ",time.time()-tt,"; Total: ",time.time()-t)
