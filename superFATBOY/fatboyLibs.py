@@ -1237,7 +1237,11 @@ def doItAll(fdu, params, log, linCoeffs=None, darkFdu=None, flatFdu=None, bpm=No
 
     t4 = time.time()
     #Run rawToFlatDivided
-    kernel((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(output), cp.asarray(linCoeffs), np.int32(nCoeffs), np.float32(coaddRead), cp.asarray(masterDark), cp.asarray(masterFlat), cp.asarray(bpm), cp.asarray(steps)))
+    #cp.empty(output) would allocate from output's *current values* interpreted as a shape,
+    #not a fresh device buffer -- use cp.empty_like and sync the real result back afterward.
+    output_gpu = cp.empty_like(output)
+    kernel((blocks,1), (block_size,1,1), (cp.asarray(data), output_gpu, cp.asarray(linCoeffs), np.int32(nCoeffs), np.float32(coaddRead), cp.asarray(masterDark), cp.asarray(masterFlat), cp.asarray(bpm), cp.asarray(steps)))
+    output = output_gpu.get()
     t5 = time.time()
 
     #Update fdu
@@ -1263,7 +1267,9 @@ def doItAll(fdu, params, log, linCoeffs=None, darkFdu=None, flatFdu=None, bpm=No
         crpass = params['COSMIC_RAY_PASSES']
         ict = np.zeros(1, np.int32)
         for j in range(crpass):
-            cosmicRayRemoval((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(output), np.int32(rows), np.int32(cols), cp.asarray(ict)))
+            output_gpu = cp.empty_like(output)
+            cosmicRayRemoval((blocks,1), (block_size,1,1), (cp.asarray(data), output_gpu, np.int32(rows), np.int32(cols), cp.asarray(ict)))
+            output = output_gpu.get()
             print(ict,' replaced.')
             if (log is not None):
                 log.writeLog(__name__, str(ict)+" replaced.", printCaller=False, tabLevel=1)
@@ -1352,7 +1358,9 @@ def blkavg(data, outfile=None, faccol=1, facrow=1, mef=0, log=None):
     blocks = out.size//512
     if (out.size % 512 != 0):
         blocks += 1
-    blkavgFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(out), np.int32(faccol), np.int32(facrow), cols//np.int32(faccol), rows//np.int32(facrow)))
+    out_gpu = cp.empty_like(out)
+    blkavgFunc((blocks,1), (block_size,1,1), (cp.asarray(data), out_gpu, np.int32(faccol), np.int32(facrow), cols//np.int32(faccol), rows//np.int32(facrow)))
+    out = out_gpu.get()
 
     if (outfile is not None):
         outimage[mef].data = out
@@ -1398,7 +1406,9 @@ def blkrep(data, outfile=None, faccol=1, facrow=1, mef=0, log=None):
     if (data.size % 512 != 0):
         blocks += 1
     out = np.empty((rows*facrow, cols*faccol), outtype)
-    blkrepFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(out), np.int32(faccol), np.int32(facrow), np.int32(cols), np.int32(rows)))
+    out_gpu = cp.empty_like(out)
+    blkrepFunc((blocks,1), (block_size,1,1), (cp.asarray(data), out_gpu, np.int32(faccol), np.int32(facrow), np.int32(cols), np.int32(rows)))
+    out = out_gpu.get()
 
     if (outfile is not None):
         outimage[mef].data = out
@@ -1497,7 +1507,9 @@ def convolve2d(data, kernel, outfile=None, boundary="nearest", mef=0, maskNegati
     blocks = data.size//512
     if (data.size % 512 != 0):
         blocks += 1
-    convolveFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(out), cp.asarray(kernel), np.int32(rows), np.int32(cols), np.int32(kny), np.int32(knx), np.int32(bnd), np.int32(maskNegative)))
+    out_gpu = cp.empty_like(out)
+    convolveFunc((blocks,1), (block_size,1,1), (cp.asarray(data), out_gpu, cp.asarray(kernel), np.int32(rows), np.int32(cols), np.int32(kny), np.int32(knx), np.int32(bnd), np.int32(maskNegative)))
+    out = out_gpu.get()
 
     if (outfile is not None):
         outimage[mef].data = out
@@ -1548,7 +1560,9 @@ def convolve2dAndBlk(data, kernel, outfile=None, facrow=1, faccol=1, boundary="n
     blocks = out.size//512
     if (out.size % 512 != 0):
         blocks += 1
-    convolveFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(out), cp.asarray(kernel), rows//np.int32(facrow), cols//np.int32(faccol), np.int32(kny), np.int32(knx), np.int32(bnd), np.int32(maskNegative), np.int32(facrow), np.int32(faccol)))
+    out_gpu = cp.empty_like(out)
+    convolveFunc((blocks,1), (block_size,1,1), (cp.asarray(data), out_gpu, cp.asarray(kernel), rows//np.int32(facrow), cols//np.int32(faccol), np.int32(kny), np.int32(knx), np.int32(bnd), np.int32(maskNegative), np.int32(facrow), np.int32(faccol)))
+    out = out_gpu.get()
 
     if (outfile is not None):
         outimage[mef].data = out
@@ -2468,7 +2482,9 @@ def fwhm2d_cube_gpu(data, flag=None, estimateBackground=False, log=None):
     else:
         fatboy_mod = get_fatboy_mod()
     fwhm2d_cube_float = fatboy_mod.get_function("fwhm2d_cube_float")
-    fwhm2d_cube_float((blocks,1), (block_size,1,1), (cp.asarray(np.float32(data)), cp.asarray(np.int32(flag)), np.int32(depth), np.int32(nx), np.int32(ny), np.int32(estimateBackground), cp.empty(fwhms)))
+    fwhms_gpu = cp.empty_like(fwhms)
+    fwhm2d_cube_float((blocks,1), (block_size,1,1), (cp.asarray(np.float32(data)), cp.asarray(np.int32(flag)), np.int32(depth), np.int32(nx), np.int32(ny), np.int32(estimateBackground), fwhms_gpu))
+    fwhms = fwhms_gpu.get()
     fwhms[:,1] = fwhms[:,2:6].std(1) #calc std dev here, only takes 1-2ms
     return fwhms
 #end fwhm2d_cube_gpu
@@ -2624,7 +2640,9 @@ def getCentroid_cube_gpu(data, mx, my, fwhm, flag=None, verbose=False, log=None)
     else:
         fatboy_mod = get_fatboy_mod()
     getcentroid_cube_float = fatboy_mod.get_function("getCentroid_cube_float")
-    getcentroid_cube_float((blocks,1), (block_size,1,1), (cp.asarray(np.float32(data)), cp.asarray(np.int32(flag)), np.int32(mx), np.int32(my), np.float32(fwhm), np.int32(depth), np.int32(xsize), np.int32(ysize), cp.empty(cens)))
+    cens_gpu = cp.empty_like(cens)
+    getcentroid_cube_float((blocks,1), (block_size,1,1), (cp.asarray(np.float32(data)), cp.asarray(np.int32(flag)), np.int32(mx), np.int32(my), np.float32(fwhm), np.int32(depth), np.int32(xsize), np.int32(ysize), cens_gpu))
+    cens = cens_gpu.get()
     return cens
 #end getCentroid_cube_gpu
 
@@ -3270,7 +3288,9 @@ def lacosFirstSel(sigmap, med5, sigclip):
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("lacosFirstSel_float")
-    kernel((blocks,1), (block_size,1,1), (cp.asarray(sigmap), cp.asarray(med5), cp.empty(firstsel), np.float32(sigclip)))
+    firstsel_gpu = cp.empty_like(firstsel)
+    kernel((blocks,1), (block_size,1,1), (cp.asarray(sigmap), cp.asarray(med5), firstsel_gpu, np.float32(sigclip)))
+    firstsel = firstsel_gpu.get()
     return (sigmap, firstsel)
 #end lacosFirstSel
 
@@ -3288,7 +3308,11 @@ def lacosNoiseModel(med5, deriv2, gain, readn):
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("lacosNoiseModel_float")
-    kernel((blocks,1), (block_size,1,1), (cp.asarray(med5), cp.asarray(deriv2), cp.empty(noise), cp.empty(sigmap), np.float32(gain), np.float32(readn)))
+    noise_gpu = cp.empty_like(noise)
+    sigmap_gpu = cp.empty_like(sigmap)
+    kernel((blocks,1), (block_size,1,1), (cp.asarray(med5), cp.asarray(deriv2), noise_gpu, sigmap_gpu, np.float32(gain), np.float32(readn)))
+    noise = noise_gpu.get()
+    sigmap = sigmap_gpu.get()
     return (noise, sigmap)
 #end lacosNoiseModel
 
@@ -3307,7 +3331,11 @@ def lacosSelect(sel, sigmap, lower1, sigclip, lower2, doCount=False, mask=None, 
         npix = np.zeros(1, dtype=np.int32)
         inputmask = np.empty(sel.shape, dtype=np.float32)
         kernel = fatboy_mod.get_function("lacosSelectAndCount_float")
-        kernel((blocks,1), (block_size,1,1), (cp.asarray(sel), cp.asarray(sigmap), np.float32(lower1), np.float32(sigclip), np.float32(lower2), cp.asarray(mask), cp.empty(inputmask), cp.asarray(oldoutput), cp.asarray(npix)))
+        inputmask_gpu = cp.empty_like(inputmask)
+        npix_gpu = cp.asarray(npix)
+        kernel((blocks,1), (block_size,1,1), (cp.asarray(sel), cp.asarray(sigmap), np.float32(lower1), np.float32(sigclip), np.float32(lower2), cp.asarray(mask), inputmask_gpu, cp.asarray(oldoutput), npix_gpu))
+        inputmask = inputmask_gpu.get()
+        npix = npix_gpu.get()
         return (inputmask, npix[0])
     else:
         kernel = fatboy_mod.get_function("lacosSelect_float")
@@ -3496,7 +3524,9 @@ def maskNegatives(data):
     if (data.size % 512 != 0):
         blocks += 1
     output = np.empty(data.shape, data.dtype)
-    maskNegativesFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(output)))
+    output_gpu = cp.empty_like(output)
+    maskNegativesFunc((blocks,1), (block_size,1,1), (cp.asarray(data), output_gpu))
+    output = output_gpu.get()
     return output
 #end maskNegatives
 
@@ -3569,7 +3599,9 @@ def medfilt2d(data, width, outfile=None, zlo=0, zhi=0, mef=0, log=None):
     blocks = data.size//512
     if (data.size % 512 != 0):
         blocks += 1
-    medfiltFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(out), np.int32(rows), np.int32(cols), np.int32(w), np.int32(zlo), np.int32(zhi)))
+    out_gpu = cp.empty_like(out)
+    medfiltFunc((blocks,1), (block_size,1,1), (cp.asarray(data), out_gpu, np.int32(rows), np.int32(cols), np.int32(w), np.int32(zlo), np.int32(zhi)))
+    out = out_gpu.get()
 
     if (outfile is not None):
         outimage[mef].data = out
@@ -3648,7 +3680,9 @@ def mediansmooth1d2d(data, width, axis=0):
     if (data.size % 512 != 0):
         blocks += 1
     smoothed = np.empty(data.shape, outtype)
-    smoothFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(smoothed), np.int32(rows), np.int32(cols), np.int32(w), np.int32(axis)))
+    smoothed_gpu = cp.empty_like(smoothed)
+    smoothFunc((blocks,1), (block_size,1,1), (cp.asarray(data), smoothed_gpu, np.int32(rows), np.int32(cols), np.int32(w), np.int32(axis)))
+    smoothed = smoothed_gpu.get()
     return smoothed
 #end mediansmooth1d2d
 
@@ -4196,7 +4230,9 @@ def smooth1d(data, width, niter):
         blocks += 1
     for k in range(niter):
         smoothed = np.empty(data.shape, outtype)
-        smooth1dFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(smoothed), np.int32(n), np.int32(w)))
+        smoothed_gpu = cp.empty_like(smoothed)
+        smooth1dFunc((blocks,1), (block_size,1,1), (cp.asarray(data), smoothed_gpu, np.int32(n), np.int32(w)))
+        smoothed = smoothed_gpu.get()
         data = smoothed
     return data
 #end smooth1d
@@ -4222,7 +4258,9 @@ def smooth1d2d(data, width, niter, axis=0):
         blocks += 1
     for k in range(niter):
         smoothed = np.empty(data.shape, outtype)
-        smoothFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(smoothed), np.int32(rows), np.int32(cols), np.int32(w), np.int32(axis)))
+        smoothed_gpu = cp.empty_like(smoothed)
+        smoothFunc((blocks,1), (block_size,1,1), (cp.asarray(data), smoothed_gpu, np.int32(rows), np.int32(cols), np.int32(w), np.int32(axis)))
+        smoothed = smoothed_gpu.get()
         data = smoothed
     return data
 #end smooth1d2d
@@ -4295,7 +4333,9 @@ def smooth2d(data, width, niter):
         blocks += 1
     for k in range(niter):
         smoothed = np.empty(data.shape, outtype)
-        smooth2dFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.empty(smoothed), np.int32(rows), np.int32(cols), np.int32(w)))
+        smoothed_gpu = cp.empty_like(smoothed)
+        smooth2dFunc((blocks,1), (block_size,1,1), (cp.asarray(data), smoothed_gpu, np.int32(rows), np.int32(cols), np.int32(w)))
+        smoothed = smoothed_gpu.get()
         data = smoothed
     return data
 #end smooth2d
