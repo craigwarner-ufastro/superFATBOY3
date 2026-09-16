@@ -3394,7 +3394,19 @@ def linterp_gpu(data, x, gpm, iter=100, log=None):
     while (p < iter):
         p += 1
         print("\tPass "+str(p))
-        linInterp((blocks,1), (block_size,1,1), (cp.asarray(np.float32(data)), cp.empty(output), cp.asarray(gpm), np.float32(x), np.int32(rows), np.int32(cols), cp.asarray(ict), cp.asarray(nfound)))
+        #PyCUDA's drv.In/drv.Out/drv.InOut copied host<->device automatically around the
+        #kernel call; CuPy has no such thing, so explicitly stage inputs to the device, give
+        #the kernel a fresh device output buffer (not cp.empty(output) -- that treats the host
+        #output array's *value* as a shape argument, which is not what's intended here), and
+        #copy the in/out scalars (ict, nfound) and the output array back to host afterward
+        #since the loop's break condition and final return both expect host-side numpy.
+        output_gpu = cp.empty(data.shape, np.float32)
+        ict_gpu = cp.asarray(ict)
+        nfound_gpu = cp.asarray(nfound)
+        linInterp((blocks,1), (block_size,1,1), (cp.asarray(data.astype(np.float32)), output_gpu, cp.asarray(gpm), np.float32(x), np.int32(rows), np.int32(cols), ict_gpu, nfound_gpu))
+        output = output_gpu.get()
+        ict = ict_gpu.get()
+        nfound = nfound_gpu.get()
         print("\t\t"+str(nfound) + " found; "+str(ict)+" replaced.")
         write_fatboy_log(log, logtype, "Pass "+str(p)+": "+str(nfound) + " found; "+str(ict)+" replaced.", __name__, printCaller=False, tabLevel=1)
         if (ict == 0 or ict == nfound):
