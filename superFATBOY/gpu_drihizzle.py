@@ -2124,7 +2124,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             data = frames[j].getData(tag=dataTag).astype(np.float32)
         if (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG):
             if (doIndividualMasks):
-                inmask = (1-frames[j].getBadPixelMask().getData()).astype("np.int32")
+                inmask = (1-frames[j].getBadPixelMask().getData()).astype("int32")
             exptime = frames[j].exptime
             if (frames[j].hasHeaderValue('CRPIX1')):
                 xrefin = float(frames[j].getHeaderValue('CRPIX1'))

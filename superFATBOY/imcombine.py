@@ -1001,7 +1001,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             hdulist = pyfits.open(frames[0])
         elif (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG or mode == MODE_FDU_DIFF_PAIRING):
             header = frames[0]._header
-        write_fits_file(expfile, exp, dtype="np.float32", header=header, headerExt=newHeader, fitsobj=hdulist, mef=mef, log=log)
+        write_fits_file(expfile, exp, dtype="float32", header=header, headerExt=newHeader, fitsobj=hdulist, mef=mef, log=log)
         del exp
     if (_verbosity == fatboyLog.VERBOSE):
         print("Write data: ",time.time()-tt,"; Total: ",time.time()-t)

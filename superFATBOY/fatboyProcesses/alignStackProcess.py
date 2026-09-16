@@ -318,7 +318,7 @@ class alignStackProcess(fatboyProcess):
             yshifts = shifts[1]
             xshift0 = -1*int(np.max(xshifts)+np.min(xshifts))//2
             yshift0 = -1*int(np.max(yshifts)+np.min(yshifts))//2
-            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("np.int32")
+            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("int32")
             for i in range(len(frameList)):
                 xshifts[i]+=xshift0
                 yshifts[i]+=yshift0

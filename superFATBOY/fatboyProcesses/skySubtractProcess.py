@@ -84,7 +84,7 @@ class skySubtractProcess(fatboyProcess):
 
         wimage = self._fdb._tempdir+'/TEMPsxt_weight_image_'+fdu._id+'.fits'
         if (not os.access(wimage, os.F_OK)):
-            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("np.int32")
+            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("int32")
             write_fits_file(wimage, goodPixelMask, np.uint8, overwrite=True, log=self._log)
 
         t = time.time()
@@ -322,7 +322,7 @@ class skySubtractProcess(fatboyProcess):
         masterSky = fatboyCalib(self._pname, "master_sky", skies[0], data=data, tagname=msname, headerExt=header, log=self._log)
 
         if (self.getOption('interp_zeros_sky', fdu.getTag()).lower() == 'yes'):
-            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("np.int32")
+            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("int32")
             if (self._fdb.getGPUMode()):
                 masterSky.updateData(linterp_gpu(masterSky.getData(), 0, goodPixelMask, log=self._log))
             else:
@@ -371,7 +371,7 @@ class skySubtractProcess(fatboyProcess):
         masterSky = fatboyCalib(self._pname, "master_sky", skies[0], data=data, tagname=msname, headerExt=header, log=self._log)
 
         if (self.getOption('interp_zeros_sky', fdu.getTag()).lower() == 'yes'):
-            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("np.int32")
+            goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("int32")
             if (self._fdb.getGPUMode()):
                 masterSky.updateData(linterp_gpu(masterSky.getData(), 0, goodPixelMask, log=self._log))
             else:
@@ -737,9 +737,9 @@ class skySubtractProcess(fatboyProcess):
         surf = pysurfit_method(data, order=1, niter=2, lower=2.5, upper=2.5, inmask=goodPixelMask, log=self._log, mode=gpu_pysurfit.MODE_RAW)
 
         if (self._fdb.getGPUMode()):
-            fdu.updateData(subtractImages(fdu.getData(), surf, gpm=goodPixelMask.astype("np.int32")))
+            fdu.updateData(subtractImages(fdu.getData(), surf, gpm=goodPixelMask.astype("int32")))
         else:
-            fdu.updateData(fdu.getData() - surf*goodPixelMask.astype("np.int32"))
+            fdu.updateData(fdu.getData() - surf*goodPixelMask.astype("int32"))
         del goodPixelMask
         fdu._header.add_history('Fit sky subtracted surface')
     #end fitSkySubtractedSurf

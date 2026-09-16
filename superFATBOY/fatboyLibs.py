@@ -1282,7 +1282,7 @@ def applyObjMask(image, objMask):
     if (image.size % block_size != 0):
         blocks += 1
     #Make sure obj mask is little endian 32 bit int
-    objMask = objMask.astype("np.int32")
+    objMask = objMask.astype("int32")
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
@@ -1304,7 +1304,7 @@ def apply2PassObjMask(image, objMask, boxcarSize, rejectLevel):
         blocks += 1
 
     #Make sure obj mask is little endian 32 bit int
-    objMask = objMask.astype("np.int32")
+    objMask = objMask.astype("int32")
     if (not superFATBOY.threaded()):
         global fatboy_mod
     else:
@@ -3704,15 +3704,15 @@ def noisemaps_fd_gpu(image, nm, oldimage, nmflat, masterFlat):
     blocks = nm.size//512
     if (nm.size % 512 != 0):
         blocks += 1
-    if (nm.dtype != 'np.float32'):
+    if (nm.dtype != 'float32'):
         nm = nm.astype(np.float32)
-    if (image.dtype != 'np.float32'):
+    if (image.dtype != 'float32'):
         image = image.astype(np.float32)
-    if (nmflat.dtype != 'np.float32'):
+    if (nmflat.dtype != 'float32'):
         nmflat = nmflat.astype(np.float32)
-    if (oldimage.dtype != 'np.float32'):
+    if (oldimage.dtype != 'float32'):
         oldimage = oldimage.astype(np.float32)
-    if (masterFlat.dtype != 'np.float32'):
+    if (masterFlat.dtype != 'float32'):
         masterFlat = masterFlat.astype(np.float32)
     if (not superFATBOY.threaded()):
         global fatboy_mod
@@ -3735,11 +3735,11 @@ def noisemaps_mflat_dome_on_off_gpu(on, off, ncomb1, ncomb2):
     blocks = nm.size//512
     if (nm.size % 512 != 0):
         blocks += 1
-    if (nm.dtype != 'np.float32'):
+    if (nm.dtype != 'float32'):
         nm = nm.astype(np.float32)
-    if (on.dtype != 'np.float32'):
+    if (on.dtype != 'float32'):
         on = on.astype(np.float32)
-    if (off.dtype != 'np.float32'):
+    if (off.dtype != 'float32'):
         off = off.astype(np.float32)
     if (not superFATBOY.threaded()):
         global fatboy_mod
@@ -3759,9 +3759,9 @@ def noisemaps_sqrtAndDivide_float(dividend, divisor):
     blocks = dividend.size//512
     if (dividend.size % 512 != 0):
         blocks += 1
-    if (dividend.dtype != 'np.float32'):
+    if (dividend.dtype != 'float32'):
         dividend = dividend.astype(np.float32)
-    if (divisor.dtype != 'np.float32'):
+    if (divisor.dtype != 'float32'):
         divisor = divisor.astype(np.float32)
     if (not superFATBOY.threaded()):
         global fatboy_mod
@@ -4487,7 +4487,7 @@ def write_fatboy_log(log, logtype, message, name, printCaller=True, tabLevel=0, 
         log.writeLog(name, message, printCaller=printCaller, tabLevel=tabLevel, verbosity=verbosity, callerLevel=2, type=messageType)
 #end write_fatboy_log
 
-def write_fits_file(filename, data, dtype="np.float32", header=None, headerExt=None, overwrite=False, fitsobj=None, mef=0, log=None):
+def write_fits_file(filename, data, dtype="float32", header=None, headerExt=None, overwrite=False, fitsobj=None, mef=0, log=None):
     if (fitsobj is None):
         #hdulist is already given
         fitsobj = pyfits.HDUList()
