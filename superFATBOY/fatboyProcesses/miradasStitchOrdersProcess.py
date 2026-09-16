@@ -59,8 +59,8 @@ class miradasStitchOrdersProcess(fatboyProcess):
                 minWave = wave.min()
                 maxWave = wave.max()
             else:
-                minWave = np.min(minWave, wave.min())
-                maxWave = np.max(maxWave, wave.max())
+                minWave = min(minWave, wave.min())
+                maxWave = max(maxWave, wave.max())
 
         scale = (maxWave-minWave)/(rows*xsize)
         outwave = np.arange(rows*xsize, dtype=np.float32)*scale+minWave

@@ -239,10 +239,10 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
                 p[3] = objects['a'][j]
             else:
                 p[3] = float(sepfwhm)
-            xmin = np.max(int(p[1])-30, 0)
-            xmax = np.min(int(p[1])+31, refData.shape[1])
-            ymin = np.max(int(p[2])-30, 0)
-            ymax = np.min(int(p[2])+31, refData.shape[0])
+            xmin = max(int(p[1])-30, 0)
+            xmax = min(int(p[1])+31, refData.shape[1])
+            ymin = max(int(p[2])-30, 0)
+            ymax = min(int(p[2])+31, refData.shape[0])
             xin = np.arange((xmax-xmin)*(ymax-ymin)).reshape((ymax-ymin,xmax-xmin)) % (xmax-xmin) + xmin
             yin = np.arange((xmax-xmin)*(ymax-ymin)).reshape((ymax-ymin,xmax-xmin)) // (xmax-xmin) + ymin
             refData[ymin:ymax, xmin:xmax] += gaussFunction2d(p, xin, yin)
@@ -332,10 +332,10 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
                     p[3] = objects['a'][l]
                 else:
                     p[3] = float(sepfwhm)
-                xmin = np.max(int(p[1])-30, 0)
-                xmax = np.min(int(p[1])+31, currData.shape[1])
-                ymin = np.max(int(p[2])-30, 0)
-                ymax = np.min(int(p[2])+31, currData.shape[0])
+                xmin = max(int(p[1])-30, 0)
+                xmax = min(int(p[1])+31, currData.shape[1])
+                ymin = max(int(p[2])-30, 0)
+                ymax = min(int(p[2])+31, currData.shape[0])
                 xin = np.arange((xmax-xmin)*(ymax-ymin)).reshape((ymax-ymin,xmax-xmin)) % (xmax-xmin) + xmin
                 yin = np.arange((xmax-xmin)*(ymax-ymin)).reshape((ymax-ymin,xmax-xmin)) // (xmax-xmin) + ymin
                 currData[ymin:ymax, xmin:xmax] += gaussFunction2d(p, xin, yin)
@@ -371,26 +371,26 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
             if (cby1 < 0):
                 yguess -= cby1
                 cby1 = 0
-                cby2 = np.min(constrain_boxsize, ccor.shape[0])
+                cby2 = min(constrain_boxsize, ccor.shape[0])
             if (cbx1 < 0):
                 xguess -= cbx1
                 cbx1 = 0
-                cbx2 = np.min(constrain_boxsize, ccor.shape[1])
+                cbx2 = min(constrain_boxsize, ccor.shape[1])
             if (cby2 > ccor.shape[0]):
                 yguess -= (cby2-ccor.shape[0])
                 cby2 = ccor.shape[0]
-                cby1 = np.max(0, cby2-constrain_boxsize)
+                cby1 = max(0, cby2-constrain_boxsize)
             if (cbx2 > ccor.shape[1]):
                 xguess -= (cbx2-ccor.shape[1])
                 cbx2 = ccor.shape[1]
-                cbx1 = np.max(0, cbx2-constrain_boxsize)
+                cbx1 = max(0, cbx2-constrain_boxsize)
             ccor = ccor[cby1:cby2, cbx1:cbx2].copy()
             ccor = ascontiguousarray(ccor)
             #Use .copy() to make sure data is contiguous for GPU
 
         if (median_filter2d):
             #Median filter resulting matrix
-            boxsize = np.min(25, np.min(ccor.shape)//2+1)
+            boxsize = min(25, np.min(ccor.shape)//2+1)
             ccor = gpumedianfilter2d(ccor, boxsize=boxsize)
             if (_verbosity == fatboyLog.VERBOSE):
                 print("MedianFilter2d "+str(j)+":",time.time()-tt,"; Total: ",time.time()-t)

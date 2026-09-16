@@ -2417,7 +2417,7 @@ def fwhm2d(data, estimateBackground=False):
 
     #diagonals are math.sqrt(2) times larger:
     sq2 = math.sqrt(2)
-    xystart = np.min(xpos, ypos)
+    xystart = min(xpos, ypos)
     xyend = min( nx-1-xpos, ny-1-ypos );
     ncut = xystart+xyend+1;
     dcutxy = np.zeros(ncut, np.float32)
@@ -2425,7 +2425,7 @@ def fwhm2d(data, estimateBackground=False):
         dcutxy[j] = data[ypos-xystart+j, xpos-xystart+j] #y=x
     fwhm1ds[2] = sq2*fwhm1d(dcutxy, halfMax=halfmax)
 
-    negxystart = np.min(xpos, ny-1-ypos)
+    negxystart = min(xpos, ny-1-ypos)
     negxyend = min( nx-1-xpos, ypos );
     ncut = negxystart+negxyend+1
     dcutnegxy = np.zeros(ncut, np.float32)
@@ -2573,7 +2573,7 @@ def getCentroid(img, mx, my, fwhm, verbose=False):
         return (xcen, ycen)
 
     starbox = img[my-nhalf:my+nhalf+1, mx-nhalf:mx+nhalf+1]
-    ir = np.max(nhalf-1, 1)
+    ir = max(nhalf-1, 1)
     dd = np.arange(nbox-1, dtype=np.float64)+0.5-nhalf
     ddsq = dd*dd
 

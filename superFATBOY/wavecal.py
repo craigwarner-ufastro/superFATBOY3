@@ -439,7 +439,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         #Set up boolean arrays to find lines that are > 5 pixels out of wavelength regime
         out_of_regime_low = np.array(masterWave) < np.min(dummyWave)-5*scale
         out_of_regime_high = np.array(masterWave) > np.max(dummyWave)+5*scale
-        idx_range = np.max(50, int(gaussWidth*10)) #index range for creating Gaussians
+        idx_range = max(50, int(gaussWidth*10)) #index range for creating Gaussians
         for i in range(len(masterFlux)):
             if (masterFlux[i] < 0):
                 continue
@@ -1108,8 +1108,8 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
         oldnlines = 0
         findLines = True
         inloop = 0
-        xlo = int(np.max(np.min(reflines)-200, 50))
-        xhi = int(np.min(np.max(reflines)+200, len(oned)-51))
+        xlo = int(max(np.min(reflines)-200, 50))
+        xhi = int(min(np.max(reflines)+200, len(oned)-51))
         #Loop over other lines in +/- 200 px area
 
         while (findLines and inloop < 20):
@@ -1169,7 +1169,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
 
             #Cross-correlate
             dumCut = dummyFlux[blref-searchbox+xoffGuess:blref+searchbox+1+xoffGuess]
-            n = np.min(len(refCut),len(dumCut))
+            n = min(len(refCut),len(dumCut))
             #Make sure refCut and dumCut are same length
             refCut = refCut[:n]
             dumCut = dumCut[:n]
@@ -1186,7 +1186,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             if (use_tolerance and abs(p[1]-len(ccor)//2) > shift_tol):
                 #Maybe a line in list that is not in the data?
                 #Zero out 5 pixels around max
-                ccor[np.max(int(p[1])-2, 0):np.min(int(p[1])+3, len(ccor))] = 0
+                ccor[max(int(p[1])-2, 0):min(int(p[1])+3, len(ccor))] = 0
                 #Examine second highest peak
                 cmax2 = np.max(ccor)
                 peak2 = np.where(ccor == np.max(ccor))[0][0]
@@ -1195,8 +1195,8 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                     p[1] = peak2
             p[2] = gaussWidth
             p[3] = gpu_arraymedian(ccor)
-            llo = np.max(0, int(p[1]-5))
-            lhi = np.min(len(ccor), int(p[1]+6))
+            llo = max(0, int(p[1]-5))
+            lhi = min(len(ccor), int(p[1]+6))
             try:
                 lsq = leastsq(gaussResiduals, p, args=(np.arange(lhi-llo, dtype=np.float64)+llo, ccor[llo:lhi]))
             except Exception as ex:
@@ -1283,8 +1283,8 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
             findLines = True
             inloop = 0
             #Incrementally expand range by 50 pixels per pass
-            xlo = int(np.max(np.min(reflines)-(250+npass*50), 25))
-            xhi = int(np.min(np.max(reflines)+(250+npass*50), len(oned)-26))
+            xlo = int(max(np.min(reflines)-(250+npass*50), 25))
+            xhi = int(min(np.max(reflines)+(250+npass*50), len(oned)-26))
             npass+=1
             #Within each pass, loop over current range until found all lines in area
             while (findLines and inloop < 25):
@@ -1363,7 +1363,7 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
 
                 #Cross-correlate
                 dumCut = dummyFlux[blref-searchbox+xoffGuess:blref+searchbox+1+xoffGuess]
-                n = np.min(len(refCut),len(dumCut))
+                n = min(len(refCut),len(dumCut))
                 #Make sure refCut and dumCut are same length
                 refCut = refCut[:n]
                 dumCut = dumCut[:n]
@@ -1380,8 +1380,8 @@ class wavelengthCalibrateSingleProcess(fatboyProcess):
                 p[1] = np.where(ccor == np.max(ccor))[0][0]
                 p[2] = gaussWidth
                 p[3] = gpu_arraymedian(ccor)
-                llo = np.max(0, int(p[1]-5))
-                lhi = np.min(len(ccor), int(p[1]+6))
+                llo = max(0, int(p[1]-5))
+                lhi = min(len(ccor), int(p[1]+6))
                 try:
                     lsq = leastsq(gaussResiduals, p, args=(np.arange(lhi-llo, dtype=np.float64)+llo, ccor[llo:lhi]))
                 except Exception as ex:
