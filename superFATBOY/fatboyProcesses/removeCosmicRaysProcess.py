@@ -98,7 +98,17 @@ class removeCosmicRaysProcess(fatboyProcess):
             blocks += 1
         totict = 0
         for j in range(npass):
-            cosmicRayRemoval((blocks,1), (block_size,1,1), (cp.asarray(data), cp.asarray(output), np.int32(rows), np.int32(cols), cp.asarray(ict)))
+            #PyCUDA's drv.Out(output)/drv.InOut(ict) copied device results back to these host
+            #arrays automatically after the call. CuPy has no equivalent: cp.asarray(output)
+            #only makes a *device-side copy* of output's (uninitialized) current contents for
+            #the kernel to write into -- it never copies the result back, so `output`/`ict`
+            #here would stay untouched (silently all-zero from np.empty's fresh pages) without
+            #explicitly staging a real device buffer and .get()-ing the results back.
+            output_gpu = cp.empty_like(output)
+            ict_gpu = cp.asarray(ict)
+            cosmicRayRemoval((blocks,1), (block_size,1,1), (cp.asarray(data), output_gpu, np.int32(rows), np.int32(cols), ict_gpu))
+            output = output_gpu.get()
+            ict = ict_gpu.get()
             print("\tPass "+str(j)+": "+str(ict)+" replaced.")
             self._log.writeLog(__name__, "Image "+fdu.getFullId()+", Pass "+str(j)+": "+str(ict)+" replaced.")
             data = output
