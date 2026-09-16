@@ -122,7 +122,7 @@ class badPixelMaskProcess(fatboyProcess):
             gpu_bad_pixel_mask(
                 (blocks,), (block_size,),
                 (output_data, input_data, np.int32(nx), np.int32(ny),
-                 lo.astype(np.float32), hi.astype(np.float32), edge_reject.astype(np.int32), radius_reject.astype(np.float32))
+                 np.float32(lo), np.float32(hi), np.int32(edge_reject), np.float32(radius_reject))
             )
             data = output_data.get().astype(bool)
         else:
