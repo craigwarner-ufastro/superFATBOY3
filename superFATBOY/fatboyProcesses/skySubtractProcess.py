@@ -1,5 +1,6 @@
 from superFATBOY.fatboyCalib import fatboyCalib
 from superFATBOY.fatboyDataUnit import fatboyDataUnit
+from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY.fatboyProcess import fatboyProcess
 try:
