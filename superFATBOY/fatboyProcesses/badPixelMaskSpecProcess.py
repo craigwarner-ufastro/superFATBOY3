@@ -220,7 +220,17 @@ def bpm_replace_median_neighbor_gpu(data, bpm=None, niter=1, arg=None):
         blocks += 1
     nreplace = 0
     for iter in range(niter):
-        badPixRemoval((blocks,1), (block_size,1,1), (cp.asarray(data), cp.asarray(output), cp.asarray(bpm), cp.asarray(out_bpm), np.int32(rows), np.int32(cols), cp.asarray(ct)))
+        #Same CuPy-staging fix as removeCosmicRaysProcess.py: cp.asarray(output) only makes a
+        #device-side copy of output's current (uninitialized) contents for the kernel to
+        #write into -- it never copies results back the way PyCUDA's drv.Out()/drv.InOut()
+        #did, so a real device buffer must be allocated and .get() explicitly afterward.
+        output_gpu = cp.empty_like(output)
+        out_bpm_gpu = cp.empty_like(out_bpm)
+        ct_gpu = cp.asarray(ct)
+        badPixRemoval((blocks,1), (block_size,1,1), (cp.asarray(data), output_gpu, cp.asarray(bpm), out_bpm_gpu, np.int32(rows), np.int32(cols), ct_gpu))
+        output = output_gpu.get()
+        out_bpm = out_bpm_gpu.get()
+        ct = ct_gpu.get()
         data = output
         bpm = out_bpm
         nreplace += ct[0]
