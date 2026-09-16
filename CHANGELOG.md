@@ -3,6 +3,91 @@
 Running list of changes made on the `refactor` branch, for human review. (For low-level
 implementation notes aimed at a future Claude session picking this work back up, see `CLAUDE.md`.)
 
+## 2026-09-16 — oriBench.xml (NIR imaging) end-to-end test: PASSED, and cross-checked 4 ways
+
+Ran the NIR imaging regression test (`superFatboy3.py oriBench.xml`) for the first time since the
+refactor — this exercises dark subtraction, flat fielding, bad pixel masking, sky subtraction,
+cosmic ray rejection, and stack alignment, which the spectroscopy test above never touched. Took
+14 fix cycles, but the payoff is a strong one: Craig also ran the **original, frozen python2
+version** of the pipeline (`superFatboy.py`, never modified — see below) in both CPU and GPU mode,
+giving four independent runs total: old python2 (CPU and GPU) and the new python3 refactor (CPU
+and GPU). **All four now agree on the final image-alignment measurements to 4+ decimal places.**
+That's about as convincing a proof as this refactor could ask for that the imaging pipeline still
+does exactly what it always did.
+
+Two of Craig's own observations were the key breaks in this test:
+
+- Craig noticed the GPU cosmic-ray-rejection step was returning an image of all zeros, and
+  correctly identified that as the root cause of a stack-alignment problem — this pointed straight
+  at the actual bug (see below) rather than a much longer manual search.
+- Craig suggested comparing the broken GPU code side-by-side against the original, working
+  python2/PyCUDA version on the `main` branch — this is exactly the technique that cracked the
+  hardest bug of the night (the drihizzle crash, see below).
+
+Bugs found and fixed along the way:
+
+- **Plain numbers treated as arrays**: several spots called `.astype()` — an array-only method —
+  on ordinary Python numbers (a float, an int, even a literal list). Fixed each to use the correct
+  plain-number conversion instead.
+- **A whole missing import**: one file (`skySubtractProcess.py`) was missing an entire block of
+  shared helper functions because an import line got dropped somewhere along the way, not
+  individually converted like everything else nearby. Restored it.
+- **Mistyped dtype names, 25 of them**: a batch of type-conversion calls like `.astype("int32")`
+  had gotten an extra, invalid `np.` accidentally stuck inside the quotes, making them
+  `.astype("np.int32")`. Some of these just crashed outright; others were sneakier — a few were
+  comparisons (`"is this array already float32?"`) that, because of the typo, could never be true,
+  silently skipping a fast-path optimization every single time without ever raising an error.
+- **A whole family of "GPU result thrown away" bugs, ~18 spots total**: the old PyCUDA library had
+  a convenient feature where you could hand it an empty array and it would automatically fill it
+  with the GPU's answer. CuPy (the modern replacement) doesn't work that way — you have to
+  explicitly pull the answer back off the GPU yourself. In roughly 18 places across the codebase,
+  that explicit "pull the answer back" step was missing, so the function would compute the right
+  answer on the GPU and then return the original, untouched (often all-zero) array instead. This
+  turned out to be the actual explanation for the all-zeros cosmic-ray-rejection bug Craig spotted,
+  plus similar silent failures in bad-pixel interpolation and a couple of interpolation utilities.
+- **Two-input comparisons that quietly did nothing**: 35 places compared two plain numbers using
+  `np.min()`/`np.max()`, but those functions' second slot isn't "the other number to compare
+  against" — it's an option for arrays with multiple dimensions. When the second number happened
+  to be zero, this didn't crash; it silently returned the first number, ignoring the comparison
+  entirely. Fixed by using Python's plain `min()`/`max()`, which do exactly what was intended
+  here.
+- **A self-inflicted regression**: while fixing one of the "GPU result thrown away" bugs above in
+  a helper function, an earlier pass of mine had converted its result down to a plain single
+  number, but downstream code actually depended on it staying array-shaped. Caught and reverted.
+- **The hardest bug of the night — a GPU crash during image alignment/stacking**: tracked down
+  using a CUDA debugging flag that forces the GPU to report errors immediately at the real
+  faulting instruction (rather than several steps later, which is what GPUs normally do and what
+  was initially sending the investigation down the wrong path), plus Craig's suggestion to diff
+  against the original working code. The root cause: a math expression that used to read
+  "convert the *entire result* of (A minus B) to float32" got mechanically rewritten during the
+  refactor into "convert only B to float32, then subtract" — mathematically the same *value*, but
+  numerically the wrong *type* comes out (float64 instead of float32). That mismatched type then
+  corrupted how the next few arguments got packed into the GPU function call, causing it to write
+  to memory it had no business touching. Fixed all 16 occurrences of this exact mistake. This is
+  a subtle one — worth remembering as a specific pattern to watch for in any future GPU code
+  review.
+- **A leftover bug from earlier this session**: a bad-pixel-mask array needed to be moved onto the
+  GPU to match the rest of the calculation it was being used in, but wasn't.
+
+**Also resolved (environment, not code)**: getting the old python2 GPU version to even run at all
+on this machine, purely to make the 4-way comparison above possible. Two separate environment
+issues, neither touching the frozen python2 codebase at all (per Craig's instruction, that code is
+off-limits without checking first): a Python-2-specific crash-while-reporting-a-crash that was
+hiding the real error message, and a compiler configuration mismatch (Craig had switched a
+system compiler version for an unrelated project, which left the CUDA build tools unable to find
+one of the pieces they needed). Both fixed with an environment variable / wrapper script — no
+changes to the frozen code.
+
+**Not fixed, flagged for later**: `gpu_drihizzle.py`'s CUDA kernels have a minor, currently-harmless
+edge case where a thread doing "padding" work near the very end of an array writes a zero into
+memory it shouldn't touch, instead of just stopping — didn't affect this test (this dataset's image
+size happens to divide evenly), but could bite on a differently-sized image. Worth a quick fix next
+time that code is touched.
+
+**Conclusion**: imaging mode is now confirmed solid too, and — thanks to the 4-way comparison —
+we have real proof the refactor hasn't changed any of the pipeline's actual science results, not
+just that it "doesn't crash."
+
 ## 2026-09-15 — specBench.xml (MOS spectroscopy) end-to-end test: PASSED
 
 Ran the Flamingos-1 MOS spectroscopy regression test (`superFatboy3.py specBench.xml`) for the

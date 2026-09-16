@@ -9,6 +9,155 @@ improve error handling) and the specific algorithms flagged for later improvemen
 (findSlitletProcess, removeCosmicRaysSpecProcess, rectifyProcess, wavelengthCalibrateProcess).
 Work happens on the `refactor` branch, one commit per meaningful change.
 
+## Second real end-to-end test: oriBench.xml (NIR imaging) PASSED, all 4 combos cross-validated (2026-09-16)
+
+`cd /home/cwarner/work/xml && superFatboy3.py oriBench.xml` — a NIR imaging dataset (dark/flat/
+badPixelMask/skySubtract/cosmicRays/alignStack, 9-frame dither), the first **imaging**-mode test
+since the refactor (specBench.xml above was spectroscopy only). Took 14 bug-fix commits, but now
+passes clean. More importantly: the user also ran the **frozen python2/PyCUDA original**
+(`/home/cwarner/work/superFATBOY/superFATBOY`, installed as `superFatboy.py` — **never edit this,
+ask first**, per explicit user instruction) in both CPU and GPU mode, giving a genuine 4-way
+cross-check: py2 CPU / py2 GPU / py3 CPU / py3 GPU. **All four now agree on the final alignment
+shifts to 4+ decimal places** (e.g. shift to frame 7: py2 CPU -49.878698, py2 GPU -49.878660,
+py3 CPU -49.878698, py3 GPU -49.878660 — the tiny CPU-vs-GPU gap is ordinary float rounding,
+consistent within each backend across py2/py3). This is about as strong a validation as this
+refactor is going to get for imaging mode.
+
+**Test configs**: `oriBench.xml` (GPU) and `oriBench-cpu.xml` (CPU, hyphen not underscore —
+already existed, gpumode=no is the only diff) live in `/home/cwarner/work/xml/`. For the 4-way
+comparison, created `oriBench-py2-gpu.xml`, `oriBench-py2-cpu.xml`, `oriBench-py3-cpu.xml` there
+too — same content, each with its own `outputdir` so all 4 runs can be inspected side by side
+without clobbering each other (the user confirmed this is fine; they'd been blowing away the same
+dir between manual runs). Per the user: **only ever delete `superFATBOYdata/oriBench-test/`** (or
+whichever of these dedicated dirs you created) between your own iterations — never touch dirs you
+didn't create (e.g. `oriBench-py3`/`oriBench-new` are the user's own unrelated 2020-era artifacts).
+
+**Running the old py2 original**: `superFatboy.py <config>.xml` is on PATH (installed egg,
+version 2.2.0). CPU mode just works. GPU mode needs two things fixed via environment only, never
+via editing that frozen codebase:
+1. Python 2's `print` chokes with `UnicodeEncodeError` trying to `str()` an exception message
+   containing a smart-quote character, which **masks whatever the real underlying error was**.
+   `PYTHONIOENCODING=utf-8` does NOT fix this (that only affects stdout encoding, not `str()`
+   coercion of a `unicode` object, which Python 2 always does via strict ASCII). The real fix:
+   `sys.setdefaultencoding('utf-8')` — deleted from `sys` after site init, restore via `reload(sys)`
+   in a tiny wrapper script (see `/tmp/.../scratchpad/run_py2_utf8.py` pattern: `reload(sys);
+   sys.setdefaultencoding('utf-8'); sys.argv = [...]; execfile('/usr/local/bin/superFatboy.py')`).
+2. Once real errors are visible: PyCUDA compiles kernels via `nvcc`, which shells out to the
+   system `gcc` for C++ preprocessing. This machine's default `gcc` (`update-alternatives`) points
+   at gcc-12, but only the `gcc-12` package was ever installed, not `g++-12` — so gcc-12 has no
+   `cc1plus` binary and nvcc fails with `cannot execute 'cc1plus'`. **Do not** `apt install g++-12`
+   or touch `update-alternatives` — the user deliberately pinned `gcc`→12 for an unrelated project
+   and plain `g++` is intentionally left at 9. Fix scope-per-invocation instead:
+   `NVCC_PREPEND_FLAGS='-ccbin=/usr/bin/g++-9' superFatboy.py <config>.xml` (now in the user's
+   `~/.bashrc`). This is a standard CUDA-toolkit-supported env var, not a PyCUDA-specific hack —
+   confirmed directly with a standalone `nvcc --cubin` test before trusting it on the real run.
+
+**Bugs found and fixed in superFATBOY3 (this branch) this session, in the order hit** — every one
+confirmed against `main` before fixing, and (unlike the specBench.xml pass) most were verified
+with a *direct* synthetic/real-GPU repro of the actual failure mechanism, not just "no longer
+crashes":
+1. `badPixelMaskProcess.py`: `lo.astype(np.float32)` etc. on plain Python floats/ints (no
+   `.astype`) — same `.astype()`-on-a-scalar mistake as `ncoeffs.astype()` from the specBench pass.
+2. `fatboyDataUnit.renormalize()`: the bad-pixel-mask argument needed `cp.asarray()`-ing to match
+   the FDU's own GPU mode before `self.getData()*(1-bpm)` — callers build `bpm` as plain numpy.
+3. `gpu_imcombine.py`: `nfint.astype(np.int32)` (6 sites) — `nfint` is `int(nfiles)`, a plain int.
+   Proactively swept the same "scalar `.astype()`" pattern afterward and fixed 3 more files
+   (`fatboyLibs.py`'s `idx = [-1].astype(...)`, `findSlitletProcess.py`'s
+   `ycoords[i]+.5.astype(...)` — precedence bug, `.astype` binds to the bare literal `.5` — and
+   `gpu_drihizzle.py`'s 3-d function, 5 sites) rather than waiting to hit each one via another
+   15-25-minute test cycle.
+4. `skySubtractProcess.py`: missing `from superFATBOY.fatboyLibs import *` entirely (not converted
+   to explicit imports like the file's other imports — just dropped), taking `applyObjMask()` down
+   with it. This is the project's own local-namespace wildcard import, unrelated to the
+   numpy/math cleanup that was actually in scope — confirmed via a full main-vs-current diff that
+   no other file has the same gap.
+5. `fatboyLibs.py` + `gpu_drihizzle.py` + 6 more files: **25 occurrences** of a quoted numpy dtype
+   string that got an erroneous `"np."` prefix injected inside the quotes — `.astype("int32")` (a
+   valid string dtype descriptor, unrelated to the `from numpy import *` cleanup) became the
+   invalid `.astype("np.int32")`. 10 of these were in `fatboyLibs.py`'s `array.dtype != 'np.float32'`
+   comparisons, which don't crash at all — they just always evaluate `True` (no real dtype ever
+   equals that string), silently skipping whatever fast-path the check gated. **This class of bug
+   is silent, not just crash-prone — worth a special note for future review.**
+6. `fatboyLibs.py::linterp_gpu()`: the first of what turned out to be a *whole family* of
+   `cp.empty(existing_np_array)` mistakes. PyCUDA's `drv.Out(x)`/`drv.InOut(x)` auto-copied device
+   results back into the host array `x` after a kernel call; the refactor's mechanical translation
+   kept passing the *host* array inline (`cp.empty(output)`), but `cp.empty()` doesn't accept an
+   array as "make a device copy of this" — it treats the array's *current (uninitialized) values*
+   as a **shape** argument, allocates a throwaway device buffer of that bogus shape, and the real
+   kernel result is written there and discarded. The function then returns the original,
+   never-updated `np.empty()`/`np.zeros()` array. Since fresh OS pages are typically zero, this
+   often manifests as "function silently returns all zeros" rather than a crash.
+7. Same bug, swept proactively: **15 more sites**, all in `fatboyLibs.py` — `rawToFlatDivided`'s
+   main kernel + its cosmic-ray loop, `blkavg`, `blkrep`, both `convolve2d` variants,
+   `fwhm2d_cube_gpu`, `getCentroid_cube_gpu`, and the 3 LA Cosmic helpers (one of which had it on
+   *two* outputs at once). Fix pattern throughout: allocate a real `cp.empty_like()` device buffer,
+   pass *that* to the kernel, `.get()` the result back to the host variable afterward.
+8. `gpu_xregister.py` + 5 more files (`pysurfit.py`, `tri_register.py`, `xregister.py`,
+   `gpu_drihizzle.py`, `fatboyDataUnit.py`): **11 occurrences** of bare `isinstance(x, ndarray)`
+   with no valid name to resolve to — missed by the original numpy-wildcard-import sweep because
+   these specific `isinstance` type-dispatch branches aren't exercised by every process. Same bug
+   class as the `sqrt`/`tan`/`shape()` fixes from the specBench pass; fixed to `np.ndarray`.
+9. **35 occurrences**, 5 files (`gpu_xregister.py`, `xregister.py`, `fatboyLibs.py`, `wavecal.py`,
+   `miradasStitchOrdersProcess.py`): `np.min(a, b)`/`np.max(a, b)` used to compare two *scalars* —
+   but `np.min`/`np.max`'s second positional argument is `axis`, not a second value. **This one is
+   dangerous, not just crash-prone**: when the second argument is literally `0`, `np.max(a, 0)`
+   "succeeds" (axis=0 on a 0-d array is a harmless no-op) and silently returns `a` **unchanged,
+   ignoring the comparison entirely** — only a *nonzero* second argument raises `AxisError`. main
+   used Python's builtin `min(a,b)`/`max(a,b)` (available unqualified via `from numpy import *`)
+   at every one of these sites; fixed by reverting to the builtin, not `np.min`/`np.max`.
+10. `fatboyLibs.py::whereEqual()`: a *regression in my own fix from #6/#7 above* — I'd correctly
+    changed `idx = [-1].astype(...)` to `idx = np.int32([-1])`, but then converted the *result*
+    back to a plain Python `int` (`idx = int(idx_gpu[0])`) before the array-shaped tuple math below
+    it (`idx//data.shape[1], idx%data.shape[1]`). main's PyCUDA version left `idx` as a genuine
+    1-element numpy array through this same arithmetic (floor-div/mod on a 1-element array yields
+    another 1-element array), so the function has *always* returned a tuple of 1-element **arrays**
+    (matching `numpy.where()`'s convention) — callers like `gpu_xregister.py`'s `p[1] = b[1][0]`
+    need `b[1]` to be indexable. Converting to a scalar broke that. **Lesson: when fixing a
+    `.astype()`-on-non-array bug, check whether downstream code relies on the *array-ness* of the
+    result, not just its numeric value — don't reflexively convert to a Python scalar.**
+11. **The big one** — `gpu_drihizzle.py`'s CUDA `CUDA_ERROR_ILLEGAL_ADDRESS` crash in
+    `alignStack`'s drihizzle step. Root-caused via `CUDA_LAUNCH_BLOCKING=1` (CUDA kernel launches
+    are async — the reported error line is often *not* the actual faulting call; this env var
+    forces synchronous launches so the error appears at the real culprit) plus direct device-side
+    instrumentation (temporarily added `print()`s computing `intx`/`inty`/`idx` bounds, checking
+    for NaN/Inf, and printing argument `type()`s and `.flags['C_CONTIGUOUS']` — all came back
+    provably fine except one thing). The actual bug: `xsh[j] - np.float32(xshmin)` — the refactor's
+    mechanical `float32(x-y)` → `np.float32(...)` rewrite put the cast around only the *second*
+    operand instead of the whole expression (main: `float32(xsh[j]-xshmin)`, wrapping the entire
+    subtraction). Subtracting a `numpy.float32` from a plain Python int/float promotes the *result*
+    to `numpy.float64` (confirmed: `type(0 - np.float32(x))` is `numpy.float64`) — and **CuPy's
+    `RawKernel` packs a scalar argument's bytes according to the Python object's own dtype, not the
+    kernel's declared C signature**. An 8-byte float64 landed in a slot the compiled kernel reads
+    as a 4-byte `float`, shifting every subsequent argument (`ysh`, `xsize`, `size`) by 4 bytes in
+    the packed buffer — turning the array-write index the kernel computes into garbage. Reproduced
+    this exact mechanism standalone with a 4-line CuPy `RawKernel` test (see commit `1a2a1dc`):
+    passing the broken value returns `-3.689349e+19` from every thread; the fixed value returns the
+    correct number. **This is the single most important lesson from tonight**: a `float32(a - b)`
+    →`np.float32(a - b)` mechanical rewrite is easy to get right; `a - float32(b)` →
+    `a - np.float32(b)` (cast landing on the wrong sub-expression) is subtly, silently wrong in a
+    way that only surfaces as GPU memory corruption, not a Python-level type error — **if you ever
+    see another `X[j] - np.float32(Y)`-shaped expression anywhere in this codebase, check it
+    against `main` immediately, don't assume it's fine.** Fixed all 16 sites (12 in 2D drihizzle, 4
+    in the 3D sibling) by wrapping the whole subtraction. Swept the rest of the tree for the same
+    "indexed-variable arithmetic with a cast landing on one operand" shape; found nothing else.
+12. `fatboyLibs.py::linterp_cpu()`: bare `shape(data)[0]` — the CPU sibling of `linterp_gpu`
+    (fix #6), never hit until the py3-CPU-mode run since every prior test this session was GPU
+    mode. Same bug class as the specBench pass's `sqrt`/`tan`/`ndarray` fixes.
+13. `badPixelMaskSpecProcess.py::bpm_replace_median_neighbor_gpu()`: same `cp.asarray(output)`-
+    as-kernel-buffer mistake as #6, found by proactively grepping for the pattern rather than
+    waiting to hit it — **not yet exercised by any test run** (spectroscopy bad-pixel
+    interpolation; oriBench.xml is imaging, specBench.xml didn't hit this specific method).
+    Flagged for validation whenever a spectroscopy dataset next exercises this method.
+
+**Known follow-up, not done**: `gpu_drihizzle.py`'s CUDA kernels (`calcXYin`, `calcTransOpt`, and
+others) have a real "write past the array bounds for padding threads" bug — `if (i >= size) {
+out[i] = 0; return; }` writes to `out[i]` *before* returning, and `i` can exceed the array's real
+size whenever `blocks*block_size` isn't an exact multiple of the true element count (harmless for
+this session's 2048×2048 test images, since 2048²=4194304 divides evenly by 512, but would bite on
+a non-power-of-2 image size). Should be `return;` with no write. Not fixed tonight — ran out of
+scope once the actual crash (#11 above) turned out to be unrelated to this; worth fixing
+opportunistically if touching these kernels again.
+
 ## First real end-to-end test: specBench.xml PASSED (2026-09-15)
 
 `cd /home/cwarner/work/xml && superFatboy3.py specBench.xml` — a classic Flamingos-1 MOS
