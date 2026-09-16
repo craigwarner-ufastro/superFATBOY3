@@ -1078,7 +1078,7 @@ class fatboyDataUnit:
     def writeAndForgetTaggedData(self):
         #Check properties dict for arrays of tagged data
         for key in list(self._properties):
-            if (isinstance(self._properties[key], ndarray)):
+            if (isinstance(self._properties[key], np.ndarray)):
                 #Keep smaller arrays in memory, only need to free up memory from large arrays
                 if (self._properties[key].size > 512*512 and self._properties[key].dtype != bool):
                     outfile = "temp-fatboy/property_"+key+"_"+self.getFullId()

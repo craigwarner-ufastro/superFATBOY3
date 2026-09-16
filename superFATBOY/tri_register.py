@@ -190,7 +190,7 @@ def tri_register(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, ybox
             mode = MODE_FITS
         elif (isinstance(frames[0], str)):
             mode = MODE_FITS
-        elif (isinstance(frames[0], ndarray)):
+        elif (isinstance(frames[0], np.ndarray)):
             mode = MODE_RAW
         elif (isinstance(frames[0], fatboyDataUnit)):
             mode = MODE_FDU

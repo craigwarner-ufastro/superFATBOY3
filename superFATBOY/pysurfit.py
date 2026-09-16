@@ -29,7 +29,7 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
         mode = MODE_FITS
         if (isinstance(frames[0], str)):
             mode = MODE_FITS
-        elif (isinstance(frames[0], ndarray)):
+        elif (isinstance(frames[0], np.ndarray)):
             mode = MODE_RAW
         elif (isinstance(frames[0], fatboyDataUnit)):
             mode = MODE_FDU
@@ -67,7 +67,7 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
         nonzero = True
     elif (isinstance(inmask, fatboyDataUnit)):
         inmask = inmask.getData()
-    elif (not isinstance(inmask, ndarray)):
+    elif (not isinstance(inmask, np.ndarray)):
         inmask = None
     else:
         nonzero = True

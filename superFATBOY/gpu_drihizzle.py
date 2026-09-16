@@ -1858,7 +1858,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
     #Filelist
     if (isinstance(frames, str) and os.access(frames, os.F_OK)):
         frames = readFileIntoList(frames)
-    elif (isinstance(frames, ndarray)):
+    elif (isinstance(frames, np.ndarray)):
         frames = [frames]
     elif (not isinstance(frames, list)):
         frames = [frames]
@@ -1872,7 +1872,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
         mode = MODE_FITS
         if (isinstance(frames[0], str)):
             mode = MODE_FITS
-        elif (isinstance(frames[0], ndarray)):
+        elif (isinstance(frames[0], np.ndarray)):
             mode = MODE_RAW
         elif (isinstance(frames[0], fatboyDataUnit)):
             mode = MODE_FDU
@@ -1915,7 +1915,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
         del temp
     elif (isinstance(inmask, fatboyDataUnit)):
         inmask = inmask.getData()
-    elif (not isinstance(inmask, ndarray)):
+    elif (not isinstance(inmask, np.ndarray)):
         inmask = None
 
     if (dropsize <= 0.01 and kernel != 'point'):
@@ -1978,17 +1978,17 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
     #Shifts
     if (xsh is None):
         xsh = np.zeros(nframes)
-    elif (not isinstance(xsh, list) and not isinstance(xsh, ndarray)):
+    elif (not isinstance(xsh, list) and not isinstance(xsh, np.ndarray)):
         xsh = [xsh]
 
     if (ysh is None):
         ysh = np.zeros(nframes)
-    elif (not isinstance(ysh, list) and not isinstance(ysh, ndarray)):
+    elif (not isinstance(ysh, list) and not isinstance(ysh, np.ndarray)):
         ysh = [ysh]
 
     if (zsh is None):
         zsh = np.zeros(nframes)
-    elif (not isinstance(zsh, list) and not isinstance(zsh, ndarray)):
+    elif (not isinstance(zsh, list) and not isinstance(zsh, np.ndarray)):
         zsh = [zsh]
 
     if (_verbosity == fatboyLog.VERBOSE):
