@@ -734,6 +734,10 @@ class fatboyDataUnit:
             if (self._log is not None):
                 self._log.writeLog(__name__, "bad pixel mask shape "+str(bpm.shape)+" different from data "+str(self.getData().shape), type=fatboyLog.ERROR)
             return False
+        #Callers (e.g. badPixelMaskProcess) build bpm via createBadPixelMask, which always
+        #returns plain numpy -- match it to this FDU's own data type before combining with it.
+        if (self._gpumode and hasCuda and not isinstance(bpm, cp.ndarray)):
+            bpm = cp.asarray(bpm)
         #Find median of good pixels but do not apply mask to data itself!
         if (self.hasProperty("median_section_indices") and self.hasProperty("median_section")):
             #Apply median section tagged above to bpm
