@@ -195,6 +195,19 @@ class miradasCollapseSpaxelsProcess(fatboyProcess):
             if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
                 print("YINIT = "+str(yinit)+"; SLICE WIDTH = "+str(slice_width))
 
+            #Sanity check: the peak-finding above can occasionally pick a bad
+            #slo/shi pair (e.g. a low-signal or edge slitlet), producing a
+            #yinit/slice_width combo whose slices fall outside data1d entirely.
+            #A negative-side-heavy out-of-bounds slice silently returns an empty
+            #array instead of raising, which then fails to broadcast into
+            #image2d below.  Fall back to the slitlet's own (always-valid)
+            #extent rather than crashing this FDU.
+            if (yinit < 0 or yinit+nslices*slice_width > len(data1d)):
+                print("miradasCollapseSpaxelsProcess::collapseSpaxels> WARNING: Computed slice bounds for slit "+str(islit)+" (yinit="+str(yinit)+", slice_width="+str(slice_width)+", nslices="+str(nslices)+") fall outside the image (length "+str(len(data1d))+")!  Falling back to slitlet extent.")
+                self._log.writeLog(__name__, "Computed slice bounds for slit "+str(islit)+" fall outside the image!  Falling back to slitlet extent.", type=fatboyLog.WARNING)
+                slice_width = max(int(yhi-ylo)//nslices, 10)
+                yinit = int(ylo)
+
             #Loop over slices and fit each with Gaussian to find shifts to subpixel accuracy
             s = 'Slitlet '+str(islit)+': Slices of width '+str(slice_width)+' at ['
             ys = []
