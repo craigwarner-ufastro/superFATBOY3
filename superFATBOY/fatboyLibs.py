@@ -2581,7 +2581,7 @@ def getCentroid(img, mx, my, fwhm, verbose=False):
     sumc = w.sum()
 
     # Y partial derivative:
-    deriv = roll(starbox, -1, 0) - starbox
+    deriv = np.roll(starbox, -1, 0) - starbox
     deriv = deriv[0:nbox-1, nhalf-ir:nhalf+ir+1]
     derivtot = deriv.sum(1)
 
@@ -2600,7 +2600,7 @@ def getCentroid(img, mx, my, fwhm, verbose=False):
         print("Unable to compute Y centroid around position" + spos)
 
     # X partial derivative:
-    deriv = roll(starbox, -1, 1) - starbox
+    deriv = np.roll(starbox, -1, 1) - starbox
     deriv = deriv[nhalf-ir:nhalf+ir+1, 0:nbox-1]
     derivtot = deriv.sum(0)
 
