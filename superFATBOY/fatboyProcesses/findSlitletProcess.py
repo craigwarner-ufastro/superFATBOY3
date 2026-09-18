@@ -525,7 +525,7 @@ class findSlitletProcess(fatboyProcess):
             if (masterFlat.hasProperty("normalized") or masterFlat.hasHeaderValue('NORMAL01')):
                 #has been normalized already
                 isNormalized = True
-            (sylo, syhi, slitx, slitw) = self.autoDetectSlitlets(fdu, masterFlat.getData().copy(), normal=isNormalized)
+            (sylo, syhi, slitx, slitw) = self.autoDetectSlitlets(fdu, masterFlat.getData(force_cpu=True).copy(), normal=isNormalized)
 
             nslits = len(sylo)
             nslits_ref = int(self.getOption("slitlet_autodetect_nslits", fdu.getTag()))
@@ -979,7 +979,7 @@ class findSlitletProcess(fatboyProcess):
                             z1.append(np.zeros(xstride))
                             yf0 = 0
                         else:
-                            z1[-1] = concatenate([z1[-1], np.zeros(xstride)-yf0])
+                            z1[-1] = np.concatenate([z1[-1], np.zeros(xstride)-yf0])
                         continue
 
                     b = (meds[segmask] >= arraymedian(meds[segmask])-2.5*meds[segmask].std())*(maxcors[segmask] >= arraymedian(maxcors[segmask])-2.5*maxcors[segmask].std())
@@ -1016,7 +1016,7 @@ class findSlitletProcess(fatboyProcess):
                             z1.append(np.zeros(xstride))
                             yf0 = 0
                         else:
-                            z1[-1] = concatenate([z1[-1], np.zeros(xstride)-yf0])
+                            z1[-1] = np.concatenate([z1[-1], np.zeros(xstride)-yf0])
                         continue
 
                     #Compute output offsets and residuals from actual datapoints
@@ -1054,7 +1054,7 @@ class findSlitletProcess(fatboyProcess):
                             z1.append(np.zeros(xstride))
                             yf0 = 0
                         else:
-                            z1[-1] = concatenate([z1[-1], np.zeros(xstride)-yf0])
+                            z1[-1] = np.concatenate([z1[-1], np.zeros(xstride)-yf0])
                         continue
 
                     #Use previous guess
@@ -1071,7 +1071,7 @@ class findSlitletProcess(fatboyProcess):
                             z1.append(np.zeros(xstride))
                             yf0 = 0
                         else:
-                            z1[-1] = concatenate([z1[-1], np.zeros(xstride)-yf0])
+                            z1[-1] = np.concatenate([z1[-1], np.zeros(xstride)-yf0])
                         continue
 
                     print("\tFit = "+formatList(lsq[0]))
@@ -1083,7 +1083,7 @@ class findSlitletProcess(fatboyProcess):
                         z1.append(yoffset - yoffset[0])
                         yf0 = yoffset[0]
                     else:
-                        z1[-1] = concatenate([z1[-1], (yoffset - yf0)])
+                        z1[-1] = np.concatenate([z1[-1], (yoffset - yf0)])
                 #Generate qa data
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                     for i in range(len(xcoords)):
@@ -1254,7 +1254,7 @@ class findSlitletProcess(fatboyProcess):
             if (masterFlat.hasProperty("normalized") or masterFlat.hasHeaderValue('NORMAL01')):
                 #has been normalized already
                 isNormalized = True
-            (sylo, syhi, slitx, slitw) = self.autoDetectSlitlets(fdu, masterFlat.getData().copy(), normal=isNormalized)
+            (sylo, syhi, slitx, slitw) = self.autoDetectSlitlets(fdu, masterFlat.getData(force_cpu=True).copy(), normal=isNormalized)
 
             nslits = len(sylo)
             nslits_ref = int(self.getOption("slitlet_autodetect_nslits", fdu.getTag()))
@@ -1540,7 +1540,7 @@ class findSlitletProcess(fatboyProcess):
             if (masterFlat.hasProperty("normalized") or masterFlat.hasHeaderValue('NORMAL01')):
                 #has been normalized already
                 isNormalized = True
-            (sylo, syhi, slitx, slitw) = self.autoDetectSlitlets(fdu, masterFlat.getData().copy(), normal=isNormalized)
+            (sylo, syhi, slitx, slitw) = self.autoDetectSlitlets(fdu, masterFlat.getData(force_cpu=True).copy(), normal=isNormalized)
 
             nslits = len(sylo)
             nslits_ref = int(self.getOption("slitlet_autodetect_nslits", fdu.getTag()))
