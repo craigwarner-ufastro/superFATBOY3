@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<queries>
+<!-- Change dataset dir to point to your data.
+        datatype = spectrum for Flamingos-1.
+        Set specmode = longslit on the standard star / MOS mask calib objects that need it -
+        the MOS science object itself does not need specmode set (it defaults based on the
+        mask/slitmask used).
+
+        This example has a standard star (as a <calib type="standard">) taken with a
+        longslit mask, plus the actual MOS science target. Each needs its own set of
+        darks (matched by exptime/nreads), flats (lamp on/off), and arclamps.
+-->
+  <dataset dir="/path/to/data/" datatype="spectrum">
+
+<!-- Standard star, taken through a longslit mask for flux calibration -->
+    <calib type="standard" name="std_name" prefix="std_prefix">
+      <index start="1" stop="7"/>
+      <property name="specmode" value="longslit"/>
+<!-- sky_method can be overridden per-object; step/dither are both used depending on
+        how the sky frames were dithered for this particular target -->
+      <property name="sky_method" value="step"/>
+    </calib>
+
+<!-- MOS science target -->
+    <object type="auto" name="obj_name" prefix="obj_prefix">
+      <index start="1" stop="8"/>
+    </object>
+
+<!-- Darks are matched to science/calib frames by exptime and nreads (NDR) - you will
+        typically need one <calib type="dark"> block per unique (exptime, nreads)
+        combination present in your dataset. Name/prefix are just for your own reference. -->
+    <calib name="dark5s_ndr1" type="dark" prefix="dark5s_ndr1">
+      <index start="1" stop="15"/>
+    </calib>
+
+    <calib name="dark20s_ndr1" type="dark" prefix="dark20s_ndr1">
+      <index start="1" stop="15"/>
+    </calib>
+
+<!-- Dome flats (lamp on/off) for the standard star's longslit mask. The nested
+        <object><value>...</value></object> tag associates this flat with a specific
+        object's mask/setup when more than one is present in the same dataset. -->
+    <calib name="std_qtzon" type="flat" prefix="std_prefix_qtzon">
+      <index start="1" stop="5"/>
+      <property name="flat_type" value="lamp_on"/>
+      <property name="specmode" value="longslit"/>
+      <object>
+        <value>std_name</value>
+      </object>
+    </calib>
+
+    <calib name="std_qtzoff" type="flat" prefix="std_prefix_qtzoff">
+      <index start="1" stop="5"/>
+      <property name="flat_type" value="lamp_off"/>
+      <property name="specmode" value="longslit"/>
+      <object>
+        <value>std_name</value>
+      </object>
+    </calib>
+
+    <calib name="std_henear" type="arclamp" prefix="std_prefix_henear">
+      <index start="1" stop="5"/>
+      <property name="arclamp_type" value="lamp_on"/>
+      <property name="specmode" value="longslit"/>
+    </calib>
+
+<!-- Dome flats and arclamp for the MOS mask itself -->
+    <calib name="obj_qtzon" type="flat" prefix="obj_prefix_qtzon">
+      <index start="1" stop="5"/>
+      <property name="flat_type" value="lamp_on"/>
+      <object>
+        <value>obj_name</value>
+      </object>
+    </calib>
+
+    <calib name="obj_qtzoff" type="flat" prefix="obj_prefix_qtzoff">
+      <index start="1" stop="5"/>
+      <property name="flat_type" value="lamp_off"/>
+      <object>
+        <value>obj_name</value>
+      </object>
+    </calib>
+
+    <calib name="obj_henear" type="arclamp" prefix="obj_prefix_henear">
+      <index start="1" stop="5"/>
+      <property name="arclamp_type" value="lamp_on"/>
+    </calib>
+  </dataset>
+</queries>
+
+<processes>
+<!-- Uncomment and fill in coefficients to apply a linearity correction -->
+<!--
+  <process name="linearity">
+    <option name="linearity_coeffs" value="1.00425 -1.01413e-6 4.18096e-11"/>
+    <option name="write_output" value="yes"/>
+  </process>
+-->
+
+  <process name="noisemap">
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="darkSubtract">
+    <option name="prompt_for_missing_dark" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="createCleanSkies">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="createMasterArclamps">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="findSlitlets">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+<!-- A region file defining the MOS slit positions is strongly recommended for MOS mode
+        rather than relying on auto-detection - point this at your mask's region file -->
+    <calib name="region_file" value="/path/to/data/mymask.reg"/>
+    <option name="fit_order" value="3"/>
+    <option name="trace_slitlets_individually" value="no"/>
+    <option name="debug_mode" value="yes"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+
+<!-- Uncomment if your data needs cosmic ray removal at this stage -->
+<!--
+  <process name="cosmicRaysSpec">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="cosmic_ray_algorithm" value="dcr"/>
+    <option name="cosmic_ray_method" value="replace"/>
+  </process>
+-->
+
+  <process name="flatDivideSpec">
+    <option name="flat_method" value="dome_on-off"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="flat_selection" value="all"/>
+  </process>
+
+<!-- Uncomment to clip bad pixels from the normalized master flat -->
+<!--
+  <process name="badPixelMaskSpec">
+    <option name="write_calib_output" value="yes"/>
+    <option name="clipping_high" value="4.0"/>
+    <option name="clipping_low" value="0.25"/>
+    <option name="write_output" value="yes"/>
+  </process>
+-->
+
+  <process name="skySubtractSpec">
+<!-- sky_method: dither for dithered science exposures with sky in the frame itself,
+        step for a nod-to-sky pattern like the standard star above -->
+    <option name="sky_method" value="dither"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="rectify">
+    <option name="fit_order" value="3"/>
+    <option name="sky_fit_order" value="5"/>
+<!-- continuum_trace_xinit should be a pixel value in the dispersion direction where
+        there is continuum flux to trace -->
+    <option name="continuum_trace_xinit" value="1600"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="drihizzle_kernel" value="point_replace"/>
+    <option name="drihizzle_dropsize" value="1"/>
+<!-- uncomment if double-subtracting the continua from MOS slits causes problems -->
+<!--
+    <option name="mos_double_subtract_continua" value="no"/>
+-->
+  </process>
+
+  <process name="doubleSubtract">
+    <option name="find_shift_constrain_boxsize" value="50"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="shiftAdd">
+    <option name="find_shift_constrain_boxsize" value="50"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="wavelengthCalibrate">
+<!-- calibrate_slitlets_individually = yes fits each MOS slit's wavelength solution
+        separately rather than assuming they all share one solution -->
+    <option name="calibrate_slitlets_individually" value="yes"/>
+<!-- line_list should match your arclamp/sky lines - OHlines.dat works well for
+        sky-line calibration of dithered science data -->
+    <option name="line_list" value="OHlines.dat"/>
+    <option name="wavelength_scale_guess" value="4.9"/>
+    <option name="write_output" value="yes"/>
+<!-- wavelength_calibration_file caches the fitted solution per-slit so re-runs
+        don't have to refit from scratch - give it a name specific to your dataset -->
+    <option name="wavelength_calibration_file" value="wc_mymos.xml"/>
+    <option name="debug_mode" value="no"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+
+  <process name="extractSpectra">
+    <option name="extract_method" value="auto"/>
+    <option name="extract_weighting" value="gaussian"/>
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="calibStarDivide">
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+</processes>
+
+<parameters>
+<!-- set your outputdir -->
+  <param name="outputdir" value="/path/to/outputdir"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="gain_keyword" value="GAIN_2"/>
+  <param name="readnoise_keyword" value="RDNOIS_2"/>
+  <param name="grism_keyword" value="GRISM"/>
+  <param name="object_keyword" value="OBJECT"/>
+  <param name="verbosity" value="normal"/>
+<!-- set gpumode = no if your machine does not have an nVidia GPU with CUDA -->
+  <param name="gpumode" value="no"/>
+</parameters>
+</fatboy>

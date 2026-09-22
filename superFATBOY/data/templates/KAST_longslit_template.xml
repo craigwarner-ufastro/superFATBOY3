@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<queries>
+<!-- KAST (Lick/Shane 3m) is a dual-arm spectrograph - blue and red arms are read out as
+        completely separate frames with their own bias/flat/arc calibs, so this uses two
+        <dataset> blocks with different tag="blue"/tag="red" to keep every option below
+        scoped to the correct arm via tag="blue"/tag="red" on <option>/<param>.
+
+        datatype = spectrum (generic - KAST has no dedicated datatype extension).
+        No subdir is used here - all files (object/bias/flat/arc) sit directly in dir,
+        distinguished by filename prefix instead (see EMIR template for the subdir= style).
+        Red arm CCD is read out with the dispersion axis rotated relative to blue, hence
+        property name="dispersion" value="vertical" on every red-arm block below (omit
+        for blue, which defaults to horizontal).
+-->
+  <dataset dir="/path/to/data/" datatype="spectrum" tag="blue">
+
+    <object type="auto" name="obj_name" prefix="b_objprefix_">
+      <index start="1" stop="3"/>
+      <property name="specmode" value="longslit"/>
+    </object>
+
+    <calib type="bias" name="b_bias" prefix="b_bias">
+      <index start="1" stop="7"/>
+      <property name="specmode" value="longslit"/>
+    </calib>
+
+    <calib type="flat" name="b_flat" prefix="b_flat">
+      <index start="9" stop="21"/>
+      <property name="specmode" value="longslit"/>
+    </calib>
+
+<!-- arclamp with no <index> uses every frame matching this prefix in dir -->
+    <calib type="arclamp" name="b_arc" prefix="b_arc">
+      <property name="specmode" value="longslit"/>
+    </calib>
+
+  </dataset>
+
+  <dataset dir="/path/to/data/" datatype="spectrum" tag="red">
+
+    <object type="auto" name="obj_name" prefix="r_objprefix_">
+      <index start="1" stop="3"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+    </object>
+
+    <calib type="bias" name="r_bias" prefix="r_bias">
+      <index start="1" stop="7"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+    </calib>
+
+    <calib type="flat" name="r_flat" prefix="r_flat">
+      <index start="9" stop="21"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+    </calib>
+
+    <calib type="arclamp" name="r_arc" prefix="r_arc">
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+    </calib>
+
+  </dataset>
+</queries>
+
+<processes>
+
+  <process name="noisemap">
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="biasSubtract">
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="createMasterArclamps">
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="cosmicRaysSpec">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="cosmic_ray_algorithm" value="dcr"/>
+    <option name="cosmic_ray_method" value="replace"/>
+<!-- the red-arm CCD's rotated dispersion axis needs its own dcr geometry - tune these if
+        cosmic ray rejection looks wrong on one arm but not the other -->
+    <option name="dcr_disp_axis" value="2" tag="red"/>
+    <option name="dcr_threshold" value="3.0" tag="red"/>
+    <option name="dcr_xradius" value="25" tag="red"/>
+    <option name="dcr_yradius" value="25" tag="red"/>
+    <option name="dcr_npass" value="12" tag="red"/>
+  </process>
+
+  <process name="skySubtractSpec">
+    <option name="sky_method" value="median_boxcar"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+<!-- If you don't have flats for one or both arms, comment this whole process block out
+        rather than leaving it in with no flat calib matched - flatDivideSpec will
+        otherwise interactively prompt for a flat file to use, which hangs/EOFs in an
+        unattended run. The rest of the pipeline still runs fine without flat-fielding,
+        just with reduced photometric accuracy. -->
+  <process name="flatDivideSpec">
+    <option name="prompt_for_missing_flat" value="no"/>
+    <option name="flat_method" value="dome_on"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="rectify">
+    <option name="fit_order" value="1"/>
+    <option name="sky_fit_order" value="2"/>
+<!-- continuum_trace_xinit should be a pixel value in the dispersion direction where
+        there is continuum flux to trace -->
+    <option name="continuum_trace_xinit" value="1000"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="drihizzle_kernel" value="turbo"/>
+    <option name="drihizzle_dropsize" value="1"/>
+    <option name="debug_mode" value="no"/>
+  </process>
+
+  <process name="shiftAdd">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="wavelengthCalibrate">
+<!-- line_list/wavelength_scale_guess/min_wavelength/max_wavelength are all arm-specific -
+        KAST_hehgcd.txt (He+Hg+Cd) and KAST_neon.txt are the arclamp line lists that shipped
+        with this test dataset's blue/red arcs respectively; substitute your own arc lamp's
+        line list if different -->
+    <option name="line_list" value="KAST_hehgcd.txt" tag="blue"/>
+    <option name="line_list" value="KAST_neon.txt" tag="red"/>
+    <option name="fit_order" value="3"/>
+    <option name="wavelength_scale_guess" value="1.0" tag="blue"/>
+    <option name="wavelength_scale_guess" value="1.2" tag="red"/>
+    <option name="min_wavelength" value="3200" tag="blue"/>
+    <option name="min_wavelength" value="5500" tag="red"/>
+    <option name="max_wavelength" value="5700" tag="blue"/>
+    <option name="max_wavelength" value="9000" tag="red"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+<!-- write_plots saves the line-fit QA plots as PNGs; turn debug_mode on only if you want
+        them popped up interactively too (hangs/no-ops in an unattended or headless run) -->
+    <option name="write_plots" value="yes"/>
+    <option name="debug_mode" value="no"/>
+  </process>
+
+  <process name="extractSpectra">
+    <option name="extract_nspec" value="1"/>
+    <option name="extract_method" value="auto"/>
+    <option name="extract_weighting" value="gaussian"/>
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+</processes>
+
+<parameters>
+<!-- set your outputdir -->
+  <param name="outputdir" value="/path/to/outputdir"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="clean_up" value="no"/>
+  <param name="prefix_delimiter" value="none"/>
+  <param name="memory_image_limit" value="60"/>
+  <param name="rotpa_keyword" value="TUB"/>
+<!-- set gpumode = no if your machine does not have an nVidia GPU with CUDA -->
+  <param name="gpumode" value="yes"/>
+  <param name="gain_keyword" value="GAIN"/>
+  <param name="grism_keyword" value="GRISM_N"/>
+  <param name="filter_keyword" value="VERSION"/>
+  <param name="object_keyword" value="OBJECT"/>
+  <param name="pixscale_keyword" value="CD1_1"/>
+  <param name="readnoise_keyword" value="GAIN"/>
+  <param name="verbosity" value="normal"/>
+</parameters>
+</fatboy>

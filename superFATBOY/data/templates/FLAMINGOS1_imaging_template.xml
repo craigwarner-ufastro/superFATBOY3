@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<queries>
+<!-- Change dataset dir to point to your data.
+        For imaging data there is no need to set the datatype keyword in the dataset tag.
+
+        This example has all files (object, dark, flat) together in one directory,
+        distinguished by filename prefix rather than subdirectories - use whichever
+        matches how your data is actually organized (see EMIR template for the
+        subdir="..." style instead).
+
+        tag="ori" here just labels this dataset query so process/param options below
+        can be scoped to it with tag="ori" if you have multiple datasets in one XML -
+        for a single dataset you can drop the tag entirely.
+-->
+  <dataset dir="/path/to/data/" tag="ori">
+
+    <object type="auto" name="obname" prefix="obnameprefix">
+      <index start="1" stop="9"/>
+    </object>
+
+    <calib type="dark" prefix="dark"/>
+
+<!--
+	For dome flats (lamp on-lamp off), use two <calib> tags like below.
+	If you only have lamp-on dome flats, use a single <calib> tag and set
+	flat_method to dome_on in flatDivide below instead of dome_on-off.
+-->
+    <calib type="flat" name="flat_k_on" prefix="flatkon">
+      <property name="flat_type" value="lamp_on"/>
+    </calib>
+
+    <calib type="flat" name="flat_k_off" prefix="flatkoff">
+      <property name="flat_type" value="lamp_off"/>
+    </calib>
+
+  </dataset>
+</queries>
+
+<processes>
+<!-- Uncomment and fill in coefficients to apply a linearity correction -->
+<!--
+  <process name="linearity">
+    <option name="linearity_coeffs" value="1.00425 -1.01413e-6 4.18096e-11" tag="ori"/>
+  </process>
+-->
+
+  <process name="darkSubtract">
+<!-- prompt_for_missing_dark = yes will interactively ask which dark to use if none
+        matches exactly on exptime/nreads - set to no for unattended/batch runs -->
+    <option name="prompt_for_missing_dark" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="flatDivide">
+<!-- flat_method can be dome_on-off, dome_on, sky, or twilight depending on what
+        calib flat frames you have above -->
+    <option name="flat_method" value="dome_on-off" tag="ori"/>
+    <option name="flat_lamp_off_files" value="off"/>
+  </process>
+
+  <process name="badPixelMask">
+  </process>
+
+  <process name="skySubtract">
+<!-- Valid sky_subtract_method values are remove_objects, rough, offsource, offsource_extended,
+        offsource_neb, offsource_rough. Generally use remove_objects for onsource skies and
+        offsource for offsource ones unless you are dealing with an extended object or
+        nebulosity in your images -->
+    <option name="sky_subtract_method" value="remove_objects" tag="ori"/>
+    <option name="use_sky_files" value="all"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="cosmicRays">
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="alignStack">
+<!-- align_method can be xregister, xregister_constrained, xregister_sep,
+        xregister_sep_constrained, xregister_guesses, sep_centroid, sep_centroid_constrained,
+        triangles, manual.
+        triangles matches asterisms (triangles of detected stars) between frames rather than
+        cross-correlating the whole image, so it keeps working even if a bright star that would
+        otherwise dominate the correlation peak dithers off the chip in some frames - generally
+        the more robust choice when you have a reasonable number of stars in the field. See
+        triangles_atol/triangles_rtol/triangles_min_angle/triangles_max_angle/triangles_max_stars/
+        triangles_sigma/triangles_use_sigma_clipping options if you use it. -->
+    <option name="align_method" value="triangles" tag="ori"/>
+<!-- geom_trans_coeffs points to a file with a geometric transform to correct known
+        detector distortion before aligning - omit this option if you don't have one -->
+    <option name="geom_trans_coeffs" value="/path/to/data/geotran.dat" tag="ori"/>
+    <option name="keep_indiv_images" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+</processes>
+
+<parameters>
+<!-- set your outputdir -->
+  <param name="outputdir" value="/path/to/outputdir"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="clean_up" value="no"/>
+  <param name="prefix_delimiter" value="none"/>
+<!-- FITS keywords should be auto-detected if standard, but you can specify below if needed -->
+  <param name="exptime_keyword" value="EXP_TIME" tag="ori"/>
+  <param name="obstype_keyword" value="OBS_TYPE" tag="ori"/>
+  <param name="filter_keyword" value="FILTER"/>
+  <param name="ra_keyword" value="RA"/>
+  <param name="dec_keyword" value="DEC"/>
+  <param name="ut_keyword" value="UTC" tag="ori"/>
+  <param name="date_keyword" value="DATE-OBS" tag="ori"/>
+<!-- RA and DEC keywords show offsets in arcsec rather than actual coordinates -->
+  <param name="relative_offset_arcsec" value="no"/>
+<!-- reject frames outside this data value range as bad/saturated -->
+  <param name="min_frame_value" value="1"/>
+  <param name="max_frame_value" value="50000"/>
+  <param name="ignore_first_frames" value="no"/>
+  <param name="ignore_after_bad_read" value="no"/>
+<!-- set gpumode = no if your machine does not have an nVidia GPU with CUDA -->
+  <param name="gpumode" value="yes"/>
+</parameters>
+</fatboy>
