@@ -23,7 +23,7 @@ class circeImage(fatboyImage):
 
     ## Get and return data. Only read from disk if necessary.
     ## OVERRIDE this method to return CDS difference of correct ramps on first access of data
-    def getData(self, tag=None):
+    def getData(self, tag=None, force_cpu=False):
         if (self.firstDataAccess):
             self.firstDataAccess = False
             #Read from disk
@@ -92,7 +92,7 @@ class circeImage(fatboyImage):
             return self._data
         else:
             #use superclass method
-            return fatboyImage.getData(self, tag=tag)
+            return fatboyImage.getData(self, tag=tag, force_cpu=force_cpu)
     #end getData
 
     ## Get an individual read

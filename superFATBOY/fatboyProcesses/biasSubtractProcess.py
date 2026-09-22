@@ -110,6 +110,9 @@ class biasSubtractProcess(fatboyProcess):
             self.updateNoisemap(fdu, masterBias)
 
         #make sure both are floating point before subtracting
+        if (self._fdb.getGPUMode()):
+            fdu.updateData(cp.asarray(fdu.getData().astype(np.float32)))
+            masterBias.updateData(cp.asarray(masterBias.getData().astype(np.float32)))
         fdu.updateData(fdu.getData().astype(np.float32)-masterBias.getData().astype(np.float32))
         fdu._header.add_history('Bias subtracted using '+masterBias._id)
         return True

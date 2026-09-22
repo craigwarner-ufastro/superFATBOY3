@@ -21,7 +21,7 @@ class osirisSpectrum(fatboySpectrum):
 
     ## Get and return data. Only read from disk if necessary.
     ## OVERRIDE this method to return CDS difference of correct ramps on first access of data
-    def getData(self, tag=None):
+    def getData(self, tag=None, force_cpu=False):
         if (self.firstDataAccess):
             self.firstDataAccess = False
             #Read from disk
@@ -48,10 +48,11 @@ class osirisSpectrum(fatboySpectrum):
                 #bad pixel masks should be type bool
                 if (self._data.dtype != np.dtype("bool")):
                     self._data = self._data.astype("bool")
+            #Data is already plain numpy read straight from disk, so force_cpu is a no-op here
             return self._data
         else:
             #use superclass method
-            return fatboySpectrum.getData(self, tag=tag)
+            return fatboySpectrum.getData(self, tag=tag, force_cpu=force_cpu)
     #end getData
 
     ## Base class returns np.empty list.  Can be overridden to return a list of fatboyDataUnit (or subclass) representing multiple data extensions.
