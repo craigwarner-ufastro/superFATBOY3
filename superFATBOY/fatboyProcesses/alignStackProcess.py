@@ -240,7 +240,7 @@ class alignStackProcess(fatboyProcess):
         self._options.setdefault('align_box_center_y', '-1')
         self._optioninfo.setdefault('align_box_center_y', 'center of alignment box; -1 = use y-center')
         self._options.setdefault('align_constrain_boxsize', '256')
-        self._options.setdefault('align_method', 'xregister') #xregister, xregister_constrained, xregister_sep, xregister_sep_constrained, xregister_guesses, sep_centroid, sep_centroid_constrained, manual
+        self._options.setdefault('align_method', 'triangles') #xregister, xregister_constrained, xregister_sep, xregister_sep_constrained, xregister_guesses, sep_centroid, sep_centroid_constrained, triangles, manual
         self._optioninfo.setdefault('align_method', 'xregister | xregister_constrained | xregister_sep |\nxregister_sep_constrained | xregister_guesses |\nsep_centroid | sep_centroid_constrained | triangles | manual')
         self._options.setdefault('align_refframe', '0') #number, identifier.index
         self._optioninfo.setdefault('align_refframe', 'number or identifier.index')
