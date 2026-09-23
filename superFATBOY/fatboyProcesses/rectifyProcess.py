@@ -1284,6 +1284,58 @@ class rectifyProcess(fatboyProcess):
         return (coeffs, order, False)
     #end checkFitSanity
 
+    ## Fit a single whole_chip-style surface from whatever (xin, yin, yout) datapoints are
+    ## passed in, with the same leastsq + iterative sigma-clip as calculateMOSContinuaTrans's
+    ## own whole_chip branch. Used as a fallback in independent_slitlets mode: when a slit has
+    ## no continuum (or an unusable per-slit fit) but *other* slits in this exposure do, this
+    ## gives a real pooled surface fit from those good slits instead of an untransformed
+    ## identity fallback. Returns None if there isn't enough data to fit at all.
+    def fitPooledGoodSlitsTransform(self, xin, yin, yout, fit_order):
+        if (len(xin) < 10):
+            return None
+        xin = np.array(xin, dtype=np.float64)
+        yin = np.array(yin, dtype=np.float64)
+        yout = np.array(yout, dtype=np.float64)
+        terms = 0
+        for j in range(fit_order+2):
+            terms += j
+        p = np.zeros(terms)
+        p[1] = 1
+        try:
+            lsq = leastsq(surfaceResiduals, p, args=(xin, yin, yout, fit_order))
+        except Exception:
+            return None
+        coeffs = lsq[0]
+        yprime = surfaceFunction(coeffs, xin, yin, fit_order)
+        yresid = yprime-yout
+        residstddev = yresid.std()
+        if (residstddev == 0):
+            return (coeffs, fit_order)
+        residmean = yresid.mean()
+        sigThresh = 2
+        niter = 0
+        bad = np.where(np.abs(yresid-residmean)/residstddev > sigThresh)
+        while (len(bad[0]) > 0 and len(xin) > 10):
+            niter += 1
+            good = (np.abs(yresid-residmean)/residstddev <= sigThresh)
+            xin, yin, yout = xin[good], yin[good], yout[good]
+            try:
+                lsq = leastsq(surfaceResiduals, coeffs, args=(xin, yin, yout, fit_order))
+            except Exception:
+                break
+            coeffs = lsq[0]
+            yprime = surfaceFunction(coeffs, xin, yin, fit_order)
+            yresid = yprime-yout
+            residmean = yresid.mean()
+            residstddev = yresid.std()
+            if (niter > 2):
+                sigThresh += 0.2
+            if (residstddev == 0):
+                break
+            bad = np.where(np.abs(yresid-residmean)/residstddev > sigThresh)
+        return (coeffs, fit_order)
+    #end fitPooledGoodSlitsTransform
+
     def calculateMOSContinuaTrans(self, fdu, coords, mosMode, calibs):
         if (isinstance(coords, str) and os.access(coords, os.F_OK)):
             #This is a coord_list filename
@@ -1670,6 +1722,40 @@ class rectifyProcess(fatboyProcess):
             #Use helper method to all ylo, yhi for each slit in each frame
             (ylos, yhis, slitx, slitw) = findRegions(calibs['slitmask'].getData(), nslits, calibs['slitmask'], gpu=self._fdb.getGPUMode(), log=self._log)
 
+            fallbackMode = self.getOption("independent_slitlets_fallback", fdu.getTag()).lower()
+            pooledFit = False #tri-state: False = not yet attempted, None = attempted and failed, else (coeffs, order)
+
+            #Fill in ytransData for a slit/segment that couldn't get its own independent fit.
+            #Uses the pooled-good-slits surface if independent_slitlets_fallback is set to that
+            #and one is available; otherwise (or if that fit itself fails) falls back to the
+            #original identity (untransformed) behavior.
+            def applyIndependentSlitletFallback(ylo, yhi, sxlo, sxhi, currMask):
+                nonlocal pooledFit
+                if (fallbackMode == "pooled_good_slits"):
+                    if (pooledFit is False):
+                        goodMask = np.ones(len(xin), dtype=bool)
+                        for j in range(nslits):
+                            if (slitw[j] > maxSlitWidth):
+                                goodMask &= (islit != (j+1))
+                        pooledFit = self.fitPooledGoodSlitsTransform(xin[goodMask], yin[goodMask], yout[goodMask], fit_order)
+                        if (pooledFit is not None):
+                            print("\tFit pooled whole_chip-style surface from good slits as independent_slitlets_fallback.")
+                            self._log.writeLog(__name__, "Fit pooled whole_chip-style surface from good slits as independent_slitlets_fallback.", printCaller=False, tabLevel=1)
+                    if (pooledFit is not None):
+                        (pcoeffs, pOrder) = pooledFit
+                        if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
+                            ytransData[ylo:yhi,sxlo:sxhi][currMask] = surfaceFunction(pcoeffs, xind[ylo:yhi,sxlo:sxhi], yind[ylo:yhi,sxlo:sxhi], pOrder)[currMask]
+                        else:
+                            ytransData[sxlo:sxhi,ylo:yhi][currMask] = surfaceFunction(pcoeffs, xind[sxlo:sxhi,ylo:yhi], yind[sxlo:sxhi,ylo:yhi], pOrder)[currMask]
+                        return True
+                #Fall back to identity (previous behavior)
+                if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
+                    ytransData[ylo:yhi,sxlo:sxhi][currMask] = yind[ylo:yhi,sxlo:sxhi][currMask]
+                else:
+                    ytransData[sxlo:sxhi,ylo:yhi][currMask] = yind[sxlo:sxhi,ylo:yhi][currMask]
+                return False
+            #end applyIndependentSlitletFallback
+
             for slitidx in range(nslits):
                 if (slitw[slitidx] > maxSlitWidth):
                     print("\tSlit "+str(slitidx+1)+" is a guide star box.  Skipping!")
@@ -1695,17 +1781,16 @@ class rectifyProcess(fatboyProcess):
 
                     b = (islit == slitidx+1)*(iseg == seg)
                     if (b.sum() == 0):
-                        #No data to fit for this slitlet -- leave it untransformed (identity)
-                        #rather than guess, but this is a real quality problem (not just
-                        #informational), so log it as an ERROR and count it for the summary
-                        #below rather than let it pass as a quiet WARNING.
-                        print("rectifyProcess::calculateMOSContinuaTrans> ERROR: No data found to rectify "+seg_name+"slitlet "+str(slitidx+1)+"!  This slitlet will not be rectified!")
-                        self._log.writeLog(__name__, "No data found to rectify "+seg_name+"slitlet "+str(slitidx+1)+"!  This slitlet will not be rectified!", type=fatboyLog.ERROR)
+                        #No data to fit for this slitlet -- fall back to the pooled-good-slits
+                        #surface (independent_slitlets_fallback=pooled_good_slits) or leave it
+                        #untransformed (identity, previous behavior). Either way this is a real
+                        #quality problem (not just informational), so log it as an ERROR and
+                        #count it for the summary below rather than let it pass as a quiet WARNING.
+                        usedPooled = applyIndependentSlitletFallback(ylo, yhi, sxlo, sxhi, currMask)
+                        msg = "No data found to rectify "+seg_name+"slitlet "+str(slitidx+1)+"!  "+("Used pooled-good-slits fallback." if usedPooled else "This slitlet will not be rectified!")
+                        print("rectifyProcess::calculateMOSContinuaTrans> ERROR: "+msg)
+                        self._log.writeLog(__name__, msg, type=fatboyLog.ERROR)
                         n_slits_not_rectified += 1
-                        if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                            ytransData[ylo:yhi,sxlo:sxhi][currMask] = yind[ylo:yhi,sxlo:sxhi][currMask]
-                        elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                            ytransData[sxlo:sxhi,ylo:yhi][currMask] = yind[sxlo:sxhi,ylo:yhi][currMask]
                         rylo[slitidx] = sylo[slitidx]
                         ryhi[slitidx] = syhi[slitidx]
                         continue
@@ -1727,9 +1812,9 @@ class rectifyProcess(fatboyProcess):
                     #Initial guess is f(x_in, y_in) = x_in
                     p[1] = 1
                     try:
-                        print ("P",p)
-                        print (len(slitxin), len(slityin), len(slityout), fit_order, terms)
-                        print ("SLITIDX", slitidx+1, seg)
+                        #print ("P",p)
+                        #print (len(slitxin), len(slityin), len(slityout), fit_order, terms)
+                        #print ("SLITIDX", slitidx+1, seg)
                         lsq = leastsq(surfaceResiduals, p, args=(slitxin, slityin, slityout, fit_order))
                     except Exception as ex:
                         print("rectifyProcess::calculateMOSContinuaTrans> ERROR performing least squares fit: "+str(ex)+"! Discarding Image "+fdu.getFullId()+"!")
@@ -1821,14 +1906,11 @@ class rectifyProcess(fatboyProcess):
                                     seg_ryhi += coeffs[i]*(slitx[slitidx])**(j-l)*syhi[slitidx]**l
                                 i+=1
                     else:
-                        #Even a linear fit was unusable -- fall back to an untransformed
-                        #(straight) region for this slit/segment rather than write a runaway
-                        #transform, same treatment as the "no data to fit" case above.
+                        #Even a linear fit was unusable -- fall back to the pooled-good-slits
+                        #surface or an untransformed (straight) region, same treatment as the
+                        #"no data to fit" case above.
                         n_slits_not_rectified += 1
-                        if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                            ytransData[ylo:yhi,sxlo:sxhi][currMask] = yind[ylo:yhi,sxlo:sxhi][currMask]
-                        elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                            ytransData[sxlo:sxhi,ylo:yhi][currMask] = yind[sxlo:sxhi,ylo:yhi][currMask]
+                        applyIndependentSlitletFallback(ylo, yhi, sxlo, sxhi, currMask)
                         seg_rylo = sylo[slitidx]
                         seg_ryhi = syhi[slitidx]
                     if (seg == 0):
@@ -3267,6 +3349,8 @@ class rectifyProcess(fatboyProcess):
         self._optioninfo.setdefault('mos_max_slit_width', 'Anything with a greater width is assumed to be a guide star\nbox and will be blanked out at this stage.')
         self._options.setdefault('mos_mode', 'use_slitpos')
         self._optioninfo.setdefault('mos_mode', 'independent_slitlets | use_slitpos | whole_chip')
+        self._options.setdefault('independent_slitlets_fallback', 'identity')
+        self._optioninfo.setdefault('independent_slitlets_fallback', 'independent_slitlets mode only.  What to do for a slit with\nno continuum (or an unusable fit): identity (leave untransformed,\nprevious behavior) or pooled_good_slits (fit one whole_chip-style\nsurface from whichever slits in this exposure DO have usable\ncontinuum, and use that instead of identity).')
         self._options.setdefault('mos_sky_fit_order', 2)
         self._optioninfo.setdefault('mos_sky_fit_order', 'MOS only! Fit order for MOS skyline\nrectification within each slitlet')
         self._options.setdefault('mos_sky_step_size', 5)
