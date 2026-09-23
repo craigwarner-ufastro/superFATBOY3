@@ -2435,7 +2435,7 @@ def fwhm2d(data, estimateBackground=False):
 
     if (estimateBackground):
         #recompute average background rejecting larger region using new estimate of FWHM:
-        rejSize = (int)(np.ceil(fwhm1ds[0] + fwhm1ds[1]))
+        rejSize = (int)(math.ceil(fwhm1ds[0] + fwhm1ds[1]))
         if (rejSize > 1):
             xmin = xpos - rejSize
             xmax = xpos + rejSize

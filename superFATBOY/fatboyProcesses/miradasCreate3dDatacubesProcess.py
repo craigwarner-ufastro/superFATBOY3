@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
 from superFATBOY.fatboyLog import fatboyLog
@@ -120,8 +121,8 @@ class miradasCreate3dDatacubesProcess(fatboyProcess):
                 if (abs(fit_slo-slo) <= 1 and abs(fit_shi-shi) <= 1):
                     #Use fits
                     if (findSliceWidth):
-                        slice_width = int(np.ceil(fit_shi - fit_slo))
-                    yinit = ylo+zx-offset+int(np.round(fit_slo))
+                        slice_width = int(math.ceil(fit_shi - fit_slo))
+                    yinit = ylo+zx-offset+int(round(fit_slo))
                 else:
                     if (findSliceWidth):
                         slice_width = shi - slo

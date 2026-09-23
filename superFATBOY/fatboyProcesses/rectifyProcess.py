@@ -1936,7 +1936,7 @@ class rectifyProcess(fatboyProcess):
 
         #Update slitmask properties to save rylo and ryhi for use later in removing guide star boxes from slitmask
         if ((ytransData != 0).sum() > 0):
-            ytrans_min = np.floor(ytransData[ytransData != 0].min())
+            ytrans_min = math.floor(float(ytransData[ytransData != 0].min()))
             if (ytrans_min < 0):
                 rylo -= ytrans_min
                 ryhi -= ytrans_min

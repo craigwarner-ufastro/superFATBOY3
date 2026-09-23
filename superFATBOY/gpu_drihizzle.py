@@ -50,8 +50,6 @@ def get_mod():
         __global__ void calcXYin(float *xin, float *yin, int nx, int ny, float xoff, float yoff) {
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= nx*ny) {
-            xin[i] = 0;
-            yin[i] = 0;
             return;
           }
           xin[i] = (i%nx) + xoff;
@@ -62,8 +60,6 @@ def get_mod():
         {
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) {
-            xout[i] = 0;
-            yout[i] = 0;
             return;
           }
           int n = 0;
@@ -128,14 +124,18 @@ def get_mod():
           atomicAdd(&pixmap[idx], 1);
         }
 
-        __global__ void uniformKernel(int *newdata, int *data, float *xout, float *yout, int *mask, int nxsize, int nsize)
+        __global__ void uniformKernel(int *newdata, int *data, float *xout, float *yout, int *mask, int nxsize, int nysize, int nsize)
         {
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= nsize) return;
           int intx = (int)(xout[i]);
           int inty = (int)(yout[i]);
+          //Bounds check both x and y for the base pixel AND its +1 neighbor in each
+          //direction (this kernel splats a 2x2 footprint) -- without this, a pixel
+          //landing in the last valid column or row wraps its +1 neighbor write into
+          //column/row 0 of the next row, corrupting unrelated pixels there.
+          if (intx < 0 || intx+1 >= nxsize || inty < 0 || inty+1 >= nysize) return;
           int idx = intx+nxsize*inty;
-          if (idx < 0) return;
 
           atomicMax(&newdata[idx], data[i]*mask[i]);
           atomicMax(&newdata[idx+1], data[i]*mask[i]);
@@ -605,9 +605,6 @@ def get_mod():
         __global__ void calcXYZin(float *xin, float *yin, float *zin, int nx, int ny, int nz, float xoff, float yoff, float zoff) {
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= nx*ny*nz) {
-            xin[i] = 0;
-            yin[i] = 0;
-            zin[i] = 0;
             return;
           }
           xin[i] = (i%nx) + xoff;
@@ -619,9 +616,6 @@ def get_mod():
         {
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) {
-            xout[i] = 0;
-            yout[i] = 0;
-            zout[i] = 0;
             return;
           }
           int n = 0;
@@ -1339,11 +1333,11 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 xrefout *= scale
                 yrefout *= scale
 
-            # Calculate mins, maxes
-            xmin = int(np.floor(float(xout.min())))
-            xmax = int(np.floor(float(xout.max()))) + 2
-            ymin = int(np.floor(float(yout.min())))
-            ymax = int(np.floor(float(yout.max()))) + 2
+            # Calculate mins, maxes -- these are scalars (reduced from an array), use math not np
+            xmin = int(math.floor(float(xout.min())))
+            xmax = int(math.floor(float(xout.max()))) + 2
+            ymin = int(math.floor(float(yout.min())))
+            ymax = int(math.floor(float(yout.max()))) + 2
 
             if kernel == 'tophat' or kernel.find('gauss') != -1 or kernel == 'lanczos':
                 xmin -= int(dropsize)
@@ -1351,10 +1345,11 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 ymin -= int(dropsize)
                 ymax += int(dropsize)
 
-            xshmin = np.min(xsh)
-            yshmin = np.min(ysh)
-            xshrange = int(np.ceil(np.max(xsh) - np.min(xsh)))
-            yshrange = int(np.ceil(np.max(ysh) - np.min(ysh)))
+            #xsh/ysh are plain lists of scalars, not arrays -- use builtin min/max
+            xshmin = min(xsh)
+            yshmin = min(ysh)
+            xshrange = int(math.ceil(max(xsh) - min(xsh)))
+            yshrange = int(math.ceil(max(ysh) - min(ysh)))
             if _verbosity == fatboyLog.VERBOSE:
                 print("\tCalc min/max output: ", time.time() - tt, "; Total: ", time.time() - t)
             tt = time.time()
@@ -1391,7 +1386,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 xrefout = float(outimage[0].header['CRPIX1'])
                 yrefout = float(outimage[0].header['CRPIX2'])
                 # Case existing image is as large or larger than needed
-                if (outxsh <= xshmin and outysh <= yshmin and outimage[mef].data.shape[1] + outxsh >= xmax - xmin + np.max(xsh) and outimage[mef].data.shape[0] >= ymax - ymin + np.max(ysh)):
+                if (outxsh <= xshmin and outysh <= yshmin and outimage[mef].data.shape[1] + outxsh >= xmax - xmin + max(xsh) and outimage[mef].data.shape[0] >= ymax - ymin + max(ysh)):
                     newdata = cp.array(outimage[mef].data).astype(np.float32)
                     expmap = cp.array(outexp[mef].data).astype(np.float32)
                     if doPix:
@@ -1404,21 +1399,21 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     # Need to enlarge image
                     xshmin = min(xshmin, outxsh)
                     yshmin = min(yshmin, outysh)
-                    xmax = max(np.max(xsh) + xmax - xmin, outxsh + outimage[mef].data.shape[1])
-                    ymax = max(np.max(ysh) + ymax - ymin, outysh + outimage[mef].data.shape[0])
-                    x_range = int(np.ceil(xmax - xshmin))
-                    y_range = int(np.ceil(ymax - yshmin))
+                    xmax = max(max(xsh) + xmax - xmin, outxsh + outimage[mef].data.shape[1])
+                    ymax = max(max(ysh) + ymax - ymin, outysh + outimage[mef].data.shape[0])
+                    x_range = int(math.ceil(xmax - xshmin))
+                    y_range = int(math.ceil(ymax - yshmin))
                     newdata = cp.zeros((y_range, x_range), dtype=np.float32)
                     expmap = cp.zeros((y_range, x_range), dtype=np.float32)
                     if doPix:
                         pixmap = cp.zeros((y_range, x_range), dtype=np.int32)
                     if outxsh != xshmin:
-                        xshmin = np.floor(xshmin)
+                        xshmin = math.floor(xshmin)
                     x1 = int(outxsh - xshmin)
                     x2 = x1 + outimage[mef].data.shape[1]
                     xrefout += x1
                     if outysh != yshmin:
-                        yshmin = np.floor(yshmin)
+                        yshmin = math.floor(yshmin)
                     y1 = int(outysh - yshmin)
                     y2 = y1 + outimage[mef].data.shape[0]
                     yrefout += y1
@@ -1534,8 +1529,9 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             # Yes, it takes int*.
             newdata_i = newdata.astype(np.int32)
             nxsize = newdata.shape[1]
+            nysize = newdata.shape[0]
             uniformKernel = mod.get_function("uniformKernel")
-            uniformKernel((blocks,), (block_size,), (newdata_i, data_g, xout_g, yout_g, inmask_g, np.int32(xsize), np.int32(data.size)))
+            uniformKernel((blocks,), (block_size,), (newdata_i, data_g, xout_g, yout_g, inmask_g, np.int32(xsize), np.int32(nysize), np.int32(data.size)))
             newdata = newdata_i.astype(np.float32)
         tt = time.time()
 
@@ -1781,7 +1777,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
 
 def getGaussLut(fwhm, nsig, inc):
     endx = fwhm * nsig * 2 / 2.3548
-    sz = int(np.ceil(endx / inc)) * 2
+    sz = int(math.ceil(endx / inc)) * 2
     x = (np.arange(sz, dtype=np.float32) - sz // 2) * inc
     z = 2.3548 / fwhm * x
     y = np.exp(-0.5 * z * z)
@@ -1791,7 +1787,7 @@ def getGaussLut(fwhm, nsig, inc):
 
 def getLanczosLut(order, inc):
     endx = order * 2
-    sz = int(np.ceil(endx / inc)) * 2
+    sz = int(math.ceil(endx / inc)) * 2
     x = (np.arange(sz, dtype=np.float32) - sz // 2) * inc
     y = np.zeros(x.shape, np.float32)
     y[x == 0] = 1
@@ -2303,20 +2299,21 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                 yrefout *= scale
                 zrefout *= scale
 
-            #Calculate mins, maxes
-            xmin = int(np.floor(xout.min()))
-            xmax = int(np.floor(xout.max()))+2
-            ymin = int(np.floor(yout.min()))
-            ymax = int(np.floor(yout.max()))+2
-            zmin = int(np.floor(zout.min()))
-            zmax = int(np.floor(zout.max()))+2
+            #Calculate mins, maxes -- these are scalars (reduced from an array), use math not np
+            xmin = int(math.floor(float(xout.min())))
+            xmax = int(math.floor(float(xout.max())))+2
+            ymin = int(math.floor(float(yout.min())))
+            ymax = int(math.floor(float(yout.max())))+2
+            zmin = int(math.floor(float(zout.min())))
+            zmax = int(math.floor(float(zout.max())))+2
 
-            xshmin = np.min(xsh)
-            yshmin = np.min(ysh)
-            zshmin = np.min(zsh)
-            xshrange = int(np.ceil(np.max(xsh)-np.min(xsh)))
-            yshrange = int(np.ceil(np.max(ysh)-np.min(ysh)))
-            zshrange = int(np.ceil(np.max(zsh)-np.min(zsh)))
+            #xsh/ysh/zsh are plain lists of scalars, not arrays -- use builtin min/max
+            xshmin = min(xsh)
+            yshmin = min(ysh)
+            zshmin = min(zsh)
+            xshrange = int(math.ceil(max(xsh)-min(xsh)))
+            yshrange = int(math.ceil(max(ysh)-min(ysh)))
+            zshrange = int(math.ceil(max(zsh)-min(zsh)))
             if (_verbosity == fatboyLog.VERBOSE):
                 print("\tCalc min/max output: ",time.time()-tt,"; Total: ",time.time()-t)
             tt = time.time()
@@ -2359,7 +2356,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                 yrefout = float(outimage[0].header['CRPIX2'])
                 zrefout = float(outimage[0].header['CRPIX3'])
                 #Case exisiting image is as large or larger than needed
-                if (outxsh <= xshmin and outysh <= yshmin and outzsh <= zshmin and outimage[mef].data.shape[2]+outxsh >= xmax-xmin+np.max(xsh) and outimage[mef].data.shape[1] >= ymax-ymin+np.max(ysh) and outimage[mef].data.shape[0] >= zmax-zmin+np.max(zsh)):
+                if (outxsh <= xshmin and outysh <= yshmin and outzsh <= zshmin and outimage[mef].data.shape[2]+outxsh >= xmax-xmin+max(xsh) and outimage[mef].data.shape[1] >= ymax-ymin+max(ysh) and outimage[mef].data.shape[0] >= zmax-zmin+max(zsh)):
                     newdata = outimage[mef].data.astype(np.float32)
                     expmap = outexp[mef].data.astype(np.float32)
                     if (doPix):
@@ -2375,28 +2372,28 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                     xshmin = min(xshmin, outxsh)
                     yshmin = min(yshmin, outysh)
                     zshmin = min(zshmin, outzsh)
-                    xmax = max(np.max(xsh)+xmax-xmin, outxsh+outimage[mef].data.shape[2])
-                    ymax = max(np.max(ysh)+ymax-ymin, outysh+outimage[mef].data.shape[1])
-                    zmax = max(np.max(zsh)+zmax-zmin, outzsh+outimage[mef].data.shape[0])
-                    x_range = int(np.ceil(xmax-xshmin))
-                    y_range = int(np.ceil(ymax-yshmin))
-                    z_range = int(np.ceil(zmax-zshmin))
+                    xmax = max(max(xsh)+xmax-xmin, outxsh+outimage[mef].data.shape[2])
+                    ymax = max(max(ysh)+ymax-ymin, outysh+outimage[mef].data.shape[1])
+                    zmax = max(max(zsh)+zmax-zmin, outzsh+outimage[mef].data.shape[0])
+                    x_range = int(math.ceil(xmax-xshmin))
+                    y_range = int(math.ceil(ymax-yshmin))
+                    z_range = int(math.ceil(zmax-zshmin))
                     newdata = np.zeros((z_range, y_range, x_range), np.float32)
                     expmap = np.zeros((z_range, y_range, x_range), np.float32)
                     if (doPix):
                         pixmap = np.zeros((z_range, y_range, x_range), np.int32)
                     if (outxsh != xshmin):
-                        xshmin = np.floor(xshmin)
+                        xshmin = math.floor(xshmin)
                     x1 = int(outxsh - xshmin)
                     x2 = x1+outimage[mef].data.shape[1]
                     xrefout += x1
                     if (outysh != yshmin):
-                        yshmin = np.floor(yshmin)
+                        yshmin = math.floor(yshmin)
                     y1 = int(outysh - yshmin)
                     y2 = y1+outimage[mef].data.shape[0]
                     yrefout += y1
                     if (outzsh != zshmin):
-                        zshmin = np.floor(zshmin)
+                        zshmin = math.floor(zshmin)
                     z1 = int(outzsh - zshmin)
                     z2 = z1+outimage[mef].data.shape[0]
                     zrefout += z1
