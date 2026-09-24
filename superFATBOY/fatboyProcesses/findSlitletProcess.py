@@ -426,6 +426,10 @@ class findSlitletProcess(fatboyProcess):
         self._optioninfo.setdefault('boundary', 'Width in pixels of a boundary to not attempt to fit at the edges of each segment.  Should be 100 for MIRADAS.')
         self._options.setdefault('cut1d_max_threshold', 2)
         self._optioninfo.setdefault('cut1d_max_threshold', 'Reject a trace datapoint if 1d cut max < this factor * quartile of cut.')
+        self._options.setdefault('edge_detection_method', 'cross_correlation')
+        self._optioninfo.setdefault('edge_detection_method', 'Method used at each step to find the slitlet edge position:\ncross_correlation (default) = cross-correlate 1-d cut with a reference cut and fit a\nGaussian to the correlation peak.  Best for slitlets separated by a genuine step edge\n(flux drops to ~0 between them).  Regresses badly on weak local-minimum boundaries (see\nlocal_minimum below) -- typically finds 0 datapoints for that edge.\nlocal_minimum = directly find the local minimum flux value in the 1-d cut (with subpixel\nparabolic refinement) instead of cross-correlating.  Much better for closely-packed\nslitlets where the boundary is only a weak dip in flux rather than a full step down to 0,\nwhich cross_correlation fails on -- but regresses badly on genuine step edges (a step\'s\nminimum sits at the edge of the search window, not at an interior parabolic minimum), so\nit is NOT a safe drop-in replacement for cross_correlation across a whole dataset.\nauto = try cross_correlation first for every edge (matches cross_correlation exactly for\nany edge it can trace); only for an edge where that finds literally 0 datapoints (the\nweak-dip failure mode above) does it retry that same edge with local_minimum instead of\ngiving up.  Recommended over local_minimum whenever a dataset mixes both edge types,\nwhich is the common case (see findSlitletProcess algorithm audit notes).')
+        self._options.setdefault('local_min_depth_threshold', '0.05')
+        self._optioninfo.setdefault('local_min_depth_threshold', 'For edge_detection_method=local_minimum only: minimum dip depth required to accept a\ndatapoint, as a fraction of the 1-d cut\'s local median flux.  Rejects steps where no real\ndip is present (e.g. pure noise or a genuine data gap).')
         self._options.setdefault('edge_extend_to_chip', 'no')
         self._optioninfo.setdefault('edge_extend_to_chip', 'If set to yes, and one edge of a slitlet is traced out, the other edge\nif it runs into the chip boundary will not be clipped.')
         self._options.setdefault('edge_threshold', 15)
@@ -512,6 +516,8 @@ class findSlitletProcess(fatboyProcess):
         minCovFrac = float(self.getOption("min_coverage_fraction", fdu.getTag()))
         cut1d_max_threshold = float(self.getOption("cut1d_max_threshold", fdu.getTag()))
         maxResidualError = float(self.getOption("max_residual_error", fdu.getTag()))
+        edge_detection_method = self.getOption("edge_detection_method", fdu.getTag()).lower()
+        local_min_depth_threshold = float(self.getOption("local_min_depth_threshold", fdu.getTag()))
         do_edge_extend = False
         if (self.getOption("edge_extend_to_chip", fdu.getTag()).lower() == "yes"):
             do_edge_extend = True
@@ -724,233 +730,276 @@ class findSlitletProcess(fatboyProcess):
 
                 #Setup lists and arrays for within each loop
                 #xcoords and ycoords contain lists of fit (x,y) points
-                xcoords = []
-                ycoords = []
-                #median value of 1-d cuts and max values of cross correlations are kept and used as rejection criteria later
-                meds = []
-                maxcors = []
-                #Up to last 10 (x,y) pairs are kept and used in various rejection criteria
-                lastXs = []
-                lastYs = []
-                currX = xs[0] #current X value
-                currY = syval #shift in cross-dispersion direction at currX relative to Y at X=xinit
+                active_edge_method = edge_detection_method
+                if (active_edge_method == "auto"):
+                    active_edge_method = "cross_correlation"
+                while True:
+                    xcoords = []
+                    ycoords = []
+                    #median value of 1-d cuts and max values of cross correlations are kept and used as rejection criteria later
+                    meds = []
+                    maxcors = []
+                    #Up to last 10 (x,y) pairs are kept and used in various rejection criteria
+                    lastXs = []
+                    lastYs = []
+                    currX = xs[0] #current X value
+                    currY = syval #shift in cross-dispersion direction at currX relative to Y at X=xinit
 
-                lastSeg = first_seg
-                #Loop over xs every 5 pixels and cross correlate 1-d cut with islit
-                for j in range(len(xs)):
-                    currSeg = xs[j]//xstride
-                    if (xs[j] == xinit-step):
-                        #We have finished tracing to the end, starting back at middle to trace in other direction
-                        #Reset currY, lastYs, lastXs
-                        currY = syval
-                        lastYs = [syval]
-                        lastXs = [xinit]
-                    elif (currSeg != lastSeg):
-                        if (len(xcoords) == 0):
-                            currY = syval + seg_shifts[currSeg]
-                            lastYs = [syval + seg_shifts[currSeg]]
+                    lastSeg = first_seg
+                    #Loop over xs every 5 pixels and cross correlate 1-d cut with islit
+                    for j in range(len(xs)):
+                        currSeg = xs[j]//xstride
+                        if (xs[j] == xinit-step):
+                            #We have finished tracing to the end, starting back at middle to trace in other direction
+                            #Reset currY, lastYs, lastXs
+                            currY = syval
+                            lastYs = [syval]
                             lastXs = [xinit]
-                        else:
-                            lastIdx = np.where(np.abs(np.array(xcoords)-xs[j]) == min(np.abs(np.array(xcoords)-xs[j])))[0][0]
-                            currY = ycoords[lastIdx]+seg_shifts[currSeg]
-                            lastYs = [ycoords[lastIdx]+seg_shifts[currSeg]]
-                            lastXs = [xcoords[lastIdx]]
-                    if (currY < edge_thresh):
-                        #This slitlet is nearing the edge of the chip.  Don't try to fit anymore values.
-                        #Use values that have been fit already to trace it out
-                        continue
-
-                    intY = int(np.round(currY, 3))
-                    ylo_slit = intY-halfbox
-                    if (ylo_slit < 0):
-                        ylo_slit = 0
-                    elif (ylo_slit > ysize-boxsize):
-                        ylo_slit = ysize-boxsize
-                    #1-d cut of flat in cross-dispersion direction, sum of 11 pixels in dispersion direction centered at current X
-                    #Only look at 21 pixel box in dispersion direction centered at currY  => 21x11 box => 21 pixel 1-d line
-                    if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                        #cut1d = flatData[intY-halfbox:intY+halfbox+1, int(xs[j]-5):int(xs[j]+6)].sum(1).astype(np.float64)
-                        cut1d = flatData[ylo_slit:ylo_slit+boxsize, int(xs[j]-5):int(xs[j]+6)].sum(1).astype(np.float64)
-                    elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                        #cut1d = flatData[int(xs[j]-5):int(xs[j]+6), intY-halfbox:intY+halfbox+1].sum(0).astype(np.float64)
-                        cut1d = flatData[int(xs[j]-5):int(xs[j]+6), ylo_slit:ylo_slit+boxsize].sum(0).astype(np.float64)
-                    if (do_subtract_bkg):
-                        cut1d -= cut1d.min()
-                    if (do_invert):
-                        cut1d = (cut1d.max()-cut1d)**2  #square
-                        medVal = arraymedian(cut1d)
-                        cut1d = medianfilterCPU(cut1d)
-                        cut1d[cut1d < 0] = 0
-                    #Check that there is data in this cut
-                    if (cut1d.sum()/islit.sum() < 0.05):
-                        f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t6\n')
-                        #Flux in cut1 is less than 5% of that in islit reference cut
-                        continue
-                    q1 = gpu_arraymedian(cut1d, nhigh=len(cut1d)//2) #quartile
-                    cmax = cut1d.max()
-                    if (cmax < 0):
-                        f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t7\n')
-                        #Peak flux in cut1d negative - should be caught by #6 but just in case
-                        continue
-                    if ((do_subtract_bkg and cmax/q1 < 3) or abs(cmax/q1) < cut1d_max_threshold):
-                        f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t7\n')
-                        #Peak flux in cut1d < 3*quartile
-                        continue
-                    #Cross correlate cut1d with islit
-                    #Use numpy correlate since 1d cut -- not enough pixels to benefit from GPU
-                    ccor = np.correlate(cut1d, islit, mode='same')
-                    #Median filter with 51 pixel boxcar and set negative values to 0 before fitting
-                    ccor = medianfilterCPU(ccor)
-                    ccor[ccor < 0] = 0
-                    #Use leastsq to fit Gaussian to cross-correlation function
-                    p = np.zeros(4, np.float64)
-                    #p[1] = round(currY,3) #center = currY
-                    p[1] = np.round(currY, 3)-ylo_slit
-                    p[2] = 3. #FWHM = 3
-                    p[3] = 0.
-                    p[0] = np.max(ccor)
-                    #lsq argument should be centered at currY
-                    #Use int(round(currY, 3)) to get around floating point bug
-                    lsq = fitGaussian(ccor, maskNeg=True, guess=p)
-                    if (lsq[1] == False):
-                    #try:
-                    #  lsq = leastsq(gaussResiduals, p, args=(np.arange(len(ccor))+intY-halfbox, ccor))
-                    #except Exception as ex:
-                        print ("LSQ 1")
-                        import traceback
-                        traceback.print_exc()
-                        print("findSlitletProcess::traceOrders> Warning: Order "+str(slitidx)+", syval="+str(syval)+": Leastsq FAILED at "+str(xs[j])+" with "+str(ex))
-                        self._log.writeLog(__name__, "Order "+str(slitidx)+", syval="+str(syval)+": Leastsq FAILED at "+str(xs[j])+" with "+str(ex), type=fatboyLog.WARNING)
-                        continue
-                    lsq[0][1] += ylo_slit+yoff_slit
-                    #Error checking results of leastsq call
-                    if (lsq[1] == 5):
-                        f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t1\n')
-                        #exceeded max number of calls = ignore
-                        continue
-                    if (lsq[0][0]+lsq[0][3] < 0):
-                        f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t2\n')
-                        #flux less than zero = ignore
-                        continue
-                    if (lsq[0][2] < 0 and j != 0):
-                        f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t3\n')
-                        #negative boxsize = ignore unless first datapoint
-                        continue
-                    if (not do_invert):
-                        medVal = arraymedian(cut1d)
-                    if (j == 0):
-                        #First datapoint -- update currX, currY, append to all lists
-                        f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t0\n')
-                        currY = lsq[0][1]
-                        currX = xs[0]
-                        meds.append(medVal)
-                        maxcors.append(np.max(ccor))
-                        xcoords.append(xs[j])
-                        ycoords.append(lsq[0][1])
-                        lastXs.append(xs[0])
-                        lastYs.append(lsq[0][1])
-                        lastSeg = currSeg
-                    else:
-                        #Sanity check
-                        #Calculate predicted "ref" value of Y based on slope of previous
-                        #fit datapoints
-                        wavg = 0.
-                        wavgx = 0.
-                        wavgDivisor = 0.
-                        #Compute weighted avg of previously fitted values
-                        #Weight by 1 over sqrt of delta-x
-                        #Compare current y fit value to weighted avg instead of just
-                        #previous value.
-                        for i in range(len(lastYs)):
-                            wavg += lastYs[i]/math.sqrt(abs(lastXs[i]-xs[j]))
-                            wavgx += lastXs[i]/math.sqrt(abs(lastXs[i]-xs[j]))
-                            wavgDivisor += 1./math.sqrt(abs(lastXs[i]-xs[j]))
-                        if (wavgDivisor != 0):
-                            wavg = wavg/wavgDivisor
-                            wavgx = wavgx/wavgDivisor
-                        else:
-                            #We seem to have no datapoints in lastYs.  Simply use previous value
-                            wavg = currY
-                            wavgx = currX
-                        #More than 50 pixels in deltaX between weight average of last 10
-                        #datapoints and current X
-                        #And not the discontinuity in middle of xs np.where we jump from end back to center
-                        #because abs(xs[j]-xs[j-1]) == step
-                        if (abs(xs[j]-xs[j-1]) == step and abs(wavgx-xs[j]) > 50):
-                            if (len(lastYs) > 1):
-                                #Fit slope to lastYs
-                                lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastXs),np.array(lastYs)))
-                                slope = lin[0][1]
+                        elif (currSeg != lastSeg):
+                            if (len(xcoords) == 0):
+                                currY = syval + seg_shifts[currSeg]
+                                lastYs = [syval + seg_shifts[currSeg]]
+                                lastXs = [xinit]
                             else:
-                                #Only 1 datapoint, use -0.04 as slope
-                                slope = -0.04
-                            #Calculate guess for refY and max acceptable error
-                            #err = 1+0.04*deltaX, with a max value of 3.
-                            refY = wavg+slope*(xs[j]-wavgx)
-                            maxerr = min(1+int(abs(xs[j]-wavgx)*.04),3)
-                        else:
-                            if (len(lastYs) > 3):
-                                #Fit slope to lastYs
-                                lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastXs),np.array(lastYs)))
-                                slope = lin[0][1]
-                            else:
-                                #Less than 4 datapoints, use -0.04 as slope
-                                slope = -0.04
-                            #Calculate guess for refY and max acceptable error
-                            #0.5 <= maxerr <= 2 in this case.  Use slope*50 if it falls in that range
-                            refY = wavg+slope*(xs[j]-wavgx)
-                            maxerr = max(min(abs(slope*50),2),0.5)
-                        #Discontinuity point in xs. Keep if within +/-1.
-                        if (xs[j] == xinit-step and abs(lsq[0][1]-currY) < 1):
-                            #update currX, currY, append to all lists
-                            f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t0\n')
-                            currY = lsq[0][1]
-                            currX = xs[j]
-                            meds.append(medVal)
-                            maxcors.append(np.max(ccor))
-                            xcoords.append(xs[j])
-                            ycoords.append(lsq[0][1])
-                            lastXs.append(xs[j])
-                            lastYs.append(lsq[0][1])
-                            lastSeg = currSeg
-                        elif (lastSeg != currSeg):
-                            #update currX, currY, append to all lists
-                            f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t0\n')
-                            currY = lsq[0][1]
-                            currX = xs[j]
-                            meds.append(medVal)
-                            maxcors.append(np.max(ccor))
-                            xcoords.append(xs[j])
-                            ycoords.append(lsq[0][1])
-                            lastXs.append(xs[j])
-                            lastYs.append(lsq[0][1])
-                            lastSeg = currSeg
+                                lastIdx = np.where(np.abs(np.array(xcoords)-xs[j]) == min(np.abs(np.array(xcoords)-xs[j])))[0][0]
+                                currY = ycoords[lastIdx]+seg_shifts[currSeg]
+                                lastYs = [ycoords[lastIdx]+seg_shifts[currSeg]]
+                                lastXs = [xcoords[lastIdx]]
+                        if (currY < edge_thresh):
+                            #This slitlet is nearing the edge of the chip.  Don't try to fit anymore values.
+                            #Use values that have been fit already to trace it out
                             continue
-                        elif (abs(lsq[0][1] - refY) < maxerr):
-                            #Regular datapoint.  Apply sanity check rejection criteria here
-                            #Discard if farther than maxerr away from refY
-                            if (abs(xs[j]-currX) < 4*step and maxerr > 1 and abs(lsq[0][1]-currY) > maxerr):
-                                #Also discard if < 20 pixels in X from last fit datapoint, and deltaY > 1
-                                f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t4\n')
+
+                        intY = int(np.round(currY, 3))
+                        ylo_slit = intY-halfbox
+                        if (ylo_slit < 0):
+                            ylo_slit = 0
+                        elif (ylo_slit > ysize-boxsize):
+                            ylo_slit = ysize-boxsize
+                        #1-d cut of flat in cross-dispersion direction, sum of 11 pixels in dispersion direction centered at current X
+                        #Only look at 21 pixel box in dispersion direction centered at currY  => 21x11 box => 21 pixel 1-d line
+                        if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
+                            #cut1d = flatData[intY-halfbox:intY+halfbox+1, int(xs[j]-5):int(xs[j]+6)].sum(1).astype(np.float64)
+                            cut1d = flatData[ylo_slit:ylo_slit+boxsize, int(xs[j]-5):int(xs[j]+6)].sum(1).astype(np.float64)
+                        elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
+                            #cut1d = flatData[int(xs[j]-5):int(xs[j]+6), intY-halfbox:intY+halfbox+1].sum(0).astype(np.float64)
+                            cut1d = flatData[int(xs[j]-5):int(xs[j]+6), ylo_slit:ylo_slit+boxsize].sum(0).astype(np.float64)
+                        if (do_subtract_bkg):
+                            cut1d -= cut1d.min()
+                        if (do_invert):
+                            cut1d = (cut1d.max()-cut1d)**2  #square
+                            medVal = arraymedian(cut1d)
+                            cut1d = medianfilterCPU(cut1d)
+                            cut1d[cut1d < 0] = 0
+                        #Check that there is data in this cut
+                        if (cut1d.sum()/islit.sum() < 0.05):
+                            f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t6\n')
+                            #Flux in cut1 is less than 5% of that in islit reference cut
+                            continue
+                        if (active_edge_method == "local_minimum"):
+                            #Directly find the local minimum (weak dip) in cut1d instead of
+                            #cross-correlating.  Search the whole cut1d window -- it is already
+                            #centered on currY (the running prediction), same as cross_correlation
+                            #mode's Gaussian fit guess below.
+                            local_med = arraymedian(cut1d)
+                            dip_idx = int(np.argmin(cut1d))
+                            dip_val = cut1d[dip_idx]
+                            depth_ratio = (local_med-dip_val)/max(abs(local_med), 1.0)
+                            if (depth_ratio < local_min_depth_threshold):
+                                f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t8\n')
+                                #No real dip present (flat/noisy cut1d) - reject
                                 continue
-                            #update currX, currY, append to all lists
+                            #Subpixel refine via 3-point parabolic interpolation
+                            if (dip_idx > 0 and dip_idx < len(cut1d)-1):
+                                y0 = cut1d[dip_idx-1]
+                                y1 = cut1d[dip_idx]
+                                y2 = cut1d[dip_idx+1]
+                                denom = (y0-2*y1+y2)
+                                delta = 0.5*(y0-y2)/denom if (denom != 0) else 0.
+                            else:
+                                delta = 0.
+                            #Build an lsq-equivalent tuple so downstream code is unchanged:
+                            #[amplitude(depth), center, width(unused), offset(dip value)], ier=1(success)
+                            lsq = [np.array([local_med-dip_val, dip_idx+delta, 3., dip_val], np.float64), 1]
+                            #Stand-in for maxcors (phase 2 rejection) - dip depth serves the same
+                            #"how strong is this signal" role that np.max(ccor) does for cross_correlation
+                            maxcor_val = local_med-dip_val
+                        else:
+                            q1 = gpu_arraymedian(cut1d, nhigh=len(cut1d)//2) #quartile
+                            cmax = cut1d.max()
+                            if (cmax < 0):
+                                f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t7\n')
+                                #Peak flux in cut1d negative - should be caught by #6 but just in case
+                                continue
+                            if ((do_subtract_bkg and cmax/q1 < 3) or abs(cmax/q1) < cut1d_max_threshold):
+                                f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t7\n')
+                                #Peak flux in cut1d < 3*quartile
+                                continue
+                            #Cross correlate cut1d with islit
+                            #Use numpy correlate since 1d cut -- not enough pixels to benefit from GPU
+                            ccor = np.correlate(cut1d, islit, mode='same')
+                            #Median filter with 51 pixel boxcar and set negative values to 0 before fitting
+                            ccor = medianfilterCPU(ccor)
+                            ccor[ccor < 0] = 0
+                            #Use leastsq to fit Gaussian to cross-correlation function
+                            p = np.zeros(4, np.float64)
+                            #p[1] = round(currY,3) #center = currY
+                            p[1] = np.round(currY, 3)-ylo_slit
+                            p[2] = 3. #FWHM = 3
+                            p[3] = 0.
+                            p[0] = np.max(ccor)
+                            #lsq argument should be centered at currY
+                            #Use int(round(currY, 3)) to get around floating point bug
+                            lsq = fitGaussian(ccor, maskNeg=True, guess=p)
+                            if (lsq[1] == False):
+                            #try:
+                            #  lsq = leastsq(gaussResiduals, p, args=(np.arange(len(ccor))+intY-halfbox, ccor))
+                            #except Exception as ex:
+                                print ("LSQ 1")
+                                import traceback
+                                traceback.print_exc()
+                                print("findSlitletProcess::traceOrders> Warning: Order "+str(slitidx)+", syval="+str(syval)+": Leastsq FAILED at "+str(xs[j])+" with "+str(ex))
+                                self._log.writeLog(__name__, "Order "+str(slitidx)+", syval="+str(syval)+": Leastsq FAILED at "+str(xs[j])+" with "+str(ex), type=fatboyLog.WARNING)
+                                continue
+                            maxcor_val = np.max(ccor)
+                        lsq[0][1] += ylo_slit+yoff_slit
+                        #Error checking results of leastsq call
+                        if (lsq[1] == 5):
+                            f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t1\n')
+                            #exceeded max number of calls = ignore
+                            continue
+                        if (lsq[0][0]+lsq[0][3] < 0):
+                            f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t2\n')
+                            #flux less than zero = ignore
+                            continue
+                        if (lsq[0][2] < 0 and j != 0):
+                            f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t3\n')
+                            #negative boxsize = ignore unless first datapoint
+                            continue
+                        if (not do_invert):
+                            medVal = arraymedian(cut1d)
+                        if (j == 0):
+                            #First datapoint -- update currX, currY, append to all lists
                             f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t0\n')
                             currY = lsq[0][1]
-                            currX = xs[j]
+                            currX = xs[0]
                             meds.append(medVal)
-                            maxcors.append(np.max(ccor))
+                            maxcors.append(maxcor_val)
                             xcoords.append(xs[j])
                             ycoords.append(lsq[0][1])
-                            lastXs.append(xs[j])
+                            lastXs.append(xs[0])
                             lastYs.append(lsq[0][1])
                             lastSeg = currSeg
-                            #keep lastXs and lastYs at 10 elements or less
-                            if (len(lastYs) > 10):
-                                lastXs.pop(0)
-                                lastYs.pop(0)
                         else:
-                            f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t5\n')
-                    #print xs[j], p[1], len(maxcors), lsq[0][1], arraymedian(cut1d), max(ccor)
+                            #Sanity check
+                            #Calculate predicted "ref" value of Y based on slope of previous
+                            #fit datapoints
+                            wavg = 0.
+                            wavgx = 0.
+                            wavgDivisor = 0.
+                            #Compute weighted avg of previously fitted values
+                            #Weight by 1 over sqrt of delta-x
+                            #Compare current y fit value to weighted avg instead of just
+                            #previous value.
+                            for i in range(len(lastYs)):
+                                wavg += lastYs[i]/math.sqrt(abs(lastXs[i]-xs[j]))
+                                wavgx += lastXs[i]/math.sqrt(abs(lastXs[i]-xs[j]))
+                                wavgDivisor += 1./math.sqrt(abs(lastXs[i]-xs[j]))
+                            if (wavgDivisor != 0):
+                                wavg = wavg/wavgDivisor
+                                wavgx = wavgx/wavgDivisor
+                            else:
+                                #We seem to have no datapoints in lastYs.  Simply use previous value
+                                wavg = currY
+                                wavgx = currX
+                            #More than 50 pixels in deltaX between weight average of last 10
+                            #datapoints and current X
+                            #And not the discontinuity in middle of xs np.where we jump from end back to center
+                            #because abs(xs[j]-xs[j-1]) == step
+                            if (abs(xs[j]-xs[j-1]) == step and abs(wavgx-xs[j]) > 50):
+                                if (len(lastYs) > 1):
+                                    #Fit slope to lastYs
+                                    lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastXs),np.array(lastYs)))
+                                    slope = lin[0][1]
+                                else:
+                                    #Only 1 datapoint, use -0.04 as slope
+                                    slope = -0.04
+                                #Calculate guess for refY and max acceptable error
+                                #err = 1+0.04*deltaX, with a max value of 3.
+                                refY = wavg+slope*(xs[j]-wavgx)
+                                maxerr = min(1+int(abs(xs[j]-wavgx)*.04),3)
+                            else:
+                                if (len(lastYs) > 3):
+                                    #Fit slope to lastYs
+                                    lin = leastsq(linResiduals, [0.,0.], args=(np.array(lastXs),np.array(lastYs)))
+                                    slope = lin[0][1]
+                                else:
+                                    #Less than 4 datapoints, use -0.04 as slope
+                                    slope = -0.04
+                                #Calculate guess for refY and max acceptable error
+                                #0.5 <= maxerr <= 2 in this case.  Use slope*50 if it falls in that range
+                                refY = wavg+slope*(xs[j]-wavgx)
+                                maxerr = max(min(abs(slope*50),2),0.5)
+                            #Discontinuity point in xs. Keep if within +/-1.
+                            if (xs[j] == xinit-step and abs(lsq[0][1]-currY) < 1):
+                                #update currX, currY, append to all lists
+                                f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t0\n')
+                                currY = lsq[0][1]
+                                currX = xs[j]
+                                meds.append(medVal)
+                                maxcors.append(maxcor_val)
+                                xcoords.append(xs[j])
+                                ycoords.append(lsq[0][1])
+                                lastXs.append(xs[j])
+                                lastYs.append(lsq[0][1])
+                                lastSeg = currSeg
+                            elif (lastSeg != currSeg):
+                                #update currX, currY, append to all lists
+                                f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t0\n')
+                                currY = lsq[0][1]
+                                currX = xs[j]
+                                meds.append(medVal)
+                                maxcors.append(maxcor_val)
+                                xcoords.append(xs[j])
+                                ycoords.append(lsq[0][1])
+                                lastXs.append(xs[j])
+                                lastYs.append(lsq[0][1])
+                                lastSeg = currSeg
+                                continue
+                            elif (abs(lsq[0][1] - refY) < maxerr):
+                                #Regular datapoint.  Apply sanity check rejection criteria here
+                                #Discard if farther than maxerr away from refY
+                                if (abs(xs[j]-currX) < 4*step and maxerr > 1 and abs(lsq[0][1]-currY) > maxerr):
+                                    #Also discard if < 20 pixels in X from last fit datapoint, and deltaY > 1
+                                    f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t4\n')
+                                    continue
+                                #update currX, currY, append to all lists
+                                f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t0\n')
+                                currY = lsq[0][1]
+                                currX = xs[j]
+                                meds.append(medVal)
+                                maxcors.append(maxcor_val)
+                                xcoords.append(xs[j])
+                                ycoords.append(lsq[0][1])
+                                lastXs.append(xs[j])
+                                lastYs.append(lsq[0][1])
+                                lastSeg = currSeg
+                                #keep lastXs and lastYs at 10 elements or less
+                                if (len(lastYs) > 10):
+                                    lastXs.pop(0)
+                                    lastYs.pop(0)
+                            else:
+                                f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(lsq[0][1])+'\t5\n')
+                        #print xs[j], p[1], len(maxcors), lsq[0][1], arraymedian(cut1d), max(ccor)
+                    if (active_edge_method == "cross_correlation" and edge_detection_method == "auto" and len(ycoords) == 0):
+                        #cross_correlation found nothing for this edge - likely a weak local-minimum
+                        #dip rather than a genuine step edge.  Retry this same edge with local_minimum
+                        #before giving up on it entirely.
+                        print("findSlitletProcess::traceOrders> Order "+str(slitidx)+", syval="+str(syval)+": cross_correlation found 0 datapoints, retrying with local_minimum...")
+                        self._log.writeLog(__name__, "Order "+str(slitidx)+", syval="+str(syval)+": cross_correlation found 0 datapoints, retrying with local_minimum...", type=fatboyLog.WARNING)
+                        active_edge_method = "local_minimum"
+                        continue
+                    break
                 print("findSlitletProcess::traceOrders> Order "+str(slitidx)+", syval="+str(syval)+": found "+str(len(ycoords))+" datapoints.")
                 self._log.writeLog(__name__, "Order "+str(slitidx)+", syval="+str(syval)+": found "+str(len(ycoords))+" datapoints.")
                 #Phase 2 of rejection criteria after slitlets have been traced
@@ -1645,6 +1694,16 @@ class findSlitletProcess(fatboyProcess):
         elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
             islit = flatData[xinit-5:xinit+6, slitlet_trace_ylo:slitlet_trace_yhi].sum(0).astype(np.float64)
 
+        #Write per-datapoint diagnostic stats, same format/codes as traceOrders'
+        #stats_<flatid>.txt (0=kept, 1=maxfev exceeded, 2=negative flux, 3=negative
+        #width, 4=jump too large vs trend, 5=too far from predicted trend).  traceSlitlets
+        #only fits one combined shift curve (not per-edge), so there is one row per x step
+        #rather than per slitlet.
+        if (not os.access(outdir+"/findSlitlets", os.F_OK)):
+            os.mkdir(outdir+"/findSlitlets",0o755)
+        statsfile = outdir+"/findSlitlets/stats_"+masterFlat._id+".txt"
+        f = open(statsfile,'w')
+
         #Setup lists and arrays
         #xs = x values (dispersion direction) to cross correlate at
         #Start at middle and trace to end then to beginning
@@ -1705,16 +1764,20 @@ class findSlitletProcess(fatboyProcess):
                 continue
             #Error checking results of leastsq call
             if (lsq[1] == 5):
+                f.write(str(xs[j])+'\t'+str(lsq[0][1])+'\t1\n')
                 #exceeded max number of calls = ignore
                 continue
             if (lsq[0][0]+lsq[0][3] < 0):
+                f.write(str(xs[j])+'\t'+str(lsq[0][1])+'\t2\n')
                 #flux less than zero = ignore
                 continue
             if (lsq[0][2] < 0 and j != 0):
+                f.write(str(xs[j])+'\t'+str(lsq[0][1])+'\t3\n')
                 #negative boxsize = ignore unless first datapoint
                 continue
             if (j == 0):
                 #First datapoint -- update currX, currY, append to all lists
+                f.write(str(xs[j])+'\t'+str(lsq[0][1])+'\t0\n')
                 currY = lsq[0][1]
                 currX = xs[0]
                 meds.append(arraymedian(cut1d))
@@ -1776,6 +1839,7 @@ class findSlitletProcess(fatboyProcess):
                 #Discontinuity point in xs. Keep if within +/-1.
                 if (xs[j] == xinit-step and abs(lsq[0][1]-currY) < 1):
                     #update currX, currY, append to all lists
+                    f.write(str(xs[j])+'\t'+str(lsq[0][1])+'\t0\n')
                     currY = lsq[0][1]
                     currX = xs[j]
                     meds.append(arraymedian(cut1d))
@@ -1789,8 +1853,10 @@ class findSlitletProcess(fatboyProcess):
                     #Discard if farther than maxerr away from refY
                     if (abs(xs[j]-currX) < 4*step and maxerr > 1 and abs(lsq[0][1]-currY) > maxerr):
                         #Also discard if < 20 pixels in X from last fit datapoint, and deltaY > 1
+                        f.write(str(xs[j])+'\t'+str(lsq[0][1])+'\t4\n')
                         continue
                     #update currX, currY, append to all lists
+                    f.write(str(xs[j])+'\t'+str(lsq[0][1])+'\t0\n')
                     currY = lsq[0][1]
                     currX = xs[j]
                     meds.append(arraymedian(cut1d))
@@ -1803,7 +1869,10 @@ class findSlitletProcess(fatboyProcess):
                     if (len(lastYs) > 10):
                         lastXs.pop(0)
                         lastYs.pop(0)
+                else:
+                    f.write(str(xs[j])+'\t'+str(lsq[0][1])+'\t5\n')
             #print xs[j], p[1], len(maxcors), lsq[0][1], arraymedian(cut1d), max(ccor)
+        f.close()
         print("findSlitletProcess::traceSlitlets> found "+str(len(ycoords))+" datapoints.")
         self._log.writeLog(__name__, "found "+str(len(ycoords))+" datapoints.")
         #Phase 2 of rejection criteria after slitlets have been traced
