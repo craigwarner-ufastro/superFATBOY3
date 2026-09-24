@@ -8,6 +8,7 @@ from superFATBOY import gpu_imcombine, imcombine
 import numpy as np
 import math
 from scipy.optimize import leastsq
+from scipy.interpolate import UnivariateSpline
 
 usePlot = True
 try:
@@ -438,6 +439,10 @@ class findSlitletProcess(fatboyProcess):
         self._optioninfo.setdefault('fiber_width', 'Width of fibers, used with peak local max')
         self._options.setdefault('fit_order', '2')
         self._optioninfo.setdefault('fit_order', 'Order of polynomial to use to fit slitlet shape.\nRecommended value = 2 for trace_slitlets_individually, 3 for group mode')
+        self._options.setdefault('fit_function', 'polynomial')
+        self._optioninfo.setdefault('fit_function', 'Function used to fit the traced (x,y) edge/shift datapoints to a smooth curve\nY=f(X):\npolynomial (default) = single global leastsq polynomial fit of fit_order, as before.\nA higher fit_order fits real curvature better locally but its extrapolation past the\nfitted x-range grows increasingly unstable (Runge\'s phenomenon) -- see rectifyProcess\'s\nsimilar spline-vs-polynomial finding.\nspline = smoothing B-spline (scipy UnivariateSpline, degree=min(fit_order,5)) through\nthe same datapoints.  Follows local curvature at least as well and extrapolates far\nmore stably at the fitted range\'s edges/gaps, at the cost of no longer having simple\npolynomial coefficients to log.  Falls back to polynomial automatically if there are\ntoo few datapoints for the requested spline degree.')
+        self._options.setdefault('spline_smoothing', '-1')
+        self._optioninfo.setdefault('spline_smoothing', 'For fit_function=spline only: smoothing factor (scipy UnivariateSpline\'s s).\n-1 (default) = let scipy pick its own default smoothing.  Larger values smooth more\n(fewer, gentler wiggles); 0 = interpolate every point exactly (no smoothing at all).')
         self._options.setdefault('invert_before_correlating', 'no')
         self._optioninfo.setdefault('invert_before_correlating', 'Invert flat field to turn gap trough into a peak for cross correlations')
 
@@ -487,6 +492,41 @@ class findSlitletProcess(fatboyProcess):
         self._options.setdefault('write_plots', 'no')
     #end setDefaultOptions
 
+    #Fit Y=f(X) to (xdata,ydata) datapoints and evaluate at xeval, for either
+    #traceOrders' or traceSlitlets' trace-curve fit step.  Returns
+    #(yeval_at_xeval, yfit_at_xdata, coeffs) -- yfit_at_xdata lets a caller compute
+    #residuals directly at the input datapoints without a second evaluation call,
+    #and coeffs is the polynomial coefficient array for logging (None for spline,
+    #which has no simple coefficient list).
+    def fitTraceCurve(self, xdata, ydata, order, fit_function, xeval, spline_smoothing=-1):
+        xdata = np.asarray(xdata, dtype=np.float64)
+        ydata = np.asarray(ydata, dtype=np.float64)
+        if (fit_function == "spline"):
+            k = max(1, min(int(order), 5))
+            if (len(xdata) > k):
+                #UnivariateSpline requires strictly increasing, unique x.  Both trace
+                #directions (walking out from xinit each way) can overlap near xinit,
+                #so average y at any duplicate x rather than erroring or dropping data.
+                srt = np.argsort(xdata)
+                xu, uidx, counts = np.unique(xdata[srt], return_inverse=True, return_counts=True)
+                if (len(xu) > k):
+                    yu = np.zeros(len(xu), np.float64)
+                    ysort = ydata[srt]
+                    for i in range(len(xu)):
+                        yu[i] = ysort[uidx == i].mean()
+                    try:
+                        s = None if (spline_smoothing < 0) else spline_smoothing
+                        spl = UnivariateSpline(xu, yu, k=k, s=s)
+                        return spl(xeval), spl(xdata), None
+                    except Exception:
+                        pass #Fall through to polynomial fallback below
+        #polynomial (default, and spline fallback for too few/degenerate datapoints)
+        p = np.zeros(order+1, np.float64)
+        p[0] = ydata[-1] if (len(ydata) > 0) else 0.
+        lsq = leastsq(polyResiduals, p, args=(xdata,ydata,order))
+        return polyFunction(lsq[0], xeval, order), polyFunction(lsq[0], xdata, order), lsq[0]
+    #end fitTraceCurve
+
     ## Trace out individual echelle orders
     def traceOrders(self, fdu, calibs):
         ###*** For purposes of traceOrders algorithm, X = dispersion direction and Y = cross-dispersion direction ***###
@@ -518,6 +558,8 @@ class findSlitletProcess(fatboyProcess):
         maxResidualError = float(self.getOption("max_residual_error", fdu.getTag()))
         edge_detection_method = self.getOption("edge_detection_method", fdu.getTag()).lower()
         local_min_depth_threshold = float(self.getOption("local_min_depth_threshold", fdu.getTag()))
+        fit_function = self.getOption("fit_function", fdu.getTag()).lower()
+        spline_smoothing = float(self.getOption("spline_smoothing", fdu.getTag()))
         do_edge_extend = False
         if (self.getOption("edge_extend_to_chip", fdu.getTag()).lower() == "yes"):
             do_edge_extend = True
@@ -1052,11 +1094,9 @@ class findSlitletProcess(fatboyProcess):
                         self._log.writeLog(__name__, "rejecting outliers (phase 2) - kept "+str(len(seg_ycoords))+" datapoints.", printCaller=False, tabLevel=1)
                     #xin = 1-d np.array of x indices
                     xin = np.arange(xstride, dtype=np.float32)+sxlo
-                    #Fit nth order (recommended 2nd) order polynomial to datapoints, Y = f(X)
-                    p = np.zeros(seg_order+1, np.float64)
-                    p[0] = ycoords[0]
+                    #Fit trace curve (recommended 2nd order/degree) to datapoints, Y = f(X)
                     try:
-                        lsq = leastsq(polyResiduals, p, args=(seg_xcoords,seg_ycoords,seg_order))
+                        yoffset, yfit_seg, _coeffs = self.fitTraceCurve(seg_xcoords, seg_ycoords, seg_order, fit_function, xin, spline_smoothing)
                     except Exception as ex:
                         print("findSlitletProcess::traceOrders> ERROR: Could not trace "+seg_name+"Slit "+str(slitidx+1)+" for "+fdu.getFullId()+": "+str(ex)+".  Using a straight (uncurved) fallback for this segment.")
                         self._log.writeLog(__name__, "Could not trace "+seg_name+"Slit "+str(slitidx+1)+" for "+fdu.getFullId()+": "+str(ex)+".  Using a straight (uncurved) fallback for this segment.", type=fatboyLog.ERROR)
@@ -1069,8 +1109,7 @@ class findSlitletProcess(fatboyProcess):
                         continue
 
                     #Compute output offsets and residuals from actual datapoints
-                    yoffset = polyFunction(lsq[0], xin, seg_order)
-                    yresid = yoffset[seg_xcoords-sxlo]-seg_ycoords
+                    yresid = yfit_seg-seg_ycoords
                     #Remove outliers and refit
                     b = np.abs(yresid) < yresid.mean()+2.5*yresid.std()
                     seg_xcoords = seg_xcoords[b]
@@ -1106,12 +1145,9 @@ class findSlitletProcess(fatboyProcess):
                             z1[-1] = np.concatenate([z1[-1], np.zeros(xstride)-yf0])
                         continue
 
-                    #Use previous guess
-                    p = lsq[0].astype(np.float64)
-                    #p = np.zeros(seg_order+1, np.float64)
-                    #p[0] = ycoords[0]
+                    #Refit with outliers removed
                     try:
-                        lsq = leastsq(polyResiduals, p, args=(seg_xcoords,seg_ycoords,seg_order))
+                        yoffset, _, coeffs = self.fitTraceCurve(seg_xcoords, seg_ycoords, seg_order, fit_function, xin, spline_smoothing)
                     except Exception as ex:
                         print("findSlitletProcess::traceOrders> ERROR: Could not trace "+seg_name+"Slit "+str(slitidx+1)+" for "+fdu.getFullId()+": "+str(ex)+".  Using a straight (uncurved) fallback for this segment.")
                         self._log.writeLog(__name__, "Could not trace "+seg_name+"Slit "+str(slitidx+1)+" for "+fdu.getFullId()+": "+str(ex)+".  Using a straight (uncurved) fallback for this segment.", type=fatboyLog.ERROR)
@@ -1123,10 +1159,13 @@ class findSlitletProcess(fatboyProcess):
                             z1[-1] = np.concatenate([z1[-1], np.zeros(xstride)-yf0])
                         continue
 
-                    print("\tFit = "+formatList(lsq[0]))
-                    self._log.writeLog(__name__, "Fit = "+formatList(lsq[0]), printCaller=False, tabLevel=1)
+                    if (coeffs is not None):
+                        print("\tFit = "+formatList(coeffs))
+                        self._log.writeLog(__name__, "Fit = "+formatList(coeffs), printCaller=False, tabLevel=1)
+                    else:
+                        print("\tFit = spline (k="+str(max(1, min(int(seg_order), 5)))+")")
+                        self._log.writeLog(__name__, "Fit = spline (k="+str(max(1, min(int(seg_order), 5)))+")", printCaller=False, tabLevel=1)
                     #Create new yoffset at every integer x
-                    yoffset = polyFunction(lsq[0], xin, seg_order)
                     if (seg == 0):
                         #Subtract zero point
                         z1.append(yoffset - yoffset[0])
@@ -1572,6 +1611,8 @@ class findSlitletProcess(fatboyProcess):
         slitlet_trace_ylo = int(self.getOption("slitlet_trace_ylo", fdu.getTag()))
         slitlet_trace_yhi = int(self.getOption("slitlet_trace_yhi", fdu.getTag()))
         order = int(self.getOption("fit_order", fdu.getTag()))
+        fit_function = self.getOption("fit_function", fdu.getTag()).lower()
+        spline_smoothing = float(self.getOption("spline_smoothing", fdu.getTag()))
         cen = (slitlet_trace_yhi-slitlet_trace_ylo)/2.0 #Center of 1-d cut
         #Get region file for this FDU
         if (fdu.hasProperty("region_file")):
@@ -1887,11 +1928,9 @@ class findSlitletProcess(fatboyProcess):
         self._log.writeLog(__name__, "rejecting outliers (phase 2) - kept "+str(len(ycoords))+" datapoints.", printCaller=False, tabLevel=1)
         #new xs = 1-d np.array of x indices
         xs = np.arange(xsize, dtype=np.float32)
-        #Fit n-th order (recommended 3rd order) polynomial to datapoints, Y = f(X)
-        p = np.zeros(order+1, np.float64)
-        p[0] = ycoords[-1]
+        #Fit trace curve (recommended 3rd order/degree) to datapoints, Y = f(X)
         try:
-            lsq = leastsq(polyResiduals, p, args=(xcoords,ycoords,order))
+            yoffset, yfit, _coeffs = self.fitTraceCurve(xcoords, ycoords, order, fit_function, xs, spline_smoothing)
         except Exception as ex:
             print("findSlitletProcess::traceOrders> ERROR: Could not trace slitlets for "+fdu.getFullId()+"! Discarding Image!")
             self._log.writeLog(__name__, "Could not trace slitlets for "+fdu.getFullId()+"! Discarding Image!", type=fatboyLog.ERROR)
@@ -1900,20 +1939,16 @@ class findSlitletProcess(fatboyProcess):
             return calibs
 
         #Compute output offsets and residuals from actual datapoints
-        yoffset = polyFunction(lsq[0], xs, order)
-        yresid = yoffset[xcoords]-ycoords
+        yresid = yfit-ycoords
         #Remove outliers and refit
         b = np.abs(yresid) < yresid.mean()+2.5*yresid.std()
         xcoords = xcoords[b]
         ycoords = ycoords[b]
         print("\trejecting outliers (phase 3). Sigma = "+formatNum(yresid.std())+". Using "+str(len(ycoords))+" datapoints to fit slitlets.")
         self._log.writeLog(__name__, "rejecting outliers (phase 3). Sigma = "+formatNum(yresid.std())+". Using "+str(len(ycoords))+" datapoints to fit slitlets.", printCaller=False, tabLevel=1)
-        #use previous fit as guess
-        p = lsq[0].astype(np.float64)
-        #p = np.zeros(order+1, np.float64)
-        #p[0] = ycoords[-1]
+        #Refit with outliers removed
         try:
-            lsq = leastsq(polyResiduals, p, args=(xcoords,ycoords,order))
+            yoffset, _, _coeffs2 = self.fitTraceCurve(xcoords, ycoords, order, fit_function, xs, spline_smoothing)
         except Exception as ex:
             print("findSlitletProcess::traceOrders> ERROR: Could not trace slitlets for "+fdu.getFullId()+"! Discarding Image!")
             self._log.writeLog(__name__, "Could not trace slitlets for "+fdu.getFullId()+"! Discarding Image!", type=fatboyLog.ERROR)
@@ -1921,8 +1956,6 @@ class findSlitletProcess(fatboyProcess):
             fdu.disable()
             return calibs
 
-        #Create new yoffset at every integer x
-        yoffset = polyFunction(lsq[0], xs, order)
         #Subtract zero point
         z1 = yoffset - yoffset[0]
         yloMask = np.zeros((nslits, len(z1)))
