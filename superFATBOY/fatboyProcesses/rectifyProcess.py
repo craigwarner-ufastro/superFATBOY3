@@ -3059,27 +3059,10 @@ class rectifyProcess(fatboyProcess):
             drihizzle_method = drihizzle.drihizzle
 
         #inmask = 0 in between slitlets
-        #xtrans_rect/ytrans_rect can come from different code paths that don't agree on
-        #numpy vs cupy (e.g. one built via calculateMOSContinuaTrans, always numpy, the other
-        #from a cached calib reused from a prior frame), so normalize both explicitly to
-        #whatever this drihizzle call needs rather than assume they already match.
-        xtransArr = calibs['xtrans_rect'].getData()
-        ytransArr = calibs['ytrans_rect'].getData()
-        if (self._fdb.getGPUMode()):
-            xtransArr = cp.asarray(xtransArr)
-            ytransArr = cp.asarray(ytransArr)
-        else:
-            xtransArr = cp.asnumpy(xtransArr) if hasattr(xtransArr, 'get') else xtransArr
-            ytransArr = cp.asnumpy(ytransArr) if hasattr(ytransArr, 'get') else ytransArr
-        crMask = (xtransArr != 0)*(ytransArr != 0)
+        crMask = (calibs['xtrans_rect'].getData() != 0)*(calibs['ytrans_rect'].getData() != 0)
         #inmask *= fdu.crMask if cosmic ray method = mask
         if (fdu.hasProperty("crmask")):
-            crmaskArr = fdu.getProperty("crmask") #crmask is good pixel mask
-            if (self._fdb.getGPUMode()):
-                crmaskArr = cp.asarray(crmaskArr)
-            elif (hasattr(crmaskArr, 'get')):
-                crmaskArr = cp.asnumpy(crmaskArr)
-            crMask *= crmaskArr
+            crMask *= fdu.getProperty("crmask") #crmask is good pixel mask
 
         #First update slitmask before anything else.  Use "uniform" kernel.
         if ('slitmask' in calibs and not calibs['slitmask'].hasProperty("rectified")):
