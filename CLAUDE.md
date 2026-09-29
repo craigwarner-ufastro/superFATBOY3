@@ -9,6 +9,59 @@ improve error handling) and the specific algorithms flagged for later improvemen
 (findSlitletProcess, removeCosmicRaysSpecProcess, rectifyProcess, wavelengthCalibrateProcess).
 Work happens on the `refactor` branch, one commit per meaningful change.
 
+## Algorithm-audit methodology, distilled from findSlitletProcess (2026-09-28)
+
+`findSlitletProcess` (`traceOrders`/`traceSlitlets`) just went through a full five-question robustness
+audit (root-cause a class of failures, propose alternatives, ship them as new options) — commits
+`fc1e581`/`c474a5e`, versions 2.3.27/2.3.28. `rectifyProcess` and `wavelengthCalibrateProcess` are next
+on the deferred audit list (see the algorithm-audit-list memory for what's already been found on both).
+Before starting either, apply these lessons — they're about *how* to run this kind of audit well, not
+what was found this time:
+
+- **Pull the real 1-d cuts / raw arrays directly from the pipeline's own intermediate FITS files
+  (master flats, etc.) before hypothesizing a fix.** The LUCI "0 datapoints" bug looked like it could
+  be a dozen different things from the log alone; reading the actual flux profile at the failing
+  y-position immediately showed it was a weak local-minimum dip, not a step edge — a completely
+  different failure mode than a first guess (bad threshold, off-by-one, etc.) would suggest.
+- **A new detection/fit mode must be validated against the datasets that already work, not just the
+  one that's failing.** `edge_detection_method=local_minimum` looked like a strict win on LUCI's
+  weak-dip edges until it was run on LUCI's own *good* step edges too — where it regressed catastrophically
+  (383→14 datapoints on one edge). The fix was `auto`: try the existing method first, only fall back
+  per-edge when that method demonstrably finds nothing. **Prefer this "try-old-then-fall-back"
+  pattern over a global mode switch** unless you've proven the new mode safe across every regime the
+  old one already covers.
+- **Test across datasets with deliberately different characteristics, not just the one that surfaced
+  the bug.** Craig explicitly asked for this ("the slits can look very different — right next to each
+  other or well spaced out") and it mattered: LUCI (packed slits) hit the weak-dip failure,
+  MIRADAS order 20 (~30px real gaps) never did — confirming `auto` mode's fallback correctly never
+  fires there (byte-identical rejection-code histogram to baseline). One dataset's result generalizes
+  badly in a codebase supporting a dozen+ instruments.
+- **Don't port a numeric conclusion from a sibling algorithm's audit without re-validating it at the
+  target function's actual regime.** The earlier `rectifyProcess` audit found splines beat polynomials
+  ~4x on RMS — but that was at fit order ~7, where polynomial extrapolation (Runge's phenomenon) is a
+  real problem. Naively assuming "splines are just better" and porting that into `findSlitletProcess`
+  would have been wrong: at its conventional fit order (2-4), a smoothing spline finds 0 interior knots
+  and becomes numerically identical to the polynomial — confirmed both on real LUCI data and
+  synthetically by sweeping fit order until the two actually diverged. The lesson generalizes both
+  ways: when auditing `wavelengthCalibrateProcess` next, check what regime *it* actually operates in
+  before assuming a fix that worked for `findSlitletProcess` or `rectifyProcess` transfers.
+- **Check sibling code paths for diagnostic-capability parity before concluding "there's no way to see
+  why this was rejected."** `traceOrders` had a per-datapoint `stats_<flatid>.txt` rejection-code log;
+  its sibling `traceSlitlets` (same file, same algorithm family, `trace_slitlets_individually=no`) had
+  none, which meant a real EMIR dataset's failure had to be diagnosed by hand-reimplementing the whole
+  loop in a scratchpad script. Adding the same stats file to `traceSlitlets` fixed this permanently and
+  took one pass. Check for this kind of asymmetry early in `rectifyProcess`/`wavelengthCalibrateProcess`
+  too — they likely have similar near-duplicate function pairs.
+- **Prove a "no-op" default with a real full-log diff, not just "it still passes."** Any refactor that
+  touches a function on the default code path (e.g. factoring the polynomial fit into a shared
+  `fitTraceCurve()` helper used by both new and old options) should be validated by diffing the complete
+  log of a real run before vs. after against the *exact* same dataset/config — not just checking the
+  new run also succeeds. That's how the `fit_function` refactor was confirmed behavior-preserving
+  (byte-identical `found N datapoints`/`rejecting outliers`/`Sigma` lines across ~50 fits).
+- Per [[feedback_scrub_debug_mode_before_runs]] (auto-memory): never enable `debug_mode` for
+  verification runs even when it would show the exact plot you want — write the equivalent data to
+  disk (a stats file, an ad-hoc `np.save`, a synthetic reproduction of the same math) instead.
+
 ## Second real end-to-end test: oriBench.xml (NIR imaging) PASSED, all 4 combos cross-validated (2026-09-16)
 
 `cd /home/cwarner/work/xml && superFatboy3.py oriBench.xml` — a NIR imaging dataset (dark/flat/
