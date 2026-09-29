@@ -7,6 +7,7 @@ from superFATBOY import gpu_imcombine, imcombine
 import numpy as np
 import math
 from scipy.optimize import leastsq
+from scipy.interpolate import UnivariateSpline
 from superFATBOY import gpu_drihizzle, drihizzle
 
 usePlot = True
@@ -32,6 +33,8 @@ class rectifyProcess(fatboyProcess):
 
         #Read options
         fit_order = int(self.getOption("fit_order", fdu.getTag()))
+        fit_function = self.getOption("fit_function", fdu.getTag()).lower()
+        spline_smoothing = float(self.getOption("spline_smoothing", fdu.getTag()))
         maxSpectra = int(self.getOption("max_continua_per_slit", fdu.getTag()))
         thresh = float(self.getOption("min_threshold", fdu.getTag()))
         minCovFrac = float(self.getOption("min_coverage_fraction", fdu.getTag()))
@@ -148,6 +151,17 @@ class rectifyProcess(fatboyProcess):
         #Index np.array used for fitting
         yind = np.arange(ysize, dtype=np.float64)
 
+        #Per-datapoint diagnostic stats file, same convention as
+        #traceMOSContinuaRectification's stats_<fduid>.txt (see ptlog comment below for
+        #the code list).  slitidx column is always 0 here -- longslit has one continuum
+        #trace per FDU, no slitmask.
+        outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
+        if (not os.access(outdir+"/rectified", os.F_OK)):
+            os.mkdir(outdir+"/rectified",0o755)
+        statsfile = outdir+"/rectified/stats_"+fdu._id+".txt"
+        statsf = open(statsfile, 'w')
+        statsf.write("#fduid\tslitidx\tycen\tx\tcode\n")
+
         #Loop over FDUs
         for currFDU in rctfdus:
             if (not currFDU.hasProperty("continua_list")):
@@ -195,6 +209,16 @@ class rectifyProcess(fatboyProcess):
                 #xcoords and ycoords contain lists of fit (x,y) points
                 xcoords = []
                 ycoords = []
+                #Per-datapoint diagnostic log: (x, rejection code), same convention as
+                #traceMOSContinuaRectification's stats_<fduid>.txt (code 1/10 unused here --
+                #this function has no hard "init failed, abandon continuum" break at j==0,
+                #and no segments).  0=kept, 2=below significance threshold, 4=peak too far
+                #from current Y, 5=gaussian fit raised an exception, 6=leastsq exceeded max
+                #function calls, 7=negative total flux, 8=negative FWHM, 9=FWHM too
+                #different from first point's FWHM, 11=kept at the mid/end discontinuity
+                #point, 12=rejected: within 4*step of last kept point but too far in Y,
+                #13=rejected: too far from the trend line predicted from recent points
+                ptlog = []
                 #peak values of fits are kept and used as rejection criteria later
                 peaks = []
                 #Up to last 10 (x,y) pairs are kept and used in various rejection criteria
@@ -254,24 +278,30 @@ class rectifyProcess(fatboyProcess):
                     stdrng = list(range(ylo,ylo+yboxsize+1))+list(range(yhi-yboxsize-1,yhi))
                     if (p[0]-p[3] < 7*y[stdrng].std() and j != 0):
                         #Set minimum threshold at 7 sigma significance to be continnum
+                        ptlog.append((xs[j], 2))
                         continue
                     if (abs(p[1]-currY) > yboxsize and j != 0):
                         #Highest value is > yboxsize pixels from the previously fit peak.  Throw out this point
+                        ptlog.append((xs[j], 4))
                         continue
                     try:
                         lsq = leastsq(gaussResiduals, p, args=(yind[ylo:yhi], y[ylo:yhi]))
                     except Exception as ex:
+                        ptlog.append((xs[j], 5))
                         continue
 
                     #Error checking results of leastsq call
                     if (lsq[1] == 5):
                         #exceeded max number of calls = ignore
+                        ptlog.append((xs[j], 6))
                         continue
                     if (lsq[0][0]+lsq[0][3] < 0):
                         #flux less than zero = ignore
+                        ptlog.append((xs[j], 7))
                         continue
                     if (lsq[0][2] < 0 and j != 0):
                         #negative fwhm = ignore unless first datapoint
+                        ptlog.append((xs[j], 8))
                         continue
                     if (j == 0):
                         #First datapoint -- update currX, currY, append to all lists
@@ -282,6 +312,7 @@ class rectifyProcess(fatboyProcess):
                         ycoords.append(lsq[0][1])
                         lastXs.append(xs[j])
                         lastYs.append(lsq[0][1])
+                        ptlog.append((xs[j], 0))
                         #update gaussWidth to be actual fit FWHM
                         if (lsq[0][2] < gaussWidth):
                             #1.5 pixel minimum default
@@ -289,6 +320,7 @@ class rectifyProcess(fatboyProcess):
                     else:
                         #FWHM is over a factor of 2 different than first fit.  Throw this point out
                         if (lsq[0][2] > 2*gaussWidth or lsq[0][2] < 0.5*gaussWidth):
+                            ptlog.append((xs[j], 9))
                             continue
                         #Sanity check
                         #Calculate predicted "ref" value of Y based on slope of previous
@@ -353,11 +385,13 @@ class rectifyProcess(fatboyProcess):
                             ycoords.append(lsq[0][1])
                             lastXs.append(xs[j])
                             lastYs.append(lsq[0][1])
+                            ptlog.append((xs[j], 11))
                         elif (abs(lsq[0][1] - refY) < maxerr):
                             #Regular datapoint.  Apply sanity check rejection criteria here
                             #Discard if farther than maxerr away from refY
                             if (abs(xs[j]-currX) < 4*step and maxerr > 1 and abs(lsq[0][1]-currY) > maxerr):
                                 #Also discard if < 20 pixels in X from last fit datapoint, and deltaY > 1
+                                ptlog.append((xs[j], 12))
                                 continue
                             #update currX, currY, append to all lists
                             currY = lsq[0][1]
@@ -367,11 +401,19 @@ class rectifyProcess(fatboyProcess):
                             ycoords.append(lsq[0][1])
                             lastXs.append(xs[j])
                             lastYs.append(lsq[0][1])
+                            ptlog.append((xs[j], 0))
                             #keep lastXs and lastYs at 10 elements or less
                             if (len(lastYs) > 10):
                                 lastXs.pop(0)
                                 lastYs.pop(0)
+                        else:
+                            #More than maxerr away from refY.  Unlike traceMOSContinuaRectification's
+                            #sibling loop, this point is not added to lastXs/lastYs -- only accepted
+                            #points inform the trend line here.  Logged for the audit, not yet changed.
+                            ptlog.append((xs[j], 13))
                     #print xs[j], p[1], lsq[0][1], lsq[0][0], lsq[0][2]
+                for (ptx, ptcode) in ptlog:
+                    statsf.write(currFDU.getFullId()+"\t0\t"+str(ycen)+"\t"+str(ptx)+"\t"+str(ptcode)+"\n")
                 print("rectifyProcess::calcLongslitContinuaRectification> Continuum centered at "+str(ycen)+" in "+currFDU.getFullId()+": found "+str(len(ycoords))+" datapoints.")
                 self._log.writeLog(__name__, "Continuum centered at "+str(ycen)+" in "+currFDU.getFullId()+": found "+str(len(ycoords))+" datapoints.")
                 #Check coverage fraction
@@ -393,22 +435,19 @@ class rectifyProcess(fatboyProcess):
                 print("\trejecting outliers (phase 2) - kept "+str(len(ycoords))+" datapoints.")
                 self._log.writeLog(__name__, "rejecting outliers (phase 2) - kept "+str(len(ycoords))+" datapoints.", printCaller=False, tabLevel=1)
 
-                #Fit 2nd order order polynomial to datapoints, Y = f(X)
+                #Fit 2nd order order polynomial (or spline, see fit_function) to datapoints, Y = f(X)
                 order = 2
-                p = np.zeros(order+1, np.float64)
-                p[0] = ycoords[0]
+                xcen = xsize//2
                 try:
-                    lsq = leastsq(polyResiduals, p, args=(xcoords,ycoords,order))
+                    (currYout, yprime, _coeffs) = self.fitTraceCurve(xcoords, ycoords, order, fit_function, xcen, spline_smoothing)
                 except Exception as ex:
                     print("rectifyProcess::calcLongslitContinuaRectification> Could not fit continuum: "+str(ex))
                     self._log.writeLog(__name__, "Could not fit continuum: "+str(ex))
                     continue
 
                 #Compute output offsets and residuals from actual datapoints
-                yprime = polyFunction(lsq[0], xcoords, order)
                 yresid = yprime-ycoords
-                xcen = xsize//2
-                currYout = polyFunction(lsq[0], xcen, order) #yout at xcenter
+                currYout = float(currYout) #yout at xcenter
                 #Remove outliers and refit
                 b = np.abs(yresid) < yresid.mean()+2.5*yresid.std()
                 xcoords = xcoords[b]
@@ -465,6 +504,7 @@ class rectifyProcess(fatboyProcess):
 
         print("rectifyProcess::calcLongslitContinuaRectification> Successfully traced out "+str(ncont)+ " continua.  Fitting transformation...")
         self._log.writeLog(__name__, "Successfully traced out "+str(ncont)+ " continua.  Fitting transformation...")
+        statsf.close()
         #Convert to arrays
         xin = np.array(xin, dtype=np.float32)
         yin = np.array(yin, dtype=np.float32)
@@ -1250,6 +1290,39 @@ class rectifyProcess(fatboyProcess):
     ## evalFunc(coeffs, order) must return the actual transform values that will be written
     ## out, already restricted to whatever pixels/mask this fit applies to.
     ## Returns (coeffs, order, ok) -- ok is False if even the linear fallback is unusable.
+    ## Fit a 1-d curve Y = f(X) to trace datapoints, used for the phase-3 outlier rejection
+    ## in both calcLongslitContinuaRectification and traceMOSContinuaRectification.  Same
+    ## polynomial/spline choice and fallback behavior as findSlitletProcess.fitTraceCurve
+    ## (see the algorithm-audit notes on why this needs re-validating per target function --
+    ## a smoothing spline is numerically identical to the polynomial at the low fit_order
+    ## (2-4) these functions typically use; it only matters if someone raises the order for a
+    ## more sharply curved trace).  Returns (yeval, yatdata, coeffsOrNone).
+    def fitTraceCurve(self, xdata, ydata, order, fit_function, xeval, spline_smoothing=-1):
+        xdata = np.asarray(xdata, dtype=np.float64)
+        ydata = np.asarray(ydata, dtype=np.float64)
+        if (fit_function == "spline"):
+            k = max(1, min(int(order), 5))
+            if (len(xdata) > k):
+                srt = np.argsort(xdata)
+                xu, uidx, counts = np.unique(xdata[srt], return_inverse=True, return_counts=True)
+                if (len(xu) > k):
+                    yu = np.zeros(len(xu), np.float64)
+                    ysort = ydata[srt]
+                    for i in range(len(xu)):
+                        yu[i] = ysort[uidx == i].mean()
+                    try:
+                        s = None if (spline_smoothing < 0) else spline_smoothing
+                        spl = UnivariateSpline(xu, yu, k=k, s=s)
+                        return spl(xeval), spl(xdata), None
+                    except Exception:
+                        pass #Fall through to polynomial fallback below
+        #polynomial (default, and spline fallback for too few/degenerate datapoints)
+        p = np.zeros(order+1, np.float64)
+        p[0] = ydata[0] if (len(ydata) > 0) else 0.
+        lsq = leastsq(polyResiduals, p, args=(xdata,ydata,order))
+        return polyFunction(lsq[0], xeval, order), polyFunction(lsq[0], xdata, order), lsq[0]
+    #end fitTraceCurve
+
     def checkFitSanity(self, coeffs, order, xin, yin, yout, evalFunc, maxAbsVal, label):
         vals = evalFunc(coeffs, order)
         if (vals.size == 0 or np.abs(vals).max() <= maxAbsVal):
@@ -1723,14 +1796,46 @@ class rectifyProcess(fatboyProcess):
             (ylos, yhis, slitx, slitw) = findRegions(calibs['slitmask'].getData(), nslits, calibs['slitmask'], gpu=self._fdb.getGPUMode(), log=self._log)
 
             fallbackMode = self.getOption("independent_slitlets_fallback", fdu.getTag()).lower()
+            neighborCount = int(self.getOption("independent_slitlets_neighbor_count", fdu.getTag()))
             pooledFit = False #tri-state: False = not yet attempted, None = attempted and failed, else (coeffs, order)
+            neighborFits = dict() #keyed by slitidx -- each failing slit has its own nearest neighbors
+
+            #Physical (cross-dispersion) center of each slit, used to find the nearest good
+            #slits for independent_slitlets_fallback=nearest_neighbor_slits
+            slitCenters = (ylos+yhis)/2.0
+
+            def fitNeighborTransform(slitidx):
+                #Nearest neighborCount OTHER good (not guide-star-box) slits with any usable
+                #data, by physical distance -- pools across all their segments, same scope as
+                #pooled_good_slits.  Cached per failing slitidx since every segment of the
+                #same slit wants the same neighbor set.
+                if (slitidx in neighborFits):
+                    return neighborFits[slitidx]
+                candidates = [j for j in range(nslits) if (j != slitidx and slitw[j] <= maxSlitWidth and (islit == j+1).any())]
+                candidates.sort(key=lambda j: abs(slitCenters[j]-slitCenters[slitidx]))
+                nearest = candidates[:neighborCount]
+                fit = None
+                if (len(nearest) > 0):
+                    neighborMask = np.zeros(len(xin), dtype=bool)
+                    for j in nearest:
+                        neighborMask |= (islit == j+1)
+                    fit = self.fitPooledGoodSlitsTransform(xin[neighborMask], yin[neighborMask], yout[neighborMask], fit_order)
+                    if (fit is not None):
+                        print("\tSlit "+str(slitidx+1)+": fit surface from "+str(len(nearest))+" nearest slit(s) "+str([j+1 for j in nearest])+" as independent_slitlets_fallback.")
+                        self._log.writeLog(__name__, "Slit "+str(slitidx+1)+": fit surface from "+str(len(nearest))+" nearest slit(s) "+str([j+1 for j in nearest])+" as independent_slitlets_fallback.", printCaller=False, tabLevel=1)
+                neighborFits[slitidx] = fit
+                return fit
 
             #Fill in ytransData for a slit/segment that couldn't get its own independent fit.
-            #Uses the pooled-good-slits surface if independent_slitlets_fallback is set to that
-            #and one is available; otherwise (or if that fit itself fails) falls back to the
-            #original identity (untransformed) behavior.
-            def applyIndependentSlitletFallback(ylo, yhi, sxlo, sxhi, currMask):
+            #Uses a substitute surface fit from other slits' data if independent_slitlets_fallback
+            #is set to pooled_good_slits (every other usable slit) or nearest_neighbor_slits (just
+            #the independent_slitlets_neighbor_count physically nearest usable slits) and one is
+            #available; otherwise (or if that fit itself fails) falls back to the original identity
+            #(untransformed) behavior.  See the rectify audit notes for a leave-one-out comparison
+            #of these three options on real data.
+            def applyIndependentSlitletFallback(slitidx, ylo, yhi, sxlo, sxhi, currMask):
                 nonlocal pooledFit
+                fit = None
                 if (fallbackMode == "pooled_good_slits"):
                     if (pooledFit is False):
                         goodMask = np.ones(len(xin), dtype=bool)
@@ -1741,13 +1846,26 @@ class rectifyProcess(fatboyProcess):
                         if (pooledFit is not None):
                             print("\tFit pooled whole_chip-style surface from good slits as independent_slitlets_fallback.")
                             self._log.writeLog(__name__, "Fit pooled whole_chip-style surface from good slits as independent_slitlets_fallback.", printCaller=False, tabLevel=1)
-                    if (pooledFit is not None):
-                        (pcoeffs, pOrder) = pooledFit
-                        if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                            ytransData[ylo:yhi,sxlo:sxhi][currMask] = surfaceFunction(pcoeffs, xind[ylo:yhi,sxlo:sxhi], yind[ylo:yhi,sxlo:sxhi], pOrder)[currMask]
-                        else:
-                            ytransData[sxlo:sxhi,ylo:yhi][currMask] = surfaceFunction(pcoeffs, xind[sxlo:sxhi,ylo:yhi], yind[sxlo:sxhi,ylo:yhi], pOrder)[currMask]
-                        return True
+                    fit = pooledFit
+                elif (fallbackMode == "nearest_neighbor_slits"):
+                    fit = fitNeighborTransform(slitidx)
+                if (fit is not None):
+                    (pcoeffs, pOrder) = fit
+                    #xind only varies along the dispersion axis (shape (xsize,) for
+                    #DISPERSION_HORIZONTAL, (xsize,1) for DISPERSION_VERTICAL -- see its
+                    #definition above), so it must be sliced by sxlo:sxhi alone and left to
+                    #broadcast against yind, exactly like the real per-slit fit's own evalTrans
+                    #closure above does.  The previous xind[ylo:yhi,sxlo:sxhi] /
+                    #xind[sxlo:sxhi,ylo:yhi] here indexed xind's cross-dispersion axis, which
+                    #either raised IndexError (HORIZONTAL, xind is 1-d) or silently produced a
+                    #0-width empty slice past column 0 (VERTICAL, xind has shape (xsize,1)) --
+                    #this fallback had never actually been exercised by any successful real run
+                    #before the audit's smoke test caught it (see rectify audit notes).
+                    if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
+                        ytransData[ylo:yhi,sxlo:sxhi][currMask] = surfaceFunction(pcoeffs, xind[sxlo:sxhi], yind[ylo:yhi,sxlo:sxhi], pOrder)[currMask]
+                    else:
+                        ytransData[sxlo:sxhi,ylo:yhi][currMask] = surfaceFunction(pcoeffs, xind[sxlo:sxhi], yind[sxlo:sxhi,ylo:yhi], pOrder)[currMask]
+                    return True
                 #Fall back to identity (previous behavior)
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                     ytransData[ylo:yhi,sxlo:sxhi][currMask] = yind[ylo:yhi,sxlo:sxhi][currMask]
@@ -1786,8 +1904,8 @@ class rectifyProcess(fatboyProcess):
                         #untransformed (identity, previous behavior). Either way this is a real
                         #quality problem (not just informational), so log it as an ERROR and
                         #count it for the summary below rather than let it pass as a quiet WARNING.
-                        usedPooled = applyIndependentSlitletFallback(ylo, yhi, sxlo, sxhi, currMask)
-                        msg = "No data found to rectify "+seg_name+"slitlet "+str(slitidx+1)+"!  "+("Used pooled-good-slits fallback." if usedPooled else "This slitlet will not be rectified!")
+                        usedFallback = applyIndependentSlitletFallback(slitidx, ylo, yhi, sxlo, sxhi, currMask)
+                        msg = "No data found to rectify "+seg_name+"slitlet "+str(slitidx+1)+"!  "+("Used "+fallbackMode+" fallback." if usedFallback else "This slitlet will not be rectified!")
                         print("rectifyProcess::calculateMOSContinuaTrans> ERROR: "+msg)
                         self._log.writeLog(__name__, msg, type=fatboyLog.ERROR)
                         n_slits_not_rectified += 1
@@ -1906,11 +2024,11 @@ class rectifyProcess(fatboyProcess):
                                     seg_ryhi += coeffs[i]*(slitx[slitidx])**(j-l)*syhi[slitidx]**l
                                 i+=1
                     else:
-                        #Even a linear fit was unusable -- fall back to the pooled-good-slits
-                        #surface or an untransformed (straight) region, same treatment as the
-                        #"no data to fit" case above.
+                        #Even a linear fit was unusable -- fall back to a substitute surface (or
+                        #an untransformed straight region), same treatment as the "no data to
+                        #fit" case above.
                         n_slits_not_rectified += 1
-                        applyIndependentSlitletFallback(ylo, yhi, sxlo, sxhi, currMask)
+                        applyIndependentSlitletFallback(slitidx, ylo, yhi, sxlo, sxhi, currMask)
                         seg_rylo = sylo[slitidx]
                         seg_ryhi = syhi[slitidx]
                     if (seg == 0):
@@ -3298,6 +3416,10 @@ class rectifyProcess(fatboyProcess):
         self._optioninfo.setdefault('drihizzle_kernel', 'turbo | point | point_replace | tophat | gaussian | fastgauss | lanczos')
         self._options.setdefault('fit_order', '2')
         self._optioninfo.setdefault('fit_order', 'Longslit only.  Order of polynomial to use to fit continua.')
+        self._options.setdefault('fit_function', 'polynomial')
+        self._optioninfo.setdefault('fit_function', 'Function used for the phase-3 outlier-rejection curve fit in\ncalcLongslitContinuaRectification and traceMOSContinuaRectification (this fit\'s own\nresult is discarded -- only its residuals decide which traced datapoints are kept --\nso this mainly affects which points survive to the real rectification fit downstream):\npolynomial (default) = single leastsq polynomial fit, as before.\nspline = smoothing B-spline (scipy UnivariateSpline, degree=min(order,5)).  At this\nfunction\'s typical fit_order/mos_fit_order (2-4) a smoothing spline is numerically\nidentical to the polynomial (0 interior knots) -- only useful if you raise the order\nfor a more sharply curved trace.  Falls back to polynomial for too few datapoints.')
+        self._options.setdefault('spline_smoothing', '-1')
+        self._optioninfo.setdefault('spline_smoothing', 'For fit_function=spline only: smoothing factor (scipy UnivariateSpline\'s s).\n-1 (default) = let scipy pick its own default smoothing.  Larger values smooth more;\n0 = interpolate every point exactly (no smoothing at all).')
 
         self._options.setdefault('longslit_continua_frames', None)
         self._optioninfo.setdefault('longslit_continua_frames', 'FITS file or ASCII list of FITS files to use to trace out continua')
@@ -3320,6 +3442,10 @@ class rectifyProcess(fatboyProcess):
         self._optioninfo.setdefault('mos_continuum_step_size', 'MOS only! Step size in pixels for tracing\n MOS continua within each slitlet.\nDefault: 5')
         self._options.setdefault('mos_double_subtract_continua', 'yes')
         self._optioninfo.setdefault('mos_double_subtract_continua', 'Set to yes if input data has been sky subtracted.\nIt will double subtract data before tracing out continua\tto increase S/N ratio.')
+        self._options.setdefault('mos_faint_floor_pct', '0.02')
+        self._optioninfo.setdefault('mos_faint_floor_pct', 'MOS only! While tracing a continuum, a datapoint whose fitted peak flux is\nbelow this fraction of the brightest point seen so far on this continuum is\nrejected as too faint UNLESS it is still locally significant -- see\nmos_faint_local_sigma.  Default: 0.02 (2%)')
+        self._options.setdefault('mos_faint_local_sigma', '1.0')
+        self._optioninfo.setdefault('mos_faint_local_sigma', 'MOS only! Rescues a datapoint that falls below mos_faint_floor_pct if its\npeak is still this many sigma above its own local background (same test as\nthe standard per-point significance check just above it).  A continuum can\nlegitimately vary in brightness by much more than mos_faint_floor_pct allows\nacross an order (blaze falloff, strong telluric/OH absorption); without this,\nthe trace is lost for good the first time that happens since currY then never\nupdates.  Set very high (e.g. 100) to recover the old fixed-floor-only\nbehavior.  Default: 1.0 (same bar as the local significance test)')
         self._options.setdefault('mos_find_lines_alternate_boxsize', '11')
         self._optioninfo.setdefault('mos_find_lines_alternate_boxsize', 'The boxsize in pixels in the center of the slitlet\nto use to find sky/lamp lines using alternate method.')
         self._options.setdefault('mos_find_lines_alternate_method', 'no')
@@ -3333,7 +3459,9 @@ class rectifyProcess(fatboyProcess):
         self._options.setdefault('mos_mode', 'use_slitpos')
         self._optioninfo.setdefault('mos_mode', 'independent_slitlets | use_slitpos | whole_chip')
         self._options.setdefault('independent_slitlets_fallback', 'identity')
-        self._optioninfo.setdefault('independent_slitlets_fallback', 'independent_slitlets mode only.  What to do for a slit with\nno continuum (or an unusable fit): identity (leave untransformed,\nprevious behavior) or pooled_good_slits (fit one whole_chip-style\nsurface from whichever slits in this exposure DO have usable\ncontinuum, and use that instead of identity).')
+        self._optioninfo.setdefault('independent_slitlets_fallback', 'independent_slitlets mode only.  What to do for a slit with\nno continuum (or an unusable fit): identity (leave untransformed, previous\nbehavior), pooled_good_slits (fit one whole_chip-style surface from EVERY other\nslit in this exposure that DOES have usable continuum, and use that instead of\nidentity), or nearest_neighbor_slits (same idea, but pooled from just the\nindependent_slitlets_neighbor_count physically nearest good slits instead of all\nof them -- can track local curvature better than pooling the whole chip when\ncurvature varies a lot across the field, e.g. MIRADAS).  See the rectify audit\nnotes for a leave-one-out comparison of these on real data before changing the\ndefault away from identity for a production run.')
+        self._options.setdefault('independent_slitlets_neighbor_count', '2')
+        self._optioninfo.setdefault('independent_slitlets_neighbor_count', 'independent_slitlets_fallback=nearest_neighbor_slits only.  Number of\nphysically nearest good slits (by cross-dispersion center) to pool together for\nthe substitute fit.')
         self._options.setdefault('mos_sky_fit_order', 2)
         self._optioninfo.setdefault('mos_sky_fit_order', 'MOS only! Fit order for MOS skyline\nrectification within each slitlet')
         self._options.setdefault('mos_sky_step_size', 5)
@@ -3404,6 +3532,10 @@ class rectifyProcess(fatboyProcess):
         step = int(self.getOption("mos_continuum_step_size", fdu.getTag()))
         bndry = int(self.getOption("mos_continuum_boundary_size", fdu.getTag()))
         min_gauss_width = float(self.getOption("min_continuum_fwhm", fdu.getTag()))
+        faint_floor_pct = float(self.getOption("mos_faint_floor_pct", fdu.getTag()))
+        faint_local_sigma = float(self.getOption("mos_faint_local_sigma", fdu.getTag()))
+        fit_function = self.getOption("fit_function", fdu.getTag()).lower()
+        spline_smoothing = float(self.getOption("spline_smoothing", fdu.getTag()))
         doDS = True
         if (self.getOption("mos_double_subtract_continua", fdu.getTag()).lower() == "no"):
             doDS = False
@@ -3650,6 +3782,13 @@ class rectifyProcess(fatboyProcess):
         #Index np.array used for fitting
         yind = np.arange(ysize, dtype=np.float64)
 
+        #Per-datapoint diagnostic stats file, same rejection-code convention as
+        #findSlitlets' stats_<flatid>.txt (see ptlog comment above for the code list).
+        #One row per candidate x-step per continuum: fduid, slitidx, ycen, x, code.
+        statsfile = outdir+"/rectified/stats_"+fdu._id+".txt"
+        statsf = open(statsfile, 'w')
+        statsf.write("#fduid\tslitidx\tycen\tx\tcode\n")
+
         #Loop over FDUs
         for currFDU in rctfdus:
             if (not currFDU.hasProperty("continua_list")):
@@ -3690,6 +3829,17 @@ class rectifyProcess(fatboyProcess):
                 #xcoords and ycoords contain lists of fit (x,y) points
                 xcoords = []
                 ycoords = []
+                #Per-datapoint diagnostic log: (x, rejection code), written to
+                #stats_<fduid>.txt at the end of this continuum's trace.  Codes: 0=kept,
+                #1=init failed (no data at first point, whole continuum abandoned), 2=no
+                #data at this x (tests 1-3 failed), 3=peak too faint vs first point's peak,
+                #4=peak too far from current Y, 5=gaussian fit raised an exception,
+                #6=leastsq exceeded max function calls, 7=negative total flux, 8=negative
+                #FWHM, 9=FWHM too different from first point's FWHM, 10=kept at a segment
+                #boundary (sanity check skipped), 11=kept at the mid/end discontinuity
+                #point, 12=rejected: within 4*step of last kept point but too far in Y,
+                #13=rejected: too far from the trend line predicted from recent points
+                ptlog = []
                 #peak values of fits are kept and used as rejection criteria later
                 peaks = []
                 initpeak = 0
@@ -3790,6 +3940,12 @@ class rectifyProcess(fatboyProcess):
                     #Rejection criteria
                     #outerbox = y[max(0,int(ylo-yboxsize)):int(yhi+yboxsize)]
                     noData = False
+                    #Local significance of this box's peak vs its own background, in
+                    #units of the outer box's std dev.  Kept around past this block (not
+                    #just used for test 3) to rescue a real but globally-fainter point
+                    #from the initpeak floor below -- see that check for why.
+                    outerstd = outerbox.std()
+                    localSig = (np.max(smooth1dCPU(y,3,1))-arraymedian(outerbox))/max(outerstd, 1.e-30)
                     #Test 1: mean of inner box must be higher
                     if (y.mean() <= outerbox.mean()):
                         noData = True
@@ -3799,14 +3955,16 @@ class rectifyProcess(fatboyProcess):
                     #Test 3: max value of inner box after 3 pixel smoothing
                     #must be greater than median+1*sigma of outer box
                     #Don't let first point fail this test
-                    if (j != 0 and np.max(smooth1dCPU(y,3,1)) < arraymedian(outerbox) + outerbox.std()):
+                    if (j != 0 and localSig < 1):
                         noData = True
                     #If first iteration break
                     if (noData and j == 0):
                         #print "ERR1", xs[j], y.mean(), outerbox.mean(), gpu_arraymedian(y), gpu_arraymedian(outerbox), max(smooth1dCPU(y,3,1)), arraymedian(outerbox) + outerbox.std()
+                        ptlog.append((xs[j], 1))
                         break
                     elif (noData):
                         #print "ERR1A", xs[j], y.mean(), outerbox.mean(), gpu_arraymedian(y), gpu_arraymedian(outerbox), max(smooth1dCPU(y,3,1)), arraymedian(outerbox) + outerbox.std()
+                        ptlog.append((xs[j], 2))
                         continue
 
                     ylo -= yboxsize
@@ -3832,13 +3990,24 @@ class rectifyProcess(fatboyProcess):
                     p[1] = (np.where(y == p[0]))[0][0]+ylo
                     p[2] = gaussWidth
                     p[3] = gpu_arraymedian(y.copy())
-                    if (initpeak > 0 and np.sqrt(p[0]) < 0.02*initpeak):
-                        #peak flux must be >= 2% of highest for any 1-d cut
+                    if (initpeak > 0 and np.sqrt(p[0]) < faint_floor_pct*initpeak and localSig < faint_local_sigma):
+                        #peak flux must be >= faint_floor_pct (default 2%) of the highest peak
+                        #seen anywhere on this continuum's trace so far, UNLESS this point is
+                        #still locally significant (>= faint_local_sigma) against its own
+                        #background.  A continuum's real brightness can vary by much more than
+                        #50x across a MIRADAS order (blaze falloff, strong telluric/OH
+                        #absorption) -- the old fixed global floor discarded those segments
+                        #outright even though they cleared local significance just above (tests
+                        #1-3), losing the trace for good since currY then never updates.  Only
+                        #relaxes the original test (can rescue a point, never reject one the
+                        #original test would have kept) -- see rectify audit notes.
                         #print "ERR2A", xs[j], initpeak, p[0]
+                        ptlog.append((xs[j], 3))
                         continue
                     if (abs(p[1]-currY) > yboxsize):
                         #Highest value is > yboxsize pixels from the previously fit peak.  Throw out this point
                         #print "ERR2", xs[j]
+                        ptlog.append((xs[j], 4))
                         continue
                     #Range of pixels above and below continuum used for calculating std dev of background
                     stdrng = list(range(0,yboxsize+1))+list(range(len(y)-yboxsize,len(y)))
@@ -3850,20 +4019,24 @@ class rectifyProcess(fatboyProcess):
                     try:
                         lsq = leastsq(gaussResiduals, p, args=(yind[ylo:yhi+1], y))
                     except Exception as ex:
+                        ptlog.append((xs[j], 5))
                         continue
 
                     #Error checking results of leastsq call
                     if (lsq[1] == 5):
                         #exceeded max number of calls = ignore
                         #print "ERR4"
+                        ptlog.append((xs[j], 6))
                         continue
                     if (lsq[0][0]+lsq[0][3] < 0):
                         #flux less than zero = ignore
                         #print "ERR5"
+                        ptlog.append((xs[j], 7))
                         continue
                     if (lsq[0][2] < 0 and j != 0):
                         #negative fwhm = ignore unless first datapoint
                         #print "ERR6"
+                        ptlog.append((xs[j], 8))
                         continue
                     if (j == 0):
                         #First datapoint -- update currX, currY, append to all lists
@@ -3875,6 +4048,7 @@ class rectifyProcess(fatboyProcess):
                         ycoords.append(lsq[0][1])
                         lastXs.append(xs[j])
                         lastYs.append(lsq[0][1])
+                        ptlog.append((xs[j], 0))
                         #update gaussWidth to be actual fit FWHM
                         if (lsq[0][2] < gaussWidth):
                             #1.5 pixel minimum default
@@ -3883,6 +4057,7 @@ class rectifyProcess(fatboyProcess):
                         #FWHM is over a factor of 2 different than first fit.  Throw this point out
                         if (lsq[0][2] > 2*gaussWidth or lsq[0][2] < 0.5*gaussWidth):
                             #print "ERR7", gaussWidth, lsq[0][2]
+                            ptlog.append((xs[j], 9))
                             continue
                         if (lastSeg != currSeg):
                             #update currX, currY, append to all lists
@@ -3894,6 +4069,7 @@ class rectifyProcess(fatboyProcess):
                             lastXs.append(xs[j])
                             lastYs.append(lsq[0][1])
                             lastSeg = currSeg
+                            ptlog.append((xs[j], 10))
                             continue
                         #Sanity check
                         #Calculate predicted "ref" value of Y based on slope of previous
@@ -3955,11 +4131,13 @@ class rectifyProcess(fatboyProcess):
                             lastXs.append(xs[j])
                             lastYs.append(lsq[0][1])
                             lastSeg = currSeg
+                            ptlog.append((xs[j], 11))
                         elif (abs(lsq[0][1] - refY) < maxerr):
                             #Regular datapoint.  Apply sanity check rejection criteria here
                             #Discard if farther than maxerr away from refY
                             if (abs(xs[j]-currX) < 4*step and maxerr > 1 and abs(lsq[0][1]-currY) > maxerr):
                                 #Also discard if < 20 pixels in X from last fit datapoint, and deltaY > 1
+                                ptlog.append((xs[j], 12))
                                 continue
                             #update currX, currY, append to all lists
                             currY = lsq[0][1]
@@ -3970,6 +4148,7 @@ class rectifyProcess(fatboyProcess):
                             lastXs.append(xs[j])
                             lastYs.append(lsq[0][1])
                             lastSeg = currSeg
+                            ptlog.append((xs[j], 0))
                             #keep lastXs and lastYs at 10 elements or less
                             if (len(lastYs) > 10):
                                 lastXs.pop(0)
@@ -3977,6 +4156,7 @@ class rectifyProcess(fatboyProcess):
                         else:
                             #More than maxerr away from refY.  Don't save datapoint except for use in lastXs and lastYs
                             #print "ERR8", lsq[0][1], refY, abs(lsq[0][1] - refY), maxerr
+                            ptlog.append((xs[j], 13))
                             lastXs.append(xs[j])
                             lastYs.append(lsq[0][1])
                             #keep lastXs and lastYs at 10 elements or less
@@ -3984,6 +4164,8 @@ class rectifyProcess(fatboyProcess):
                                 lastXs.pop(0)
                                 lastYs.pop(0)
                     #print xs[j], p[1], lsq[0][1], lsq[0][0], lsq[0][2]
+                for (ptx, ptcode) in ptlog:
+                    statsf.write(currFDU.getFullId()+"\t"+str(slitidx+1)+"\t"+str(ycen)+"\t"+str(ptx)+"\t"+str(ptcode)+"\n")
                 print("rectifyProcess::traceMOSContinuaRectification> Continuum centered at "+str(ycen)+" in "+currFDU.getFullId()+": found "+str(len(ycoords))+" datapoints.")
                 self._log.writeLog(__name__, "Continuum centered at "+str(ycen)+" in "+currFDU.getFullId()+": found "+str(len(ycoords))+" datapoints.")
                 #Check coverage fraction
@@ -4027,18 +4209,32 @@ class rectifyProcess(fatboyProcess):
                         print("\trejecting outliers (phase 2) - kept "+str(len(seg_ycoords))+" datapoints.")
                         self._log.writeLog(__name__, "rejecting outliers (phase 2) - kept "+str(len(seg_ycoords))+" datapoints.", printCaller=False, tabLevel=1)
 
-                    #Fit fit_order order order polynomial to datapoints, Y = f(X)
+                    #Fit fit_order order order polynomial (or spline, see fit_function) to
+                    #datapoints, Y = f(X).  Only used to find and remove phase-3 outliers below
+                    #(the fit result itself is discarded), so this only changes which of the
+                    #already-traced points survive to the real transform fit downstream, not
+                    #the transform itself.
                     #order = 2
                     order = fit_order
-                    p = np.zeros(order+1, np.float64)
-                    p[0] = ycoords[0]
-                    try:
-                        lsq = leastsq(polyResiduals, p, args=(seg_xcoords,seg_ycoords,order))
-                    except Exception as ex:
-                        continue
+                    if (fit_function == "spline"):
+                        try:
+                            (_xc, yprime, _coeffs) = self.fitTraceCurve(seg_xcoords, seg_ycoords, order, fit_function, seg_xcoords, spline_smoothing)
+                        except Exception as ex:
+                            continue
+                    else:
+                        #Original polynomial path, unchanged -- kept inline rather than routed
+                        #through fitTraceCurve so the leastsq initial guess (p[0]=ycoords[0],
+                        #note: the *whole* trace's first point, not this segment's) matches
+                        #exactly and this default case stays byte-identical.
+                        p = np.zeros(order+1, np.float64)
+                        p[0] = ycoords[0]
+                        try:
+                            lsq = leastsq(polyResiduals, p, args=(seg_xcoords,seg_ycoords,order))
+                        except Exception as ex:
+                            continue
+                        yprime = polyFunction(lsq[0], seg_xcoords, order)
 
                     #Compute output offsets and residuals from actual datapoints
-                    yprime = polyFunction(lsq[0], seg_xcoords, order)
                     yresid = yprime-seg_ycoords
                     #Remove outliers and refit
                     b = np.abs(yresid) < yresid.mean()+2.5*yresid.std()
@@ -4134,6 +4330,7 @@ class rectifyProcess(fatboyProcess):
             for i in range(len(yout)):
                 f.write(str(xin[i])+'\t'+str(yin[i])+'\t'+str(yout[i])+'\n')
         f.close()
+        statsf.close()
 
         if (mosMode == "use_slitpos"):
             return (xin, yin, yout, xslitin)
