@@ -90,7 +90,7 @@ class rectifyProcess(fatboyProcess):
                     continuaList = -1*troughList
                 elif (troughList is not None):
                     #Use numpy concatenate
-                    continuaList = concatenate((continuaList, -1*troughList))
+                    continuaList = np.concatenate((continuaList, -1*troughList))
             if (continuaList is None):
                 continue
             #Reject continua outside of [trace_ylo:trace_yhi] range
