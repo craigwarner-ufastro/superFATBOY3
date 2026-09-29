@@ -1586,7 +1586,8 @@ class wavelengthCalibrateProcess(fatboyProcess):
                 y = skyFDU.getData().copy().sum(1)
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                 y = skyFDU.getData().copy().sum(0)
-            trimsec = extractSpectra(y, sigma=5, width=5, nspec=1)
+            #illumination_profile: the illuminated slit usually covers most of a longslit sky cut
+            trimsec = extractSpectra(y, sigma=5, width=5, nspec=1, illumination_profile=True)
             if (trimsec is not None and (trimsec[0][1]-trimsec[0][0]) > ysize/10):
                 ylos = [trimsec[0][0]]
                 yhis = [trimsec[0][1]]

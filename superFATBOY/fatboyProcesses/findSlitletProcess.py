@@ -103,7 +103,10 @@ class findSlitletProcess(fatboyProcess):
             slitlets = extractNonzeroRegions(cut1d, min_width)
         else:
             #use extractSpectra to find step function locations
-            slitlets = extractSpectra(cut1d, sigma, min_width, minFluxPct=min_flux_pct)
+            #illumination_profile: flat field slitlets may cover most of the cut
+            use_orig = self.getOption("slitlet_autodetect_use_orig_algorithm", fdu.getTag()).lower() == "yes"
+            min_trough_depth = float(self.getOption("slitlet_autodetect_min_trough_depth", fdu.getTag()))
+            slitlets = extractSpectra(cut1d, sigma, min_width, minFluxPct=min_flux_pct, use_orig_algorithm=use_orig, trough_depth=min_trough_depth, illumination_profile=True)
 
 
         if (slitlets is None):
@@ -469,8 +472,12 @@ class findSlitletProcess(fatboyProcess):
         self._optioninfo.setdefault('slitlet_autodetect_boxsize', 'Boxsize for auto-detecting slitlets')
         self._options.setdefault('slitlet_autodetect_min_flux_pct', '0.001')
         self._optioninfo.setdefault('slitlet_autodetect_min_flux_pct', 'When flux drops below this percent of max, force break between slitlets')
+        self._options.setdefault('slitlet_autodetect_min_trough_depth', '0.3')
+        self._optioninfo.setdefault('slitlet_autodetect_min_trough_depth', 'Minimum depth of the trough between two adjacent slitlets, as a fraction of\nthe fainter slitlet\'s height above background, to split them when the flux between\nthem does not drop all the way to background.  Lower (e.g. 0.1) for closely packed\nslitlets with very shallow boundaries; too low risks splitting slitlets at dust or\nbad-row dips.')
         self._options.setdefault('slitlet_autodetect_min_width', '10')
         self._optioninfo.setdefault('slitlet_autodetect_min_width', 'Minimum width of a slitlet for auto-detection')
+        self._options.setdefault('slitlet_autodetect_use_orig_algorithm', 'no')
+        self._optioninfo.setdefault('slitlet_autodetect_use_orig_algorithm', 'Set to yes to auto-detect slitlets with the original\nextractSpectra algorithm (extractSpectra_orig, versions <= 2.3.29): global sigma-clipped\nbackground, no trough splitting.')
         self._options.setdefault('slitlet_autodetect_sigma', '5')
         self._optioninfo.setdefault('slitlet_autodetect_sigma', 'Minimum sigma vs local noise to be a step\nfor slitlet detection')
         self._options.setdefault('slitlet_autodetect_use_median', 'no')

@@ -1811,8 +1811,9 @@ def extractNonzeroRegions(data, width, nspec=0, sort=False):
         return specList[b]
 #end extractNonzeroRegions
 
-#extract spectra from 1-d data
-def extractSpectra(data, sigma, width, nspec=0, sort=False, minFluxPct=0.001, allowZeros=True):
+#extract spectra from 1-d data -- original algorithm, kept for reference and
+#selectable via extractSpectra(..., use_orig_algorithm=True)
+def extractSpectra_orig(data, sigma, width, nspec=0, sort=False, minFluxPct=0.001, allowZeros=True):
     n = data.size
     if (allowZeros):
         data = data.copy()
@@ -1904,6 +1905,193 @@ def extractSpectra(data, sigma, width, nspec=0, sort=False, minFluxPct=0.001, al
 
     specList = np.array(specList)
     meanVals = np.array(meanVals)
+    if (nspec == 0):
+        #return all spectra, don't sort unless asked
+        if (not sort):
+            return specList
+        else:
+            b = meanVals.argsort()[::-1]
+            return specList[b]
+    else:
+        #return nspec brightest spectra
+        #sort and throw away "extra" spectra
+        b = meanVals.argsort()[::-1][:nspec]
+        return specList[b]
+#end extractSpectra_orig
+
+#Iterative sigma clipping of background points b, identical to extractSpectra_orig.
+#Returns (medVal, sd)
+def _extractSpectraBackground(data, b, norig):
+    n = data.size
+    nold = n+1
+    niter = 0
+    sd = data[b].std()
+    medVal = 0
+    bold = b
+    while (n < nold and ((b.sum() > norig//4 and b.sum() > 5) or niter == 0)):
+        #Break here and don't recalculate medVal and sd if 5 or fewer points
+        if (b.sum() <= 5 and niter > 0):
+            b = bold
+            break
+        niter += 1
+        #will use CPU for median
+        medVal = gpu_arraymedian(data[b].copy(), kernel=fatboyclib.median)
+        sdold = sd
+        sd = data[b].std()
+        bold = b
+        #Break here if sd = 0 and use old sd value
+        if (sd == 0):
+            sd = sdold
+            b = bold
+            break
+        #Update background points to be within +/- 2 sd of medVal
+        b = (data < medVal+2*sd) * (data > medVal-2*sd) * (data != 0)
+        #update n and nold
+        nold = n
+        n = data[b].size
+    return (medVal, sd)
+#end _extractSpectraBackground
+
+#Split region [lo, hi] of smoothed 1-d cut s at troughs between significant peaks.
+#A peak is significant if its prominence is >= minDepth and >= troughDepth of its height
+#above floor.  Between each pair of adjacent significant peaks, the minimum is a trough; the
+#pixels around it in the lowest quarter of its depth are the gap between the two pieces.
+#Splits are accepted most-significant first as long as both pieces stay >= width.
+#Appends [ylo, yhi] pieces to out.
+def _extractSpectraSplitTroughs(s, lo, hi, floor, minDepth, troughDepth, width, out):
+    seg = s[lo:hi+1]
+    #Pad with floor so peaks at the region ends can be found
+    pad = np.r_[floor, seg, floor]
+    (pk, props) = scipy.signal.find_peaks(pad, prominence=minDepth)
+    pk = pk-1
+    rel = props['prominences']/np.maximum(seg[pk]-floor, 1.e-30)
+    pk = pk[rel >= troughDepth]
+    cands = []
+    for j in range(len(pk)-1):
+        p1 = pk[j]
+        p2 = pk[j+1]
+        tm = p1+seg[p1:p2+1].argmin()
+        lower = min(seg[p1], seg[p2])
+        depth = lower-seg[tm]
+        relDepth = depth/max(lower-floor, 1.e-30)
+        if (depth < minDepth or relDepth < troughDepth):
+            continue
+        gapLevel = seg[tm]+0.25*depth
+        glo = tm
+        while (glo > p1 and seg[glo-1] <= gapLevel):
+            glo -= 1
+        ghi = tm
+        while (ghi < p2 and seg[ghi+1] <= gapLevel):
+            ghi += 1
+        cands.append((relDepth, tm, glo, ghi))
+    pieces = [[0, seg.size-1]]
+    for (relDepth, tm, glo, ghi) in sorted(cands, reverse=True):
+        for i in range(len(pieces)):
+            a = pieces[i][0]
+            b = pieces[i][1]
+            if (a <= tm and tm <= b):
+                if (glo-1-a >= width and b-(ghi+1) >= width):
+                    pieces[i:i+1] = [[a, glo-1], [ghi+1, b]]
+                break
+    for (a, b) in pieces:
+        out.append([lo+a, lo+b])
+#end _extractSpectraSplitTroughs
+
+#extract spectra from 1-d data: find [ylo, yhi] bounding each spectrum, illuminated
+#slitlet, fiber, etc. in a 1-d cut.  Returns an n x 2 array (brightest first if nspec > 0
+#or sort=True, else in position order) or None if nothing is found.
+#Starts from the same background estimate and thresholding as extractSpectra_orig, then:
+#  - splits regions at significant troughs between peaks (two blended spectra, or packed
+#    slitlets whose shared gap only dips partway down), controlled by trough_depth (minimum
+#    trough depth as a fraction of the lower neighboring peak's height above background)
+#  - illumination_profile=True (flats, sky frames): a single pixel below minFluxPct no
+#    longer breaks a region (dead/bad rows), and handles cuts where the illuminated
+#    regions cover most of the array: if the sigma-clipped "background" is itself a
+#    significantly positive plateau with a substantial population of pixels well below it,
+#    the plateau is the illuminated signal and the low population is the real background.
+#    Never use this for sky-subtracted science frames, where a positive residual plateau
+#    is background and looks identical in 1-d.
+#  - ylo no longer includes the one below-minFluxPct pixel that extractSpectra_orig kept
+#  - guards against all-zero, NaN/inf and too-short input
+#use_orig_algorithm=True passes through to extractSpectra_orig unchanged.
+def extractSpectra(data, sigma, width, nspec=0, sort=False, minFluxPct=0.001, allowZeros=True, use_orig_algorithm=False, trough_depth=0.3, illumination_profile=False):
+    if (use_orig_algorithm):
+        return extractSpectra_orig(data, sigma, width, nspec=nspec, sort=sort, minFluxPct=minFluxPct, allowZeros=allowZeros)
+    dtype0 = np.asarray(data).dtype
+    data = np.array(data, dtype=np.float64)
+    if (data.size < 3 or data.size <= width):
+        return None
+    data[~np.isfinite(data)] = 0
+    nz = data != 0
+    if (not nz.any()):
+        return None
+    if (allowZeros):
+        #Set zeros to 0.1*min abs value (truncates to 0 for integer input, as orig)
+        data[~nz] = np.asarray(np.abs(data[nz]).min()/10.).astype(dtype0)
+    norig = (data != 0).sum()
+    #Background points: mask out 5 pixel box around highest datapoint before first pass
+    b = data != 0
+    bmax = np.where(data == data.max())[0][0]
+    b[max(bmax-2,0):min(bmax+3,len(b))] = False
+    if (b.sum() == 0):
+        return None
+    (medVal, sd) = _extractSpectraBackground(data, b, norig)
+    #3 pixel median smoothing removes single pixel defects but keeps physical gaps >= 2 pixels
+    s = scipy.ndimage.median_filter(data, size=3, mode='nearest')
+    #Robust per-pixel noise from first differences of raw data
+    dd = np.diff(data)
+    sdiff = 1.4826*np.median(np.abs(dd-np.median(dd)))/math.sqrt(2)
+    floor = medVal
+    thresh = medVal+sigma*sd
+    #Trough significance is measured vs background scatter
+    minDepth = sigma*sd
+    if (illumination_profile and medVal > sigma*sd):
+        #"Background" is significantly positive -- check for a substantial population well below it
+        low = s < medVal-sigma*sd
+        if (low.sum() >= max(width+1, 0.02*norig)):
+            lowVals = np.sort(s[low])
+            #Initial floor = median of lowest quarter, then refine using only low points
+            #consistent with it (excludes faint slitlets that are also in the low population)
+            lf = gpu_arraymedian(lowVals[:max(1, lowVals.size//4)].copy(), kernel=fatboyclib.median)
+            for j in range(3):
+                near = np.abs(lowVals-lf) <= 5*max(sdiff, 1.e-30)
+                if (near.sum() == 0):
+                    break
+                lf = gpu_arraymedian(lowVals[near].copy(), kernel=fatboyclib.median)
+            if (abs(lf) < 0.5*medVal):
+                #Plateau is illuminated signal.  Edges at 5% of plateau height above the real floor.
+                floor = lf
+                thresh = floor+max(sigma*sdiff, 0.05*(medVal-floor))
+                #Background sd measured plateau structure, use pixel noise instead
+                minDepth = sigma*sdiff
+    minDepth = max(minDepth, 1.e-30)
+    above = data > thresh
+    if (not above.any()):
+        #Nothing found greater than +sigma
+        return None
+    specMax = data[above].max()
+    #Less than minFluxPct of max value creates a break.  For illumination profiles, a single
+    #pixel between two good ones (dead/bad row in a flat) does not.  Not done otherwise:
+    #science cuts are already median smoothed by callers, and healing noisy tails there
+    #only widens edges.
+    mf = data >= specMax*minFluxPct
+    if (illumination_profile):
+        mf[1:-1] |= mf[:-2] & mf[2:]
+    sig = above & mf
+    #Find runs of consecutive significant points, keep those wider than width
+    edges = np.diff(np.r_[0, sig.astype(np.int8), 0])
+    starts = np.where(edges == 1)[0]
+    ends = np.where(edges == -1)[0]-1
+    specList = []
+    for j in range(len(starts)):
+        if (ends[j]-starts[j] >= width):
+            _extractSpectraSplitTroughs(s, starts[j], ends[j], floor, minDepth, trough_depth, width, specList)
+    if (len(specList) == 0):
+        return None
+
+    specList = np.array(specList)
+    #Mean value of ylo to yhi, inclusive
+    meanVals = np.array([data[ylo:yhi+1].mean() for (ylo, yhi) in specList])
     if (nspec == 0):
         #return all spectra, don't sort unless asked
         if (not sort):
