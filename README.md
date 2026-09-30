@@ -1,5 +1,22 @@
+<p align="center">
+  <img src="docs/images/superFATBOY.png" alt="superFATBOY mascot" width="160">
+</p>
+
 # superFATBOY3
 Python 3 version of superFATBOY GPU accelerated data pipeline for IR and optical astronomical data
+
+## Documentation
+Full documentation is in [`docs/`](docs/README.md):
+
+- [Quick start](docs/quickstart.md): install, run, and the template XML files for each instrument
+- [Instruments and templates](docs/instruments.md): which instruments have been validated
+- [XML style guide](docs/xml-guide.md)
+- [Process guide](docs/processes/README.md) and [options reference](docs/options-reference.md)
+- [MIRADAS guide](docs/miradas.md)
+- [API guide](docs/api.md): scripting superFATBOY and writing your own processes and datatypes
+
+Validated end-to-end in both GPU and CPU mode: FLAMINGOS-1 (imaging and MOS), OSIRIS and KAST (longslit), and MIRADAS (SOL, SOS, MOS).
+Templates for these are in [`superFATBOY/data/templates/`](superFATBOY/data/templates/).
 
 ## Requirements
 - numpy

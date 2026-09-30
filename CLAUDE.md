@@ -9,6 +9,23 @@ improve error handling) and the specific algorithms flagged for later improvemen
 (findSlitletProcess, removeCosmicRaysSpecProcess, rectifyProcess, wavelengthCalibrateProcess).
 Work happens on the `refactor` branch, one commit per meaningful change.
 
+## User documentation now exists (docs/, added v2.3.36)
+
+The documentation GEMINI.md asked for is written, as Markdown (GitHub renders it natively; raw `.html` in a repo is
+shown as source) under `docs/`: `quickstart.md`, `instruments.md` (validated-instrument table + template list),
+`xml-guide.md`, `processes/` (index, imaging, spectroscopy, instrument-specific), `miradas.md`, `api.md`, and
+`options-reference.md`. The last one is **generated** - after adding or changing any process option, rerun
+`python3 docs/gen_options_reference.py` (it shells out to `superFatboy3.py -list`) and, if the option matters to users,
+mention it in the matching `docs/processes/*.md` page. When a new instrument gets a both-modes-passing config, add a row to
+the validated table in `docs/instruments.md` and `docs/quickstart.md`'s template table. The old HTML docs live in an
+untracked, git-ignored `html/` folder (copied in by the user for reference; never commit it). The code examples in
+`docs/api.md` marked *(tested)* were actually run (custom process via `processdir`, custom datatype via `datatypedir`,
+Python-API `fatboyDatabase(...).execute()`); rerun them if the fatboyProcess/fatboyDatabase API changes.
+Known doc-adjacent loose ends: the EMIR template has a `overwite_files` typo (silently ignored - unknown params are
+never warned about); the MIRADAS SOL/SOS templates name `wc_miradas_*_new.xml` while `data/config/` ships
+`wc_miradas_sol.xml`/`wc_miradas_sos.xml`; `setup.py`'s `package_data` does not include `data/templates/*` or the
+`data/linelists/*.txt` files (the KAST template needs `KAST_hehgcd.txt`), so an installed (non-source) copy may lack them.
+
 ## Orientation for anyone writing documentation on superFATBOY (read this first)
 
 This section is a summary for a Claude session that has **not** been doing this refactor work and
