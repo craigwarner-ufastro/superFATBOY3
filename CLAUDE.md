@@ -9,6 +9,178 @@ improve error handling) and the specific algorithms flagged for later improvemen
 (findSlitletProcess, removeCosmicRaysSpecProcess, rectifyProcess, wavelengthCalibrateProcess).
 Work happens on the `refactor` branch, one commit per meaningful change.
 
+## Orientation for anyone writing documentation on superFATBOY (read this first)
+
+This section is a summary for a Claude session that has **not** been doing this refactor work and
+needs to get oriented fast — e.g. to write the documentation GEMINI.md itself asked for (see
+below). Everything below this is distilled from ~3 weeks of session logs (the rest of this file,
+in chronological order) and the project's auto-memory; if you need the full story behind any
+claim here, search this file or the memory files (`project_algorithm_audit_list`,
+`project_verified_configs_folder`, `project_miradas_collapse_spaxels_investigation`) for the topic.
+As always, verify anything specific (a line number, a file's current contents) against the live
+code before asserting it as fact — this is a point-in-time summary, not living state.
+
+**What superFATBOY is.** A general-purpose astronomical data-reduction pipeline framework with
+"processes" (one class per reduction step — dark subtraction, flat fielding, cosmic ray removal,
+slit tracing, wavelength calibration, etc.) chained together via an XML config per dataset,
+supporting a dozen+ imaging and spectroscopic instruments (FLAMINGOS-1, OSIRIS, KAST, MIRADAS,
+EMIR, MEGARA, LUCI, SINFONI, and others — see `superFATBOY/fatboyProcesses/` for the ~80 process
+files and `superFATBOY/data/templates/` for per-instrument XML templates). It was originally
+written in Python 2 with PyCUDA for GPU acceleration.
+
+**What this refactor is.** Started by Gemini CLI (`GEMINI.md` is its original brief — read it, it's
+short) and continued here on the `refactor` branch (one commit per meaningful change, version
+bumped in `setup.py`/`superFATBOY/__init__.py` every commit — see
+`feedback_version_bump_per_commit` memory). Four original goals: (1) remove `from numpy import *`/
+`from math import *` and disambiguate the resulting bare names, (2) remove numarray-era `.sum()/N`-
+instead-of-`.mean()` tricks (but keep `arraymedian`/`gpu_arraymedian`'s own hand-rolled quickselect,
+that's intentional), (3) migrate PyCUDA → CuPy, (4) improve error handling. GEMINI.md also flagged
+four specific algorithms as needing improvement beyond straight translation: `findSlitletProcess`,
+`removeCosmicRaysSpecProcess`, `rectifyProcess`, `wavelengthCalibrateProcess`. **GEMINI.md's own
+"Documentation" section is almost certainly why you're reading this** — it asks for exactly this
+kind of writeup: a main doc (install/run/XML style guide), a processes doc (or split into
+imaging.md/spectroscopy.md), and a miradas.md. It also points to now-dead original HTML docs at
+`/home/cwarner/FATBOY/superFATBOY/` and `/home/cwarner/FATBOY/miradas/` as source material, and
+notes `superFatboy3.py -list` prints every process and its options live from the current code —
+probably the fastest way to get an accurate, current options reference for a processes doc.
+
+**Current maturity — what's actually been run and confirmed working.** All four goals are done for
+the translation/migration part of the work (goals 1-3 complete tree-wide; goal 4's top-level
+framework pass is done, see the error-handling section below). Beyond translation, real end-to-end
+runs (not just "compiles") have validated:
+- **Imaging**: `oriBench.xml` (FLAMINGOS-1 NIR imaging) — cross-validated 4 ways (py2 CPU/GPU, py3
+  CPU/GPU) agreeing to 4+ decimal places on final alignment shifts. Strongest validation this
+  refactor has.
+- **MOS spectroscopy**: `specBench.xml` (FLAMINGOS-1) — full chain linearity→...→calibStarDivide,
+  both CPU and GPU.
+- **Longslit spectroscopy**: OSIRIS (`sarik_osiris.xml`/`avrajit-osiris.xml`) and KAST
+  (`sarik_quack1.xml`/`sarik_quack3.xml`), both CPU and GPU.
+- **MIRADAS (IFU-fed-by-MOS-slits)**: all three modes — SOL, SOS, MOS — both CPU and GPU. This one
+  had the longest bug tail (see `project_miradas_collapse_spaxels_investigation` memory for the
+  full bisection story) before landing clean.
+- **Not yet run through the refactored pipeline at all**: MEGARA (fiber-fed spectrograph — some
+  process-level review happened, see the algorithm-audit-list memory, but no real end-to-end
+  pipeline run), FourStar, SINFONI, and whatever other instruments have templates/data but no
+  session log entry here. Don't assume these work; there's no evidence either way yet.
+- `/home/cwarner/work/xml/verified/verified_configs.md` is the authoritative list of
+  known-both-modes-passing configs, each with a matching instrument template (also mirrored into
+  `superFATBOY/data/templates/`). If a dataset/instrument isn't in that table, treat it as untested.
+
+**Codebase orientation.**
+- Entry point: `superFatboy3.py` → `fatboyDatabase.py` (`initializeAll()` ingests raw FITS into
+  `fatboyDataUnit` (FDU) objects, `executeProcesses()` runs the configured process chain per FDU).
+- Each reduction step is a `fatboyProcess` subclass in `superFATBOY/fatboyProcesses/`; options are
+  read via `self.getOption(name, tag)` with defaults registered in `setDefaultOptions()`
+  (`self._options.setdefault(...)` + a paired `self._optioninfo.setdefault(...)` human-readable
+  description — this is what `-list` prints).
+- CPU/GPU dual-mode throughout: `fdb.getGPUMode()` gates numpy (`np`) vs CuPy (`cp`) code paths;
+  many core array ops live in `fatboyLibs.py`/`gpu_*.py` sibling pairs (e.g. `gpu_arraymedian.py`).
+  `force_cpu=True` on `fdu.getData(...)` forces a CPU-mode fetch even in GPU-mode runs, used by the
+  several trace/fit functions that are inherently CPU-bound (small-array medians, `np.correlate`,
+  etc. — see item 6 of the specBench bug list below for the exact function list).
+  - **Mechanical-refactor bug shapes to watch for in code you haven't audited yet**, all real and
+    found this session (details in the specBench/oriBench bug lists below): `cp.empty(existing_array)`
+    meant-to-be-a-device-copy (CuPy has no PyCUDA-style `drv.Out()` auto-copyback, this silently
+    returns an unmodified/zero host array instead of erroring); `np.min(a, b)`/`np.max(a, b)` used
+    to compare two scalars (the 2nd positional arg is `axis`, not a 2nd value — silently wrong, not
+    a crash, when that arg happens to be `0`); a cast landing on the wrong operand in a mechanical
+    `float32(a - b)` → `np.float32(a - b)` rewrite (`a - np.float32(b)` instead) — silently corrupts
+    a CuPy `RawKernel`'s packed argument buffer rather than raising a Python-level error.
+- `from superFATBOY.fatboyLibs import *` (and similar local wildcard imports, ~70 files) is this
+  project's own namespace convention, not a numpy/math collision — intentionally untouched by goal
+  1's cleanup. `arraymedian`/`gpu_arraymedian` (hand-rolled CPU/CUDA quickselect) are deliberately
+  kept per GEMINI.md, not replaced with `np.median`.
+- `new*Process.py` files (`newFindSlitletProcess.py`, `newRectifyProcess.py`) are Gemini's
+  experimental rewrites, explicitly out of scope — left as untracked reference, not maintained, not
+  wired into any real config. Don't assume they work; `newRectifyProcess.py`'s coefficient-building
+  methods are literal `pass` stubs.
+- The **frozen Python 2/PyCUDA original** lives at `/home/cwarner/work/superFATBOY/superFATBOY`
+  (installed as `superFatboy.py` on PATH) — **never edit this, ask the user first**. It's the
+  ground-truth oracle for cross-validation (see the oriBench 4-way comparison above).
+- Several `.py` files embed CUDA C kernel source as string literals (compiled via `cp.RawModule`) —
+  their C-level `sqrt`/`exp`/`abs`/etc. calls are not part of the Python numpy/math cleanup.
+
+**The algorithm-audit program.** Six processes were flagged (2026-09-18) as the most
+brittle/heuristic-heavy in the codebase and queued for a deeper robustness pass once translation
+bug-hunting was done: `findSlitletProcess`, `rectifyProcess`, `wavelengthCalibrateProcess`,
+`miradasCollapseSpaxelsProcess`, `removeCosmicRaysSpecProcess`, `badPixelMaskSpecProcess`. Status
+as of v2.3.34:
+- **`findSlitletProcess`** (`traceOrders`/`traceSlitlets`) — full Q1-5 audit done, shipped
+  (`fc1e581`/`c474a5e`, v2.3.27/2.3.28): `edge_detection_method=auto` (local-minimum rescue for weak
+  packed-slit boundaries cross-correlation misses), a `stats_<flatid>.txt` per-datapoint diagnostic
+  file added to `traceSlitlets` (previously only `traceOrders` had one — a real asymmetry, worth
+  checking for elsewhere), `fit_function=spline` option (numerically identical to polynomial at
+  this function's typical fit_order 2-4, so a safe no-op default). Real MEGARA fiber-tracing
+  concerns from round 1 turned out to be a double-overscan-trim data bug, not an algorithm problem
+  — `findSlitlets` itself is now considered solid.
+- **`rectifyProcess`** — the biggest single piece of audit work, four trace/transform function
+  pairs all brought to the same fix set (MOS continuum, MOS skyline, longslit continuum, longslit
+  skyline — v2.3.32/2.3.33/2.3.34): per-datapoint `stats_<fduid>[.txt|-skylines.txt]` diagnostics
+  everywhere; a local-significance rescue for MOS continuum's "too faint vs. global first-point
+  peak" bug (real MIRADAS failure, 16.6%→86% coverage on the worst slit); a flux-weighted-moment
+  centroid rescue (`centroidMoment()`) for when a free-width Gaussian fit's FWHM comes back
+  implausible — validated as measurably better than the Gaussian at low S/N and tied at high S/N,
+  real head-to-head comparison in `project_algorithm_audit_list` memory; a `checkFitSanity()`
+  runaway-high-order-fit guard (`rectify_max_transform_factor`) added everywhere it was missing;
+  `independent_slitlets_fallback`/`mos_sky_fallback` substitute-fit options
+  (`identity`/`pooled_good_slits`/`nearest_neighbor_slits`) for a slit with no usable trace — real
+  leave-one-out validation on MIRADAS shows `nearest_neighbor_slits` is consistently best, **but
+  the default is still `identity`** pending the user's sign-off on a production-affecting default
+  change. Several real bugs found and fixed along the way (a shape bug in the fallback's grid
+  slicing, a tuple-unpacking arity mismatch and missing-comma column bugs in a dead
+  coords-as-filename code path, an unguarded `xcenters[0]` crash-on-zero-skylines). **Still open**:
+  specBench's science-frame continuum trace has a more diverse failure profile than MIRADAS
+  (`fwhm_range`/`sanity_far_reject` still ~15-30% of points there even after the fixes above) that
+  isn't fully root-caused; the moment-centroid rescue was validated as real (6.1% of points on real
+  EMIR skyline data) but not yet ported to skyline tracing; `rectifyMOS` is missing a
+  slitmask-renumbering block `main` has (closes index gaps from discarded guide-star boxes) — not
+  yet hit by any real dataset but a real gap; `gpu_drihizzle.py`'s padding-thread kernels still
+  write one element past the real array bounds in some conditions (harmless for power-of-2 image
+  sizes, would bite a non-power-of-2 one).
+- **`miradasCollapseSpaxelsProcess`** — root cause of its peak-finder's CPU/GPU brittleness is
+  understood (exact-value `np.where(z==max)` peak-picking has zero tolerance for ordinary float
+  reduction-order differences) and a design for `scipy.signal.find_peaks`-based replacement was
+  explored, but synthetic validation didn't clearly beat exact-max (prominence alone doesn't
+  distinguish a narrow spurious spike from the true broad gap) — **not shipped, not further
+  designed**. Separately, a real GPU-vs-CPU rectify bug that was corrupting its input slitmask *is*
+  fixed (see `project_miradas_collapse_spaxels_investigation` memory for the full bisection) — that
+  was blocking MIRADAS GPU mode entirely and is unrelated to the peak-finder brittleness itself.
+- **`wavelengthCalibrateProcess`** — audited across 5 real datasets; **no systemic algorithm
+  problem found** (MIRADAS SOL/specBench/LUCI all 100% clean). The one real failure
+  (`avrajit-osiris.xml`) turned out to be wrong wavelength-scale/range parameters in that XML
+  config, not an algorithm or line-list bug — confirmed via a blind (scale, zero-point) grid search
+  against the full line catalog. That blind-grid-search approach is validated as a real fallback
+  for future bad-initial-guess cases but not wired into `match3BrightestLines()` as production code.
+  One real pre-existing bug fixed (negative-index slice wraparound near array edges, all 8 sites).
+  Two standalone tool prototypes exist (`tools_linelist_builder_draft.py`,
+  `tools_linelist_intensity_check_draft.py`), not integrated.
+- **`removeCosmicRaysSpecProcess` / `badPixelMaskSpecProcess`** — **not yet started** at all beyond
+  whatever bugs were hit incidentally during translation bug-hunting.
+
+**Top-level error handling (goal 4).** Framework-level gaps fixed at the `fatboyDatabase.py`
+entry point: an unconditional `input()` prompt on error that would hang any unattended/scripted run
+(now opt-in via `interactive_on_error`); calibration-building processes
+(`fatboyProcess.recursivelyExecute()`, used by ~23 processes) had zero exception handling and
+discarded failure return values, so one bad calibration frame crashed the whole run instead of
+degrading to "disable this one science frame, keep going"; a postcondition check so a process lying
+about `success=True` while leaving unreadable data doesn't silently propagate. Ingestion
+(`initializeAll`) deliberately does *not* just "disable and continue" on a bad input file — a
+single bad file is isolated and logged loudly, but more than `max_init_failures` (default 3) or
+every file failing aborts the whole run, on the reasoning that a malformed input FITS file is
+usually a config/setup error worth surfacing immediately, not something to paper over. This was a
+framework-wide pass, not algorithm-specific — the per-algorithm error-handling hardening is part of
+the audit-list work above.
+
+**Practical gotchas for running/testing this pipeline** (see `project_verified_configs_folder`
+memory for the full list): always prefix `PYTHONPATH=/home/cwarner/work/superFATBOY3` (the
+installed console script/egg can be stale and won't pick up source changes, or invoke the source
+`.py` directly); **never** leave `debug_mode="yes"` on an unattended run (pops an interactive
+`plt.show()` on the user's actual screen — use `write_plots="yes"` instead to still get QA PNGs);
+the pipeline auto-creates *sub*directories under `outputdir` but never the top-level dir itself; only
+ever delete output directories you created yourself, never the user's own; a run can take
+15-25 minutes, and can also hang on a flaky NFS mount unrelated to any code issue (check `ps -o stat`
+for kernel `D` state before assuming a bug).
+
 ## Algorithm-audit methodology, distilled from findSlitletProcess (2026-09-28)
 
 `findSlitletProcess` (`traceOrders`/`traceSlitlets`) just went through a full five-question robustness
