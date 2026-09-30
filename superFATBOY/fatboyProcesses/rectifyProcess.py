@@ -45,6 +45,7 @@ class rectifyProcess(fatboyProcess):
         find_xhi = self.getOption("continuum_find_xhi", fdu.getTag())
         maxSlope = float(self.getOption("sky_max_slope", fdu.getTag()))
         min_gauss_width = float(self.getOption("min_continuum_fwhm", fdu.getTag()))
+        maxTransformFactor = float(self.getOption("rectify_max_transform_factor", fdu.getTag()))
         if (self.getOption("use_zero_as_center_fitting", fdu.getTag()).lower() == "yes"):
             useCenterAsZero = True
 
@@ -214,10 +215,12 @@ class rectifyProcess(fatboyProcess):
                 #this function has no hard "init failed, abandon continuum" break at j==0,
                 #and no segments).  0=kept, 2=below significance threshold, 4=peak too far
                 #from current Y, 5=gaussian fit raised an exception, 6=leastsq exceeded max
-                #function calls, 7=negative total flux, 8=negative FWHM, 9=FWHM too
-                #different from first point's FWHM, 11=kept at the mid/end discontinuity
+                #function calls, 7=negative total flux, 8=negative FWHM, 9=FWHM too different
+                #from first point's FWHM AND a moment-centroid rescue (see centroidMoment) also
+                #failed or wasn't close enough to currY, 11=kept at the mid/end discontinuity
                 #point, 12=rejected: within 4*step of last kept point but too far in Y,
-                #13=rejected: too far from the trend line predicted from recent points
+                #13=rejected: too far from the trend line predicted from recent points,
+                #14=kept via the moment-centroid rescue instead of the Gaussian fit's position
                 ptlog = []
                 #peak values of fits are kept and used as rejection criteria later
                 peaks = []
@@ -318,10 +321,26 @@ class rectifyProcess(fatboyProcess):
                             #1.5 pixel minimum default
                             gaussWidth = max(abs(lsq[0][2]), min_gauss_width)
                     else:
-                        #FWHM is over a factor of 2 different than first fit.  Throw this point out
+                        #FWHM is over a factor of 2 different than first fit.
+                        fitY = lsq[0][1]
+                        rescued = False
                         if (lsq[0][2] > 2*gaussWidth or lsq[0][2] < 0.5*gaussWidth):
-                            ptlog.append((xs[j], 9))
-                            continue
+                            #Try rescuing the point's position via a flux-weighted moment on the
+                            #same (already known significant, see the 7-sigma test above) box
+                            #instead of discarding it outright -- see centroidMoment,
+                            #traceMOSContinuaRectification's identical fix, and the rectify audit
+                            #notes for why (an 11-pixel free-width Gaussian fit is poorly
+                            #constrained at low S/N).  y here is already linear (unlike the MOS
+                            #tracer, this function never squares it), so it can be used directly.
+                            #Only accept the moment within yboxsize of currY, same tolerance the
+                            #peak-position check elsewhere in this loop uses; still has to pass
+                            #the sanity check below like any other point.
+                            momentY = self.centroidMoment(y[ylo:yhi], yind[ylo:yhi])
+                            if (momentY is None or abs(momentY-currY) > yboxsize):
+                                ptlog.append((xs[j], 9))
+                                continue
+                            fitY = momentY
+                            rescued = True
                         #Sanity check
                         #Calculate predicted "ref" value of Y based on slope of previous
                         #fit datapoints
@@ -355,7 +374,7 @@ class rectifyProcess(fatboyProcess):
                             else:
                                 #Only 1 datapoint, use +/- maxSlope as slope
                                 slope = -1*abs(maxSlope)
-                                if ((lsq[0][1]-wavg)/(xs[j]-wavgx) > 0):
+                                if ((fitY-wavg)/(xs[j]-wavgx) > 0):
                                     slope = abs(maxSlope)
                             #Calculate guess for refX and max acceptable error
                             #err = 1+maxSlope*deltaY, with a max value of 3.
@@ -369,39 +388,39 @@ class rectifyProcess(fatboyProcess):
                             else:
                                 #Less than 4 datapoints, use +/- maxSlope as slope
                                 slope = -1*abs(maxSlope)
-                                if ((lsq[0][1]-wavg)/(xs[j]-wavgx) > 0):
+                                if ((fitY-wavg)/(xs[j]-wavgx) > 0):
                                     slope = abs(maxSlope)
                             #Calculate guess for refX and max acceptable error
                             #0.5 <= maxerr <= 2 in this case.  Use slope*50 if it falls in that range
                             refY = wavg+slope*(xs[j]-wavgx)
                             maxerr = max(min(abs(slope*50),2),0.5)
                         #Discontinuity point in xs. Keep if within +/-1.
-                        if (xs[j] == xinit-step and abs(lsq[0][1]-currY) < 1):
+                        if (xs[j] == xinit-step and abs(fitY-currY) < 1):
                             #update currX, currY, append to all lists
-                            currY = lsq[0][1]
+                            currY = fitY
                             currX = xs[j]
                             peaks.append(lsq[0][0])
                             xcoords.append(xs[j])
-                            ycoords.append(lsq[0][1])
+                            ycoords.append(fitY)
                             lastXs.append(xs[j])
-                            lastYs.append(lsq[0][1])
+                            lastYs.append(fitY)
                             ptlog.append((xs[j], 11))
-                        elif (abs(lsq[0][1] - refY) < maxerr):
+                        elif (abs(fitY - refY) < maxerr):
                             #Regular datapoint.  Apply sanity check rejection criteria here
                             #Discard if farther than maxerr away from refY
-                            if (abs(xs[j]-currX) < 4*step and maxerr > 1 and abs(lsq[0][1]-currY) > maxerr):
+                            if (abs(xs[j]-currX) < 4*step and maxerr > 1 and abs(fitY-currY) > maxerr):
                                 #Also discard if < 20 pixels in X from last fit datapoint, and deltaY > 1
                                 ptlog.append((xs[j], 12))
                                 continue
                             #update currX, currY, append to all lists
-                            currY = lsq[0][1]
+                            currY = fitY
                             currX = xs[j]
                             peaks.append(lsq[0][0])
                             xcoords.append(xs[j])
-                            ycoords.append(lsq[0][1])
+                            ycoords.append(fitY)
                             lastXs.append(xs[j])
-                            lastYs.append(lsq[0][1])
-                            ptlog.append((xs[j], 0))
+                            lastYs.append(fitY)
+                            ptlog.append((xs[j], 14 if rescued else 0))
                             #keep lastXs and lastYs at 10 elements or less
                             if (len(lastYs) > 10):
                                 lastXs.pop(0)
@@ -411,7 +430,7 @@ class rectifyProcess(fatboyProcess):
                             #sibling loop, this point is not added to lastXs/lastYs -- only accepted
                             #points inform the trend line here.  Logged for the audit, not yet changed.
                             ptlog.append((xs[j], 13))
-                    #print xs[j], p[1], lsq[0][1], lsq[0][0], lsq[0][2]
+                    #print xs[j], p[1], fitY, lsq[0][0], lsq[0][2]
                 for (ptx, ptcode) in ptlog:
                     statsf.write(currFDU.getFullId()+"\t0\t"+str(ycen)+"\t"+str(ptx)+"\t"+str(ptcode)+"\n")
                 print("rectifyProcess::calcLongslitContinuaRectification> Continuum centered at "+str(ycen)+" in "+currFDU.getFullId()+": found "+str(len(ycoords))+" datapoints.")
@@ -534,6 +553,18 @@ class rectifyProcess(fatboyProcess):
             yout -= ycen
             xin -= ycen
             yin -= xcen
+        #A modest grid of points spanning the full chip in this same shifted coordinate system,
+        #used only by checkFitSanity below to catch a runaway high-order fit -- Runge's
+        #phenomenon extrapolation blows up worst near the domain edges/corners, which a fit to
+        #only the traced datapoints (usually well short of covering the whole chip) can't see.
+        #Same guard calculateMOSContinuaTrans's whole_chip mode already has; this function never
+        #had it.  See the rectify audit notes.
+        if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
+            (xspan, xoff, yspan, yoff) = (xsize, xcen, ysize, ycen)
+        else:
+            (xspan, xoff, yspan, yoff) = (ysize, ycen, xsize, xcen)
+        (sanityXg, sanityYg) = np.meshgrid(np.linspace(0, xspan-1, 5)-xoff, np.linspace(0, yspan-1, 5)-yoff)
+
         try:
             lsq = leastsq(surfaceResiduals, p, args=(xin, yin, yout, fit_order))
         except Exception as ex:
@@ -594,6 +625,22 @@ class rectifyProcess(fatboyProcess):
         self._log.writeLog(__name__, "After "+str(niter)+" passes, kept "+str(len(yout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=1)
         self._log.writeLog(__name__, "Data - fit mean: "+formatNum(residmean)+"\tsigma: "+formatNum(residstddev), printCaller=False, tabLevel=1)
 
+        def evalTrans(cf, ordr):
+            return surfaceFunction(cf, sanityXg, sanityYg, ordr)
+        (fitCoeffs, usedOrder, fitOk) = self.checkFitSanity(lsq[0], fit_order, xin, yin, yout, evalTrans, maxTransformFactor*ysize, "longslit continuum trace")
+        if (not fitOk):
+            #Single global fit for the whole frame, same treatment as whole_chip mode's
+            #identical guard -- no single bad region to fall back around.
+            print("rectifyProcess::calcLongslitContinuaRectification> ERROR: Could not find a usable continuum fit! Continua will NOT be rectified!")
+            self._log.writeLog(__name__, "Could not find a usable continuum fit!  Continua will NOT be rectified!", type=fatboyLog.ERROR)
+            ycoeffs = np.array([0, 0, 1])
+            if (fdu.dispersion == fdu.DISPERSION_VERTICAL):
+                ycoeffs = np.array([0, 1, 0])
+            return ycoeffs
+        if (usedOrder != fit_order):
+            #checkFitSanity downgraded to a linear refit -- recompute for QA consistency
+            yprime = surfaceFunction(fitCoeffs, xin, yin, usedOrder)
+
         #Write out more qa data
         qafile = outdir+"/rectified/qa_"+fdu._id+"-continua.dat"
         f = open(qafile,'w')
@@ -601,7 +648,7 @@ class rectifyProcess(fatboyProcess):
             f.write(str(xin[i])+'\t'+str(yin[i])+'\t'+str(yout[i])+'\t'+str(yprime[i])+'\n')
         f.close()
 
-        ycoeffs = lsq[0]
+        ycoeffs = fitCoeffs
         return ycoeffs
     #end calcLongslitContinuaRectification
 
@@ -614,11 +661,11 @@ class rectifyProcess(fatboyProcess):
                 xcoeffs = np.array([0, 0, 1])
             return xcoeffs
 
-        if (self.getOption("write_calib_output", fdu.getTag()).lower() == "yes"):
-            #make directory if necessary
-            outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
-            if (not os.access(outdir+"/rectified", os.F_OK)):
-                os.mkdir(outdir+"/rectified",0o755)
+        #outdir is needed unconditionally now (the stats file below always writes here), not
+        #just when write_calib_output=yes as before -- see the rectify audit notes.
+        outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
+        if (not os.access(outdir+"/rectified", os.F_OK)):
+            os.mkdir(outdir+"/rectified",0o755)
 
         #Read options
         fit_order = int(self.getOption("sky_fit_order", fdu.getTag()))
@@ -626,6 +673,7 @@ class rectifyProcess(fatboyProcess):
         minCovFrac = float(self.getOption("min_coverage_fraction", fdu.getTag()))
         skybox = float(self.getOption("sky_boxsize", fdu.getTag()))
         min_gauss_width = float(self.getOption("min_continuum_fwhm", fdu.getTag()))
+        maxTransformFactor = float(self.getOption("rectify_max_transform_factor", fdu.getTag()))
         yinit = self.getOption("skyline_trace_yinit", fdu.getTag())
         find_ylo = self.getOption("skyline_find_ylo", fdu.getTag())
         find_yhi = self.getOption("skyline_find_yhi", fdu.getTag())
@@ -842,6 +890,23 @@ class rectifyProcess(fatboyProcess):
         #Index np.array used for fitting
         xind = np.arange(xsize, dtype=np.float64)
 
+        #Per-datapoint diagnostic stats file, same convention as
+        #traceMOSSkylineRectification's stats_<fduid>-skylines.txt (this function had none
+        #before -- see the rectify audit notes).  slitidx column is always 0 here -- longslit
+        #has no slitmask.  Codes: 0=kept, 4=peak too far from current X, 5=gaussian fit raised
+        #an exception, 6=leastsq exceeded max function calls, 7=negative total flux,
+        #8=negative FWHM, 9=FWHM too different from first point's FWHM AND a moment-centroid
+        #rescue (see centroidMoment) also failed or wasn't close enough to currX, 11=kept at
+        #the mid/end discontinuity point, 12=rejected: within 4*step of last kept point but
+        #too far in X, 13=rejected: too far from the trend line predicted from recent points
+        #(not added to lastXs/lastYs here, same pre-existing asymmetry as
+        #calcLongslitContinuaRectification -- see its own notes), 14=kept via the
+        #moment-centroid rescue instead of the Gaussian fit's position, 17=box too small (edge
+        #of chip)
+        statsfile = outdir+"/rectified/stats_"+fdu._id+"-skylines.txt"
+        statsf = open(statsfile, 'w')
+        statsf.write("#fduid\tslitidx\txcen\ty\tcode\n")
+
         #Setup output lists
         xin = []
         yin = []
@@ -871,6 +936,10 @@ class rectifyProcess(fatboyProcess):
             #xcoords and ycoords contain lists of fit (x,y) points
             xcoords = []
             ycoords = []
+            #Per-datapoint diagnostic log: (y, rejection code), written to
+            #stats_<fduid>-skylines.txt at the end of this line's trace -- see the code list
+            #where statsf is opened above.
+            ptlog = []
             #peak values of fits are kept and used as rejection criteria later
             peaks = []
             #Up to last 10 (x,y) pairs are kept and used in various rejection criteria
@@ -904,6 +973,7 @@ class rectifyProcess(fatboyProcess):
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                     x = np.sum(skyData[xlo:xhi,ys[j]-5:ys[j]+6], 1, dtype=np.float64)
                 if (len(x) < skybox):
+                    ptlog.append((ys[j], 17))
                     continue
                 #Make sure it doesn't move off chip
                 if (xlo < 0):
@@ -920,10 +990,12 @@ class rectifyProcess(fatboyProcess):
                 p[3] = gpu_arraymedian(x.copy())
                 if (abs(p[1]-currX) > skybox):
                     #Highest value is > skybox pixels from the previously fit peak.  Throw out this point
+                    ptlog.append((ys[j], 4))
                     continue
                 try:
                     lsq = leastsq(gaussResiduals, p, args=(xind[xlo:xhi], x))
                 except Exception as ex:
+                    ptlog.append((ys[j], 5))
                     continue
 
                 #print ("\t",xcen, ys[j], xlo, xhi, lsq)
@@ -934,12 +1006,15 @@ class rectifyProcess(fatboyProcess):
                 #Error checking results of leastsq call
                 if (lsq[1] == 5):
                     #exceeded max number of calls = ignore
+                    ptlog.append((ys[j], 6))
                     continue
                 if (lsq[0][0]+lsq[0][3] < 0 and j != 0):
                     #flux less than zero = ignore unless first datapoint
+                    ptlog.append((ys[j], 7))
                     continue
                 if (lsq[0][2] < 0 and j != 0):
                     #negative fwhm = ignore unless first datapoint
+                    ptlog.append((ys[j], 8))
                     continue
                 if (j == 0):
                     #First datapoint -- update currX, currY, append to all lists
@@ -950,12 +1025,15 @@ class rectifyProcess(fatboyProcess):
                     ycoords.append(ys[j])
                     lastXs.append(lsq[0][1])
                     lastYs.append(ys[j])
+                    ptlog.append((ys[j], 0))
                     #update gaussWidth to be actual fit FWHM
                     if (lsq[0][2] < gaussWidth and lsq[0][2] > 1):
                         #1.5 pixel minimum default
                         gaussWidth = max(abs(lsq[0][2]), min_gauss_width)
                 else:
-                    #FWHM is over a factor of 2 different than first fit.  Throw this point out
+                    #FWHM is over a factor of 2 different than first fit.
+                    fitX = lsq[0][1]
+                    rescued = False
                     if (lsq[0][2] > 2*gaussWidth or lsq[0][2] < 0.5*gaussWidth):
                         if (gaussWidth == skybox/3. and lsq[0][2] < 0.5*gaussWidth and lsq[0][2] > 1):
                             #Special case, gaussWidth did not update on first pass because it was super narrow.
@@ -963,7 +1041,20 @@ class rectifyProcess(fatboyProcess):
                             gaussWidth = max(abs(lsq[0][2]), 1.5)
                         else:
                             #print ("ERR6", gaussWidth, lsq[0][2])
-                            continue
+                            #Try rescuing the point's position via a flux-weighted moment on the
+                            #same box instead of discarding it outright -- see centroidMoment,
+                            #the identical fix in traceMOSContinuaRectification/
+                            #calcLongslitContinuaRectification, and the rectify audit notes.  x
+                            #here is already linear (not squared).  Only accept the moment
+                            #within skybox of currX, same tolerance the peak-position check
+                            #above uses; still has to pass the sanity check below like any
+                            #other point.
+                            momentX = self.centroidMoment(x, xind[xlo:xhi])
+                            if (momentX is None or abs(momentX-currX) > skybox):
+                                ptlog.append((ys[j], 9))
+                                continue
+                            fitX = momentX
+                            rescued = True
                     #Sanity check
                     #Calculate predicted "ref" value of X based on slope of previous
                     #fit datapoints
@@ -1014,35 +1105,44 @@ class rectifyProcess(fatboyProcess):
                         refX = wavg+slope*(ys[j]-wavgy)
                         maxerr = max(min(abs(slope*50),2),0.5)
                     #Discontinuity point in ys. Keep if within +/-1.
-                    if (ys[j] == yinit+step and abs(lsq[0][1]-currX) < 1):
+                    if (ys[j] == yinit+step and abs(fitX-currX) < 1):
                         #update currX, currY, append to all lists
-                        currX = lsq[0][1]
+                        currX = fitX
                         currY = ys[j]
                         peaks.append(lsq[0][0])
-                        xcoords.append(lsq[0][1])
+                        xcoords.append(fitX)
                         ycoords.append(ys[j])
-                        lastXs.append(lsq[0][1])
+                        lastXs.append(fitX)
                         lastYs.append(ys[j])
-                    elif (abs(lsq[0][1] - refX) < maxerr):
+                        ptlog.append((ys[j], 11))
+                    elif (abs(fitX - refX) < maxerr):
                         #Regular datapoint.  Apply sanity check rejection criteria here
                         #Discard if farther than maxerr away from refX
-                        if (abs(ys[j]-currY) < 4*step and maxerr > 1 and abs(lsq[0][1]-currX) > maxerr):
+                        if (abs(ys[j]-currY) < 4*step and maxerr > 1 and abs(fitX-currX) > maxerr):
                             #Also discard if < 20 pixels in Y from last fit datapoint, and deltaX > 1
                             #print ("ERR3")
+                            ptlog.append((ys[j], 12))
                             continue
                         #update currX, currY, append to all lists
-                        currX = lsq[0][1]
+                        currX = fitX
                         currY = ys[j]
                         peaks.append(lsq[0][0])
-                        xcoords.append(lsq[0][1])
+                        xcoords.append(fitX)
                         ycoords.append(ys[j])
-                        lastXs.append(lsq[0][1])
+                        lastXs.append(fitX)
                         lastYs.append(ys[j])
+                        ptlog.append((ys[j], 14 if rescued else 0))
                         #keep lastXs and lastYs at 10 elements or less
                         if (len(lastYs) > 10):
                             lastXs.pop(0)
                             lastYs.pop(0)
-                #print ys[j], p[1], lsq[0][1], lsq[0][0], lsq[0][2]
+                    else:
+                        #More than maxerr away from refX.  Not added to lastXs/lastYs here,
+                        #pre-existing behavior, unchanged -- see the stats-file doc comment above.
+                        ptlog.append((ys[j], 13))
+                #print ys[j], p[1], fitX, lsq[0][0], lsq[0][2]
+            for (pty, ptcode) in ptlog:
+                statsf.write(skyFDU.getFullId()+"\t0\t"+str(xcen)+"\t"+str(pty)+"\t"+str(ptcode)+"\n")
             print("rectifyProcess::calcLongslitSkylineRectification> Line centered at "+str(xcen)+" in "+skyFDU.getFullId()+": found "+str(len(xcoords))+" datapoints.")
             self._log.writeLog(__name__, "Line centered at "+str(xcen)+" in "+skyFDU.getFullId()+": found "+str(len(xcoords))+" datapoints.")
             #Check coverage fraction
@@ -1118,6 +1218,7 @@ class rectifyProcess(fatboyProcess):
 
         print("rectifyProcess::calcLongslitSkylineRectification> Successfully traced out "+str(nlines)+ " skylines.  Fitting transformation...")
         self._log.writeLog(__name__, "Successfully traced out "+str(nlines)+ " skylines.  Fitting transformation...")
+        statsf.close()
         #Convert to arrays
         xin = np.array(xin, dtype=np.float32)
         yin = np.array(yin, dtype=np.float32)
@@ -1147,6 +1248,17 @@ class rectifyProcess(fatboyProcess):
             xout -= xcen
             xin -= ycen
             yin -= xcen
+
+        #A modest grid of points spanning the full chip in this same shifted coordinate
+        #system, used only by checkFitSanity below to catch a runaway high-order fit --
+        #identical guard added to calcLongslitContinuaRectification's own final surface fit;
+        #this function never had it either.  See the rectify audit notes.
+        if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
+            (xspan, xoff, yspan, yoff) = (xsize, xcen, ysize, ycen)
+        else:
+            (xspan, xoff, yspan, yoff) = (ysize, ycen, xsize, xcen)
+        (sanityXg, sanityYg) = np.meshgrid(np.linspace(0, xspan-1, 5)-xoff, np.linspace(0, yspan-1, 5)-yoff)
+
         try:
             lsq = leastsq(surfaceResiduals, p, args=(xin, yin, xout, fit_order))
         except Exception as ex:
@@ -1207,6 +1319,22 @@ class rectifyProcess(fatboyProcess):
         self._log.writeLog(__name__, "After "+str(niter)+" passes, kept "+str(len(xout))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=1)
         self._log.writeLog(__name__, "Data - fit mean: "+formatNum(residmean)+"\tsigma: "+formatNum(residstddev), printCaller=False, tabLevel=1)
 
+        def evalTrans(cf, ordr):
+            return surfaceFunction(cf, sanityXg, sanityYg, ordr)
+        (fitCoeffs, usedOrder, fitOk) = self.checkFitSanity(lsq[0], fit_order, xin, yin, xout, evalTrans, maxTransformFactor*xsize, "longslit skyline trace")
+        if (not fitOk):
+            #Single global fit for the whole frame, same treatment as calcLongslitContinuaRectification's
+            #identical guard -- no single bad region to fall back around.
+            print("rectifyProcess::calcLongslitSkylineRectification> ERROR: Could not find a usable skyline fit! Skylines will NOT be rectified!")
+            self._log.writeLog(__name__, "Could not find a usable skyline fit!  Skylines will NOT be rectified!", type=fatboyLog.ERROR)
+            xcoeffs = np.array([0, 1, 0])
+            if (fdu.dispersion == fdu.DISPERSION_VERTICAL):
+                xcoeffs = np.array([0, 0, 1])
+            return xcoeffs
+        if (usedOrder != fit_order):
+            #checkFitSanity downgraded to a linear refit -- recompute for QA consistency
+            xprime = surfaceFunction(fitCoeffs, xin, yin, usedOrder)
+
         #Create output qa filename
         qafile = outdir+"/rectified/qa_"+skyFDU.getFullId()
 
@@ -1228,7 +1356,7 @@ class rectifyProcess(fatboyProcess):
             f.write(str(xin[i])+'\t'+str(yin[i])+'\t'+str(xout[i])+'\t'+str(xprime[i])+'\n')
         f.close()
 
-        xcoeffs = lsq[0]
+        xcoeffs = fitCoeffs
         return xcoeffs
     #end calcLongslitSkylineRectification
 
