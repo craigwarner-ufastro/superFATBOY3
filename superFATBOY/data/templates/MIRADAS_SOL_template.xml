@@ -204,7 +204,7 @@
   </process>
 
 <!-- The default line list is to use Redman_UArNe_lines.dat and the
-        wavelength_calibration_file wc_miradas_sol_new.xml specifies
+        wavelength_calibration_file wc_miradas_sol.xml specifies
         the wavelength scale initial guesses for each slitlet -->
   <process name="wavelengthCalibrate">
     <option name="calibrate_slitlets_individually" value="yes"/>
@@ -212,7 +212,7 @@
     <option name="wavelength_scale_guess" value="0.25"/>
     <option name="fit_order" value="3"/>
     <option name="write_output" value="yes"/>
-    <option name="wavelength_calibration_file" value="wc_miradas_sol_new.xml"/>
+    <option name="wavelength_calibration_file" value="wc_miradas_sol.xml"/>
     <option name="write_calib_output" value="yes"/>
     <option name="debug_mode" value="no"/>
     <option name="resample_to_common_scale" value="no"/>

@@ -157,7 +157,7 @@
 <parameters>
 <!-- set your outputdir -->
   <param name="outputdir" value="/path/to/outputdir"/>
-  <param name="overwite_files" value="yes"/>
+  <param name="overwrite_files" value="yes"/>
   <param name="quick_start_file" value="qs.dat"/>
   <param name="clean_up" value="no"/>
   <param name="prefix_delimiter" value="none"/>

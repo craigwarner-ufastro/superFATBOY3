@@ -21,10 +21,7 @@ the validated table in `docs/instruments.md` and `docs/quickstart.md`'s template
 untracked, git-ignored `html/` folder (copied in by the user for reference; never commit it). The code examples in
 `docs/api.md` marked *(tested)* were actually run (custom process via `processdir`, custom datatype via `datatypedir`,
 Python-API `fatboyDatabase(...).execute()`); rerun them if the fatboyProcess/fatboyDatabase API changes.
-Known doc-adjacent loose ends: the EMIR template has a `overwite_files` typo (silently ignored - unknown params are
-never warned about); the MIRADAS SOL/SOS templates name `wc_miradas_*_new.xml` while `data/config/` ships
-`wc_miradas_sol.xml`/`wc_miradas_sos.xml`; `setup.py`'s `package_data` does not include `data/templates/*` or the
-`data/linelists/*.txt` files (the KAST template needs `KAST_hehgcd.txt`), so an installed (non-source) copy may lack them.
+(The EMIR/OSIRIS `overwite_files` typo, the MIRADAS `wc_*_new.xml` template names, and `package_data` missing templates/linelists were all fixed in v2.3.37.)
 
 ## Orientation for anyone writing documentation on superFATBOY (read this first)
 

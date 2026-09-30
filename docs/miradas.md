@@ -159,9 +159,6 @@ MIRADAS ships line lists and per-slitlet starting guesses. In the templates:
   | SOS | `wc_miradas_sos.xml` (`wc_miradas_sos_real.xml` and the `_rev` variants are alternatives) |
   | MOS | `wc_miradas_mos_NN.xml`, where NN is the echelle order (14 to 34) |
 
-  > **Check the filename.** The MIRADAS templates currently name `wc_miradas_sol_new.xml` and `wc_miradas_sos_new.xml`, but the files shipped in
-  > `data/config/` are called `wc_miradas_sol.xml` and `wc_miradas_sos.xml`. Edit `wavelength_calibration_file` to whichever exists on your machine; a file
-  > that is not found as given is looked up in `data/config/`.
 - SOL and SOS: `resample_to_common_scale = no`. MOS: `yes`, plus `n_brightest_lines = 14` and `max_bright_line_separation = 1000`.
 
 ## MIRADAS-specific processes

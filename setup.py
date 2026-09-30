@@ -6,7 +6,7 @@ from setuptools import setup, find_packages, Extension
 import os, numpy
 
 name = 'superFATBOY'
-version = '2.3.36'
+version = '2.3.37'
 cmod_name = 'superFATBOY/fatboyclib'
 sources = ['superFATBOY/fatboyclibmodule.cpp']
 
@@ -19,7 +19,7 @@ setup( name = name,
   include_dirs = include_dirs,
   include_package_data=True,
   packages=find_packages(),
-  package_data={'': ['*.so', 'data/linelists/*.dat', 'data/config/*.*']},
+  package_data={'': ['*.so', 'data/linelists/*', 'data/config/*.*', 'data/templates/*.xml']},
   install_requires=['numpy>=1.0', 'scipy>=0.5'],
   zip_safe = False,
   ext_modules = [Extension(cmod_name, sources)],
