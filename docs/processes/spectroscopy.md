@@ -62,7 +62,7 @@ frames suppresses the target and improves signal-to-noise, so skylines are found
 
 | Option | Default | Meaning |
 |---|---|---|
-| `combine_method` | `median` | `median`, `quartile` or `min`. `min` helps when a bright continuum is present in every frame (MIRADAS uses it). |
+| `combine_method` | `median` | `median`, `quartile` or `min`. `quartile` rejects the brightest half of the frames at each pixel and takes the median of the rest (the lower quartile), which suppresses continua that land on a pixel in some frames; `min` takes the faintest frame and helps when a bright continuum is present in every frame (MIRADAS uses it). GPU and CPU give identical results (since 2.3.45). |
 | `max_frames_to_combine` | `10` | Combine at most this many frames |
 | `default_master_clean_sky` | `None` | Use this file instead |
 

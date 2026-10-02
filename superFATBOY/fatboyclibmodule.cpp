@@ -783,11 +783,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
 	    if (data[j*n+l] != 0) temp[i++] = data[j*n+l];
 	  }
 	  k = (i-nhigh-nlow)/2+nlow;
-	  if (k == 0 || i == 0) {
+	  if (i-nhigh-nlow <= 0 || i == 0) {
 	    medVals[j] = 0;
 	    continue;
 	  }
-	  if (i %2 == 1 || !even) {
+	  if ((i-nhigh-nlow) % 2 == 1 || !even) {
 	    medVals[j] = (float)quickselect(temp, i, k);
 	  } else {
 	    medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -802,11 +802,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -821,11 +821,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -840,11 +840,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -859,11 +859,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -878,11 +878,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -897,11 +897,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -913,7 +913,7 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
     } else {
       k = (n-nhigh-nlow)/2+nlow;
       for (int j = 0; j < ny; j++) {
-        if (n%2 == 1 || !even) {
+        if ((n-nhigh-nlow) % 2 == 1 || !even) {
           medVals[j] = (float)quickselect(&data[j*n], n, k);
         } else {
           medVals[j] = (float)(quickselect(&data[j*n], n, k) + quickselect(&data[j*n], n, k-1))/2;
@@ -936,11 +936,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
 	    if (data[j*n+l] != 0) temp[i++] = data[j*n+l];
 	  }
 	  k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-	  if (i %2 == 1 || !even) {
+	  if ((i-nhigh-nlow) % 2 == 1 || !even) {
 	    medVals[j] = quickselect(temp, i, k);
 	  } else {
 	    medVals[j] = (quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -955,11 +955,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = quickselect(temp, i, k);
           } else {
             medVals[j] = (quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -974,11 +974,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = quickselect(temp, i, k);
           } else {
             medVals[j] = (quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -993,11 +993,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = quickselect(temp, i, k);
           } else {
             medVals[j] = (quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1012,11 +1012,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = quickselect(temp, i, k);
           } else {
             medVals[j] = (quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1031,11 +1031,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = quickselect(temp, i, k);
           } else {
             medVals[j] = (quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1050,11 +1050,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = quickselect(temp, i, k);
           } else {
             medVals[j] = (quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1066,7 +1066,7 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
     } else {
       k = (n-nhigh-nlow)/2+nlow;
       for (int j = 0; j < ny; j++) {
-        if (n%2 == 1 || !even) {
+        if ((n-nhigh-nlow) % 2 == 1 || !even) {
           medVals[j] = quickselect(&data[j*n], n, k);
         } else {
           medVals[j] = (quickselect(&data[j*n], n, k) + quickselect(&data[j*n], n, k-1))/2;
@@ -1089,11 +1089,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
 	    if (data[j*n+l] != 0) temp[i++] = data[j*n+l];
 	  }
 	  k = (i-nhigh-nlow)/2+nlow;
-	  if (k == 0 || i == 0) {
+	  if (i-nhigh-nlow <= 0 || i == 0) {
 	    medVals[j] = 0;
 	    continue;
 	  }
-	  if (i %2 == 1 || !even) {
+	  if ((i-nhigh-nlow) % 2 == 1 || !even) {
 	    medVals[j] = (float)quickselect(temp, i, k);
 	  } else {
 	    medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1108,11 +1108,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1127,11 +1127,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1146,11 +1146,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1165,11 +1165,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1184,11 +1184,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1203,11 +1203,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1219,7 +1219,7 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
     } else {
       k = (n-nhigh-nlow)/2+nlow;
       for (int j = 0; j < ny; j++) {
-        if (n%2 == 1 || !even) {
+        if ((n-nhigh-nlow) % 2 == 1 || !even) {
           medVals[j] = (float)quickselect(&data[j*n], n, k);
         } else {
           medVals[j] = (float)(quickselect(&data[j*n], n, k) + quickselect(&data[j*n], n, k-1))/2;
@@ -1242,11 +1242,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
 	    if (data[j*n+l] != 0) temp[i++] = data[j*n+l];
 	  }
 	  k = (i-nhigh-nlow)/2+nlow;
-	  if (k == 0 || i == 0) {
+	  if (i-nhigh-nlow <= 0 || i == 0) {
 	    medVals[j] = 0;
 	    continue;
 	  }
-	  if (i %2 == 1 || !even) {
+	  if ((i-nhigh-nlow) % 2 == 1 || !even) {
 	    medVals[j] = (float)quickselect(temp, i, k);
 	  } else {
 	    medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1261,11 +1261,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1280,11 +1280,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1299,11 +1299,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1318,11 +1318,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1337,11 +1337,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1356,11 +1356,11 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1372,7 +1372,7 @@ static PyObject * median3d(PyObject *self, PyObject *args, PyObject *keywds) {
     } else {
       k = (n-nhigh-nlow)/2+nlow;
       for (int j = 0; j < ny; j++) {
-        if (n%2 == 1 || !even) {
+        if ((n-nhigh-nlow) % 2 == 1 || !even) {
           medVals[j] = (float)quickselect(&data[j*n], n, k);
         } else {
           medVals[j] = (float)(quickselect(&data[j*n], n, k) + quickselect(&data[j*n], n, k-1))/2;
@@ -1420,11 +1420,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
 	    if (data[j*n+l] != 0) temp[i++] = data[j*n+l];
 	  }
 	  k = (i-nhigh-nlow)/2+nlow;
-	  if (k == 0 || i == 0) {
+	  if (i-nhigh-nlow <= 0 || i == 0) {
 	    medVals[j] = 0;
 	    continue;
 	  }
-	  if (i %2 == 1 || !even) {
+	  if ((i-nhigh-nlow) % 2 == 1 || !even) {
 	    medVals[j] = (float)quickselect(temp, i, k);
 	  } else {
 	    medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1439,11 +1439,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1458,11 +1458,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1477,11 +1477,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1496,11 +1496,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1515,11 +1515,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1534,11 +1534,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1586,11 +1586,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
           }
         }
         k = (i-nhigh-nlow)/2+nlow;
-        if (k == 0 || i == 0) {
+        if (i-nhigh-nlow <= 0 || i == 0) {
           medVals[j] = 0;
           continue;
         }
-        if (i %2 == 1 || !even) {
+        if ((i-nhigh-nlow) % 2 == 1 || !even) {
           medVals[j] = (float)quickselect(temp, i, k);
         } else {
           medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1600,7 +1600,7 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
     } else {
       k = (n-nhigh-nlow)/2+nlow;
       for (int j = 0; j < ny; j++) {
-        if (n%2 == 1 || !even) {
+        if ((n-nhigh-nlow) % 2 == 1 || !even) {
           medVals[j] = (float)quickselect(&data[j*n], n, k);
         } else {
           medVals[j] = (float)(quickselect(&data[j*n], n, k) + (float)quickselect(&data[j*n], n, k-1))/2;
@@ -1623,11 +1623,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
 	    if (data[j*n+l] != 0) temp[i++] = data[j*n+l];
 	  }
 	  k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-	  if (i %2 == 1 || !even) {
+	  if ((i-nhigh-nlow) % 2 == 1 || !even) {
 	    medVals[j] = quickselect(temp, i, k);
 	  } else {
 	    medVals[j] = (quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1642,11 +1642,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = quickselect(temp, i, k);
           } else {
             medVals[j] = (quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1661,11 +1661,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = quickselect(temp, i, k);
           } else {
             medVals[j] = (quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1680,11 +1680,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = quickselect(temp, i, k);
           } else {
             medVals[j] = (quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1699,11 +1699,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = quickselect(temp, i, k);
           } else {
             medVals[j] = (quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1718,11 +1718,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = quickselect(temp, i, k);
           } else {
             medVals[j] = (quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1737,11 +1737,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = quickselect(temp, i, k);
           } else {
             medVals[j] = (quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1789,11 +1789,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
           }
         }
         k = (i-nhigh-nlow)/2+nlow;
-        if (k == 0 || i == 0) {
+        if (i-nhigh-nlow <= 0 || i == 0) {
           medVals[j] = 0;
           continue;
         }
-        if (i %2 == 1 || !even) {
+        if ((i-nhigh-nlow) % 2 == 1 || !even) {
           medVals[j] = (float)quickselect(temp, i, k);
         } else {
           medVals[j] = (float)(quickselect(temp, i, k) + quickselect(temp, i, k-1))/2;
@@ -1803,7 +1803,7 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
     } else {
       k = (n-nhigh-nlow)/2+nlow;
       for (int j = 0; j < ny; j++) {
-        if (n%2 == 1 || !even) {
+        if ((n-nhigh-nlow) % 2 == 1 || !even) {
           medVals[j] = quickselect(&data[j*n], n, k);
         } else {
           medVals[j] = (quickselect(&data[j*n], n, k) + quickselect(&data[j*n], n, k-1))/2;
@@ -1826,11 +1826,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
 	    if (data[j*n+l] != 0) temp[i++] = data[j*n+l];
 	  }
 	  k = (i-nhigh-nlow)/2+nlow;
-	  if (k == 0 || i == 0) {
+	  if (i-nhigh-nlow <= 0 || i == 0) {
 	    medVals[j] = 0;
 	    continue;
 	  }
-	  if (i %2 == 1 || !even) {
+	  if ((i-nhigh-nlow) % 2 == 1 || !even) {
 	    medVals[j] = (float)quickselect(temp, i, k);
 	  } else {
 	    medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1845,11 +1845,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1864,11 +1864,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1883,11 +1883,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1902,11 +1902,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1921,11 +1921,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1940,11 +1940,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -1992,11 +1992,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
           }
         }
         k = (i-nhigh-nlow)/2+nlow;
-        if (k == 0 || i == 0) {
+        if (i-nhigh-nlow <= 0 || i == 0) {
           medVals[j] = 0;
           continue;
         }
-        if (i %2 == 1 || !even) {
+        if ((i-nhigh-nlow) % 2 == 1 || !even) {
           medVals[j] = (float)quickselect(temp, i, k);
         } else {
           medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -2006,7 +2006,7 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
     } else {
       k = (n-nhigh-nlow)/2+nlow;
       for (int j = 0; j < ny; j++) {
-        if (n%2 == 1 || !even) {
+        if ((n-nhigh-nlow) % 2 == 1 || !even) {
           medVals[j] = (float)quickselect(&data[j*n], n, k);
         } else {
           medVals[j] = (float)(quickselect(&data[j*n], n, k) + (float)quickselect(&data[j*n], n, k-1))/2;
@@ -2029,11 +2029,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
 	    if (data[j*n+l] != 0) temp[i++] = data[j*n+l];
 	  }
 	  k = (i-nhigh-nlow)/2+nlow;
-	  if (k == 0 || i == 0) {
+	  if (i-nhigh-nlow <= 0 || i == 0) {
 	    medVals[j] = 0;
 	    continue;
 	  }
-	  if (i %2 == 1 || !even) {
+	  if ((i-nhigh-nlow) % 2 == 1 || !even) {
 	    medVals[j] = (float)quickselect(temp, i, k);
 	  } else {
 	    medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -2048,11 +2048,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -2067,11 +2067,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -2086,11 +2086,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -2105,11 +2105,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -2124,11 +2124,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -2143,11 +2143,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
             if (data[j*n+l] != 0 && data[j*n+l] >= lthresh && data[j*n+l] <= hthresh) temp[i++] = data[j*n+l];
           }
           k = (i-nhigh-nlow)/2+nlow;
-          if (k == 0 || i == 0) {
+          if (i-nhigh-nlow <= 0 || i == 0) {
             medVals[j] = 0;
             continue;
           }
-          if (i %2 == 1 || !even) {
+          if ((i-nhigh-nlow) % 2 == 1 || !even) {
             medVals[j] = (float)quickselect(temp, i, k);
           } else {
             medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -2195,11 +2195,11 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
           }
         }
         k = (i-nhigh-nlow)/2+nlow;
-        if (k == 0 || i == 0) {
+        if (i-nhigh-nlow <= 0 || i == 0) {
           medVals[j] = 0;
           continue;
         }
-        if (i %2 == 1 || !even) {
+        if ((i-nhigh-nlow) % 2 == 1 || !even) {
           medVals[j] = (float)quickselect(temp, i, k);
         } else {
           medVals[j] = (float)(quickselect(temp, i, k) + (float)quickselect(temp, i, k-1))/2;
@@ -2209,7 +2209,7 @@ static PyObject * median2d(PyObject *self, PyObject *args, PyObject *keywds) {
     } else {
       k = (n-nhigh-nlow)/2+nlow;
       for (int j = 0; j < ny; j++) {
-        if (n%2 == 1 || !even) {
+        if ((n-nhigh-nlow) % 2 == 1 || !even) {
           medVals[j] = (float)quickselect(&data[j*n], n, k);
         } else {
           medVals[j] = (float)(quickselect(&data[j*n], n, k) + (float)quickselect(&data[j*n], n, k-1))/2;
@@ -2317,7 +2317,7 @@ static PyObject * median(PyObject *self, PyObject *args, PyObject *keywds) {
       }
     }
     k = (n-nhigh-nlow)/2+nlow;
-    if (n%2 == 1 || !even) {
+    if ((n-nhigh-nlow) % 2 == 1 || !even) {
       med = (double)quickselect(data, n, k);
     } else {
       med = (double)(quickselect(data, n, k) + (double)quickselect(data, n, k-1))/2;
@@ -2400,7 +2400,7 @@ static PyObject * median(PyObject *self, PyObject *args, PyObject *keywds) {
       }
     }
     k = (n-nhigh-nlow)/2+nlow;
-    if (n%2 == 1 || !even) {
+    if ((n-nhigh-nlow) % 2 == 1 || !even) {
       med = (double)quickselect(data, n, k);
     } else {
       med = (double)(quickselect(data, n, k) + (double)quickselect(data, n, k-1))/2;
@@ -2483,7 +2483,7 @@ static PyObject * median(PyObject *self, PyObject *args, PyObject *keywds) {
       }
     }
     k = (n-nhigh-nlow)/2+nlow;
-    if (n%2 == 1 || !even) {
+    if ((n-nhigh-nlow) % 2 == 1 || !even) {
       med = (double)quickselect(data, n, k);
     } else {
       med = (double)(quickselect(data, n, k) + (double)quickselect(data, n, k-1))/2;
@@ -2566,7 +2566,7 @@ static PyObject * median(PyObject *self, PyObject *args, PyObject *keywds) {
       }
     }
     k = (n-nhigh-nlow)/2+nlow;
-    if (n%2 == 1 || !even) {
+    if ((n-nhigh-nlow) % 2 == 1 || !even) {
       med = (double)quickselect(data, n, k);
     } else {
       med = (double)(quickselect(data, n, k) + quickselect(data, n, k-1))/2;

@@ -18,14 +18,11 @@ the matching section here. New options are listed with their default.
 | MIRADAS SOL / SOS / MOS | CPU + GPU | Full chain |
 | LUCI MOS (caden_luci_test) | GPU (+ CPU cross-check) | Full chain incl. calib star (v2.3.43); wavelength solutions match the pre-refactor run to 0.02-0.05 px; CPU and GPU extracted spectra identical |
 | specBench regression, v2.3.44 vs v2.3.42 | CPU | All 571 output files identical (NaN-aware), apart from the renamed per-object rectified slitmask |
+| Median fixes, v2.3.45 vs v2.3.44 | specBench CPU, oriBench GPU, LUCI GPU | oriBench: alignment shifts identical (drizzled pixels differ at 1e-7). specBench: 559/571 identical; 6 of 23 extracted spectra rescaled by 0.007-0.23% and 2 standard-star pixels changed - both from the single-value median that used to return 0. LUCI: GPU clean sky now the lower quartile and identical to CPU; wavelength solutions moved 0.09 A median (0.02 px), fit RMS 0.473 -> 0.452 A |
 | MEGARA, FourStar, SINFONI, others | - | Not yet run through the refactored pipeline |
 
 ## Open issues
 
-- **createCleanSkies `combine_method=quartile`**: GPU passes `even=False` to imcombine and CPU uses
-  the default `even=True`. With 3 frames GPU gives the median of all 3 and CPU the mean of the lowest
-  2 (the true lower quartile). Present since the initial commit; ~2-3% (p99 40%) difference in clean
-  skies. Needs a decision on which is intended.
 - **sinfoniCollapseSlitlets** `padx`/`pady` (use-derivatives centroiding branch, not the default
   2-d Gaussian): commented out as a likely copy/paste from sinfoniCharacterizePSF, which pads for both
   methods. Re-check when SINFONI data is run.
@@ -86,6 +83,18 @@ the matching section here. New options are listed with their default.
 
 ### gpu_arraymedian
 - Scalar-median path accepts CuPy input. (Sept 15)
+- Median with `nlow`/`nhigh` rejection and `even=True` decided even/odd from the count **before**
+  rejection, so e.g. 3 frames with the highest rejected gave the higher of the two kept values instead
+  of their mean (9 CUDA kernels; also in main). Now uses the kept count. (2.3.45)
+- Small arrays (< 2**16 elements) passed as CuPy (e.g. small stacks from gpu_imcombine) crashed in the
+  CPU C kernels; now moved to the host and the result returned as CuPy. (2.3.45)
+
+### fatboyclib (C extension) - needs a rebuild (`setup.py install`)
+- Same even/odd bug as gpu_arraymedian in `median2d`/`median3d` with `nlow`/`nhigh` (72 sites; also in
+  main). (2.3.45)
+- A guard `k == 0` returned 0 whenever the kept values started at index 0 - e.g. `nhigh = n-1` (the
+  `min` combine) always returned 0 on the CPU, and a single nonzero value gave 0. Now checks that
+  some values remain (60 sites; also in main). (2.3.45)
 
 ### gpu_drihizzle (GPU drizzle)
 - CUDA illegal-address crash: a `float32` cast on the wrong operand packed a float64 into a float
@@ -98,6 +107,8 @@ the matching section here. New options are listed with their default.
   argument corrupted the kernel arguments; now matches the CPU version. (2.3.43)
 
 ### drihizzle (CPU drizzle)
+- `unique1d_wrap()` restored to call `np.unique1d` for numpy < 1.5 (the Gemini refactor had replaced
+  every branch with `np.unique`). (2.3.45)
 - `drihizzle3d`: float32 rounding of output coordinates could map two inputs to one output pixel, and
   numpy's `a[idx] += v` kept only one - whole planes of flux were lost (18% in a test). Now uses the
   unique-index loop whenever targets collide; matches the GPU to float rounding. (2.3.44)
@@ -223,6 +234,11 @@ the matching section here. New options are listed with their default.
 
 ### linearity
 - `pow(float, int)` in a CUDA kernel didn't compile under NVRTC. (Sept 15)
+
+### createCleanSkies
+- `combine_method=quartile` on the GPU no longer passes `even=False`; with the median fixes above the
+  GPU and CPU both give the lower quartile (identical results). Before, the GPU gave the plain median
+  of 3 frames. (2.3.45)
 
 ### createMasterArclamps / flatDivideSpec noisemaps
 - Kernel name typo `noisemaps_twilight_float`. (Sept 15)

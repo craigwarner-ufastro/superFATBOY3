@@ -229,8 +229,15 @@ for kernel `D` state before assuming a bug).
 - **Regression method used**: specBench on current code vs the previous commit (git worktree, copy the
   untracked `.so` files in), compare every output FITS with `np.array_equal(..., equal_nan=True)` - plain
   array_equal reports NaN-containing files as different. Result for v2.3.44: 571/571 identical.
-- **Open**: createCleanSkies `quartile` GPU (`even=False`, median of 3) vs CPU (lower quartile); SINFONI
-  `padx`/`pady` commented out by Craig - recheck on SINFONI data.
+- **Medians with nlow/nhigh (v2.3.45)**: the GPU kernels and the fatboyclib C extension decided even/odd from
+  the count before rejection, and the C code returned 0 when `k == 0` (one kept value: `min` combine, a single
+  nonzero value). Both fixed (also in main); createCleanSkies `quartile` now drops `even=False` so GPU == CPU ==
+  lower quartile. Test matrix (depth 2-7 x nlow x nhigh x even x nonzero, small and large arrays) in the
+  session: 424/424 match numpy. **fatboyclib is a C extension**: rebuild it (`setup.py install`, or
+  `build_ext --build-temp <tmp> --build-lib <tmp>` and copy the .so in - `build/` is root-owned after a sudo
+  install) or a test silently uses the old .so. For a baseline worktree of an older commit, copy in the OLD .so.
+- `unique1d_wrap` (drihizzle.py) keeps Craig's numpy-version branches (`np.unique1d` for numpy < 1.5).
+- **Open**: SINFONI `padx`/`pady` commented out by Craig - recheck on SINFONI data.
 
 ## Full LUCI MOS run (caden_luci_test.xml) and the InOut / drihizzle bugs it exposed (2026-10-02, v2.3.40-42)
 

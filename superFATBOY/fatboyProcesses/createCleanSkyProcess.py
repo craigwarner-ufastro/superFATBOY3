@@ -41,7 +41,9 @@ class createCleanSkyProcess(fatboyProcess):
             if (cmethod == "min"):
                 (data, header) = gpu_imcombine.imcombine(ds_fdus, outfile=csfilename, method="median", reject="minmax", nhigh=len(ds_fdus)-1, scale="none", nonzero=False, even=False, mef=fdu._mef, returnHeader=True, log=self._log)
             elif (cmethod == "quartile"):
-                (data, header) = gpu_imcombine.imcombine(ds_fdus, outfile=csfilename, method="median", reject="minmax", nhigh=len(ds_fdus)//2, scale="none", nonzero=False, even=False, mef=fdu._mef, returnHeader=True, log=self._log)
+                #Default even=True like the CPU path: with an even number of frames left after rejecting
+                #the brightest half, average the two middle values (the lower quartile of the stack)
+                (data, header) = gpu_imcombine.imcombine(ds_fdus, outfile=csfilename, method="median", reject="minmax", nhigh=len(ds_fdus)//2, scale="none", nonzero=False, mef=fdu._mef, returnHeader=True, log=self._log)
             else:
                 #median
                 (data, header) = gpu_imcombine.imcombine(ds_fdus, outfile=csfilename, method="median", scale="none", nonzero=False, mef=fdu._mef, returnHeader=True, log=self._log)

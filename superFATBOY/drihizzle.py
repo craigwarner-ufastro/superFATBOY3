@@ -18,10 +18,10 @@ def unique1d_wrap(z):
     ver = versiontuple(numpy.version.version)
     if (ver < versiontuple("1.2")):
     #old style
-        return np.unique(z,True)[0]
+        return np.unique1d(z,True)[0]
     elif (ver < versiontuple("1.5")):
         #new style
-        return np.unique(z,return_index=True)[1]
+        return np.unique1d(z,return_index=True)[1]
     else:
         return np.unique(z,return_index=True)[1]
 

@@ -505,7 +505,8 @@ extern "C" {
             for (int j = 0; j < depth; j++) {
               temp[j] = data[i+j*elem];
             }
-            if (n % 2 == 1 || !even) {
+            //parity of the values kept after rejecting nlow/nhigh, not of all n
+            if ((n-nhigh-nlow) % 2 == 1 || !even) {
               output[i] = quickselect_float(&temp[0], n, k);
             } else {
               output[i] = (quickselect_float(&temp[0], n, k) + quickselect_float(&temp[0], n, k-1))/2;
@@ -557,7 +558,8 @@ extern "C" {
               return;
             }
             k = (n-nhigh-nlow)/2+nlow;
-            if (n % 2 == 1 || !even) {
+            //parity of the values kept after rejecting nlow/nhigh, not of all n
+            if ((n-nhigh-nlow) % 2 == 1 || !even) {
               output[i] = quickselect_float(&data[i*cols], n, k);
             } else {
               output[i] = (quickselect_float(&data[i*cols], n, k) + quickselect_float(&data[i*cols], n, k-1))/2;
@@ -609,7 +611,8 @@ extern "C" {
               return;
             }
             k = (n-nhigh-nlow)/2+nlow;
-            if (n % 2 == 1 || !even) {
+            //parity of the values kept after rejecting nlow/nhigh, not of all n
+            if ((n-nhigh-nlow) % 2 == 1 || !even) {
               output[i] = (float)quickselect_int(&data[i*cols], n, k);
             } else {
               output[i] = (float)(quickselect_int(&data[i*cols], n, k) + quickselect_int(&data[i*cols], n, k-1))/2;
@@ -661,7 +664,8 @@ extern "C" {
               return;
             }
             k = (n-nhigh-nlow)/2+nlow;
-            if (n % 2 == 1 || !even) {
+            //parity of the values kept after rejecting nlow/nhigh, not of all n
+            if ((n-nhigh-nlow) % 2 == 1 || !even) {
               output[i] = (float)quickselect_long(&data[i*cols], n, k);
             } else {
               output[i] = (float)(quickselect_long(&data[i*cols], n, k) + quickselect_long(&data[i*cols], n, k-1))/2;
@@ -713,7 +717,8 @@ extern "C" {
               return;
             }
             k = (n-nhigh-nlow)/2+nlow;
-            if (n % 2 == 1 || !even) {
+            //parity of the values kept after rejecting nlow/nhigh, not of all n
+            if ((n-nhigh-nlow) % 2 == 1 || !even) {
               output[i] = quickselect_double(&data[i*cols], n, k);
             } else {
               output[i] = (quickselect_double(&data[i*cols], n, k) + quickselect_double(&data[i*cols], n, k-1))/2;
@@ -789,7 +794,8 @@ extern "C" {
               return;
             }
             k = (n-nhigh-nlow)/2+nlow;
-            if (n % 2 == 1 || !even) {
+            //parity of the values kept after rejecting nlow/nhigh, not of all n
+            if ((n-nhigh-nlow) % 2 == 1 || !even) {
               output[i] = quickselect_float(&data[i*cols], n, k);
             } else {
               output[i] = (quickselect_float(&data[i*cols], n, k) + quickselect_float(&data[i*cols], n, k-1))/2;
@@ -865,7 +871,8 @@ extern "C" {
               return;
             }
             k = (n-nhigh-nlow)/2+nlow;
-            if (n % 2 == 1 || !even) {
+            //parity of the values kept after rejecting nlow/nhigh, not of all n
+            if ((n-nhigh-nlow) % 2 == 1 || !even) {
               output[i] = (float)quickselect_int(&data[i*cols], n, k);
             } else {
               output[i] = (float)(quickselect_int(&data[i*cols], n, k) + quickselect_int(&data[i*cols], n, k-1))/2;
@@ -941,7 +948,8 @@ extern "C" {
               return;
             }
             k = (n-nhigh-nlow)/2+nlow;
-            if (n % 2 == 1 || !even) {
+            //parity of the values kept after rejecting nlow/nhigh, not of all n
+            if ((n-nhigh-nlow) % 2 == 1 || !even) {
               output[i] = (float)quickselect_long(&data[i*cols], n, k);
             } else {
               output[i] = (float)(quickselect_long(&data[i*cols], n, k) + quickselect_long(&data[i*cols], n, k-1))/2;
@@ -1017,7 +1025,8 @@ extern "C" {
               return;
             }
             k = (n-nhigh-nlow)/2+nlow;
-            if (n % 2 == 1 || !even) {
+            //parity of the values kept after rejecting nlow/nhigh, not of all n
+            if ((n-nhigh-nlow) % 2 == 1 || !even) {
               output[i] = quickselect_double(&data[i*cols], n, k);
             } else {
               output[i] = (quickselect_double(&data[i*cols], n, k) + quickselect_double(&data[i*cols], n, k-1))/2;
@@ -5349,10 +5358,16 @@ def gpu_arraymedian(input, axis="both", lthreshold=None, hthreshold=None, nlow=0
         input = input.astype(np.float32) #Cast for example uint16 as np.float32
     t = time.time()
     n = input.size
+    returnCupy = False
     if (n < 2**16 or not hasCuda):
         kernel = fatboyclib.median
         kernel2d = fatboyclib.median2d
         kernel3d = fatboyclib.median3d
+        #The fatboyclib C extensions need a numpy array (e.g. a small CuPy stack from gpu_imcombine);
+        #per-axis results are converted back to CuPy at the end for such callers
+        if (hasattr(input, 'get')):
+            input = input.get()
+            returnCupy = True
         input = input.copy()
     dims = len(input.shape)
     if (n == 0):
@@ -5444,6 +5459,8 @@ def gpu_arraymedian(input, axis="both", lthreshold=None, hthreshold=None, nlow=0
                     medVals = kernel3d(input, lthreshold=lthreshold, hthreshold=hthreshold, nlow=nlow, nhigh=nhigh, nonzero=nonzero, even=even, axis="X")
                     #medVals = kernel3d(gputranspose3d(input, 1, 2), lthreshold=lthreshold, hthreshold=hthreshold, nlow=nlow, nhigh=nhigh, nonzero=nonzero, even=even)
         #print "Median time: ", time.time()-t
+        if (returnCupy and not isinstance(medVals, cp.ndarray)):
+            medVals = cp.asarray(medVals)
         return medVals
 
 ###### ---------------------   MEAN FUNCTIONS   --------------------########
