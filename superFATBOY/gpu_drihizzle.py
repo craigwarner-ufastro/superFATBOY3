@@ -1654,18 +1654,16 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
         grid_y *= 2
         blocks_w //= 2
 
-    if kernel != 'uniform':
-        if weight == 'exptime':
-            if outunits == 'cps':
-                divFloatArrays((blocks_w, grid_y), (block_size,), (newdata, expmap, np.int32(newdata.size)))
-            else:
-                divFloatArrays((blocks_w, grid_y), (block_size,), (newdata, expmap, np.int32(newdata.size)))
-                if outunits == 'counts':
-                    newdata *= totexp
-        else:
+    # Same as main: with exptime weighting, a counts output is the raw drizzled sum (callers
+    # such as rectify's point_replace divide by the returned expmap themselves); only cps
+    # output is divided by the exposure map.
+    if weight == 'exptime' and kernel != 'uniform':
+        if outunits == 'cps':
             divFloatArrays((blocks_w, grid_y), (block_size,), (newdata, expmap, np.int32(newdata.size)))
-            if outunits == 'counts':
-                newdata *= totexp
+    elif kernel != 'uniform':
+        divFloatArrays((blocks_w, grid_y), (block_size,), (newdata, expmap, np.int32(newdata.size)))
+        if outunits == 'counts':
+            newdata *= totexp
 
     if _verbosity == fatboyLog.VERBOSE:
         print("Apply Weighting: ", time.time() - tt, "; Total: ", time.time() - t)
