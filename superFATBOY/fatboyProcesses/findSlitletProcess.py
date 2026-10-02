@@ -9,6 +9,7 @@ import numpy as np
 import math
 from scipy.optimize import leastsq
 from scipy.interpolate import UnivariateSpline
+from scipy.ndimage import uniform_filter1d
 
 usePlot = True
 try:
@@ -24,7 +25,7 @@ class findSlitletProcess(fatboyProcess):
 
     #Attempt to auto-detect slitlets at a given x-value
     #instead of reading from a region file
-    def autoDetectSlitlets(self, fdu, flatData, normal=False):
+    def autoDetectSlitlets(self, fdu, flatData, normal=False, lampData=None):
         #Read options
         boxsize = int(self.getOption("slitlet_autodetect_boxsize", fdu.getTag()))
         halfbox = boxsize//2
@@ -108,6 +109,26 @@ class findSlitletProcess(fatboyProcess):
             min_trough_depth = float(self.getOption("slitlet_autodetect_min_trough_depth", fdu.getTag()))
             slitlets = extractSpectra(cut1d, sigma, min_width, minFluxPct=min_flux_pct, use_orig_algorithm=use_orig, trough_depth=min_trough_depth, illumination_profile=True)
 
+        source = self.getOption("slitlet_autodetect_source", fdu.getTag()).lower()
+        if (source in ["arclamp", "both"] and lampData is not None):
+            #Flat slitlets are kept as a fallback and to report flat regions with no arc spectrum
+            flatSlitlets = slitlets
+            refineCut = None
+            if (source == "both"):
+                refineCut = cut1d
+            slitlets = self.autoDetectSlitletsArclamp(fdu, lampData, min_width, cut1d=refineCut)
+            if (slitlets is None):
+                print("findSlitletProcess::autoDetectSlitlets> ERROR: Could not find any slitlets in master arclamp.  Falling back to the flat!")
+                self._log.writeLog(__name__, "Could not find any slitlets in master arclamp.  Falling back to the flat!", type=fatboyLog.ERROR)
+                slitlets = flatSlitlets
+            else:
+                print("findSlitletProcess::autoDetectSlitlets> Found "+str(len(slitlets))+" slitlets in master arclamp.")
+                self._log.writeLog(__name__, "Found "+str(len(slitlets))+" slitlets in master arclamp.")
+                if (flatSlitlets is not None):
+                    for (flo, fhi) in flatSlitlets:
+                        if (not ((slitlets[:,0] <= fhi)*(slitlets[:,1] >= flo)).any()):
+                            print("findSlitletProcess::autoDetectSlitlets> ERROR: Dropping illuminated flat region "+str(flo)+"-"+str(fhi)+": no coherent arclamp spectrum, so not a valid slitlet (mask ID or alignment hole?)")
+                            self._log.writeLog(__name__, "Dropping illuminated flat region "+str(flo)+"-"+str(fhi)+": no coherent arclamp spectrum, so not a valid slitlet (mask ID or alignment hole?)", type=fatboyLog.ERROR)
 
         if (slitlets is None):
             #Return np.empty lists
@@ -226,6 +247,19 @@ class findSlitletProcess(fatboyProcess):
                     print("findSlitletProcess::autoDetectSlitlets> Autocorrected gapsize to "+str(gapsize)+"...")
                     self._log.writeLog(__name__, "Autocorrected gapsize to "+str(gapsize)+"...")
 
+        #Drop illuminated regions that are not real slitlets (e.g. a mask ID)
+        invalid = self.findInvalidSlitlets(fdu, flatData, sylo, syhi, lampData)
+        if (len(invalid) > 0):
+            keep = np.ones(len(sylo), dtype=bool)
+            for (j, reason) in invalid:
+                print("findSlitletProcess::autoDetectSlitlets> ERROR: Dropping auto-detected slitlet "+str(sylo[j])+"-"+str(syhi[j])+": "+reason+".  Not a valid slitlet (mask ID or alignment hole?)")
+                self._log.writeLog(__name__, "Dropping auto-detected slitlet "+str(sylo[j])+"-"+str(syhi[j])+": "+reason+".  Not a valid slitlet (mask ID or alignment hole?)", type=fatboyLog.ERROR)
+                keep[j] = False
+            sylo = sylo[keep]
+            syhi = syhi[keep]
+            slitx = slitx[keep]
+            slitw = slitw[keep]
+
         if (self.getOption("write_calib_output", fdu.getTag()).lower() == "yes"):
             #make directory if necessary
             outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
@@ -239,6 +273,138 @@ class findSlitletProcess(fatboyProcess):
 
         return (sylo, syhi, slitx, slitw)
     #end autoDetectSlitlets
+
+    #Correlation between adjacent cross-dispersion rows of the high-pass filtered master
+    #arclamp, over the full dispersion range.  r[y] = corr(row y, row y+1) is ~1 inside a
+    #slitlet (same line pattern), ~0 in background, and drops sharply at a boundary between
+    #packed slitlets whose arc lines are offset in wavelength.
+    def arcRowCorrelation(self, fdu, lampData):
+        lamp = np.nan_to_num(np.asarray(lampData, dtype=np.float64))
+        if (fdu.dispersion == fdu.DISPERSION_VERTICAL):
+            #Put dispersion direction along axis 1
+            lamp = lamp.T
+        #Remove continuum / illumination so that only the line pattern is correlated
+        hp = lamp-uniform_filter1d(lamp, 31, axis=1)
+        hp = hp[:,16:-16]
+        hp -= hp.mean(1).reshape(-1,1)
+        norm = np.sqrt((hp*hp).sum(1))
+        norm[norm == 0] = 1
+        return (hp[:-1]*hp[1:]).sum(1)/(norm[:-1]*norm[1:])
+    #end arcRowCorrelation
+
+    #Auto-detect slitlets as runs of rows whose arclamp spectra correlate (see
+    #arcRowCorrelation).  Returns an (n,2) int array of [ylo, yhi] or None.  If the flat
+    #field cut1d is given, outer edges (not shared with an adjacent slitlet) are moved to
+    #the flat's half-max crossing, which is sharper than the arc's tapered edges.
+    def autoDetectSlitletsArclamp(self, fdu, lampData, min_width, cut1d=None):
+        min_corr = float(self.getOption("slitlet_autodetect_arc_min_corr", fdu.getTag()))
+        r = self.arcRowCorrelation(fdu, lampData)
+        good = r > min_corr
+        slitlets = []
+        y = 0
+        while (y < len(good)):
+            if (good[y]):
+                y0 = y
+                while (y < len(good) and good[y]):
+                    y += 1
+                #good[y0:y] all True => rows y0 through y are in one slitlet
+                if (y-y0+1 >= min_width):
+                    slitlets.append([y0, y])
+            y += 1
+        if (len(slitlets) == 0):
+            return None
+        if (cut1d is not None):
+            packed_gap = 3 #Max rows between two slitlets that share a boundary
+            max_shift = 8 #Max rows an outer edge may move
+            nslits = len(slitlets)
+            outerLo = [i == 0 or slitlets[i][0]-slitlets[i-1][1] > packed_gap for i in range(nslits)]
+            outerHi = [i == nslits-1 or slitlets[i+1][0]-slitlets[i][1] > packed_gap for i in range(nslits)]
+            bkg = np.percentile(cut1d, 5)
+            for i in range(nslits):
+                (ylo, yhi) = slitlets[i]
+                half = bkg+0.5*(np.median(cut1d[ylo:yhi+1])-bkg)
+                mid = (ylo+yhi)//2
+                if (outerLo[i]):
+                    #Never walk into the previous slitlet
+                    ymin = max(ylo-max_shift, 0)
+                    if (i > 0):
+                        ymin = max(ymin, slitlets[i-1][1]+1)
+                    y = ylo
+                    if (cut1d[y] >= half):
+                        while (y > ymin and cut1d[y-1] >= half):
+                            y -= 1
+                    else:
+                        while (y < mid and cut1d[y] < half):
+                            y += 1
+                    slitlets[i][0] = y
+                if (outerHi[i]):
+                    ymax = min(yhi+max_shift, len(cut1d)-1)
+                    if (i < nslits-1):
+                        ymax = min(ymax, slitlets[i+1][0]-1)
+                    y = yhi
+                    if (cut1d[y] >= half):
+                        while (y < ymax and cut1d[y+1] >= half):
+                            y += 1
+                    else:
+                        while (y > mid and cut1d[y] < half):
+                            y -= 1
+                    slitlets[i][1] = y
+        return np.array(slitlets, dtype=np.int32)
+    #end autoDetectSlitletsArclamp
+
+    #Find illuminated regions that are not real slitlets (e.g. LUCI's mask ID "digits"):
+    #a real slitlet's flat is smooth from row to row and, if an arclamp is given, all of
+    #its rows share one line pattern.  Returns a list of (index, reason).
+    def findInvalidSlitlets(self, fdu, flatData, sylo, syhi, lampData=None):
+        max_rough = float(self.getOption("slitlet_validity_max_flat_roughness", fdu.getTag()))
+        min_arc_corr = float(self.getOption("slitlet_validity_min_arc_corr", fdu.getTag()))
+        x_auto = int(self.getOption("slitlet_autodetect_x", fdu.getTag()))
+        invalid = []
+        if (max_rough <= 0 and (lampData is None or min_arc_corr <= 0)):
+            return invalid
+        flat = np.asarray(flatData)
+        if (fdu.dispersion == fdu.DISPERSION_VERTICAL):
+            #Put dispersion direction along axis 1
+            flat = flat.T
+        #Median over 201 columns suppresses noise, dust, and bad pixels
+        x1 = max(0, x_auto-100)
+        x2 = min(flat.shape[1], x_auto+101)
+        prof = np.median(flat[:,x1:x2], axis=1)
+        r = None
+        if (lampData is not None and min_arc_corr > 0):
+            r = self.arcRowCorrelation(fdu, lampData)
+        for j in range(len(sylo)):
+            #Skip 2 rows at each end so partially illuminated edge rows don't count
+            lo = int(sylo[j])+2
+            hi = int(syhi[j])-2
+            if (lo < 0 or hi >= len(prof) or hi-lo < 4):
+                continue
+            reasons = []
+            level = np.median(prof[lo:hi+1])
+            if (max_rough > 0 and level > 0):
+                d = np.diff(prof[lo:hi+1])
+                rough = 1.4826*np.median(np.abs(d-np.median(d)))/level
+                if (rough > max_rough):
+                    reasons.append("flat row-to-row roughness "+formatNum(rough)+" > slitlet_validity_max_flat_roughness = "+str(max_rough))
+            if (r is not None):
+                arc_corr = r[lo:hi].mean()
+                if (arc_corr < min_arc_corr):
+                    reasons.append("mean arclamp row correlation "+formatNum(arc_corr)+" < slitlet_validity_min_arc_corr = "+str(min_arc_corr))
+            if (len(reasons) > 0):
+                invalid.append((j, "; ".join(reasons)))
+        return invalid
+    #end findInvalidSlitlets
+
+    #Region file slitlets are kept as given, but warn loudly about any that look invalid
+    def warnInvalidRegionSlitlets(self, fdu, calibs, sylo, syhi, regFile):
+        lampData = None
+        if ('masterLamp' in calibs):
+            lampData = calibs['masterLamp'].getData(force_cpu=True)
+        invalid = self.findInvalidSlitlets(fdu, calibs['masterFlat'].getData(force_cpu=True), sylo, syhi, lampData)
+        for (j, reason) in invalid:
+            print("findSlitletProcess::warnInvalidRegionSlitlets> WARNING: Slitlet "+str(j+1)+" ("+str(sylo[j])+"-"+str(syhi[j])+") in region file "+regFile+" does not look like a valid slitlet: "+reason+".  Keeping it since it is in the region file.")
+            self._log.writeLog(__name__, "Slitlet "+str(j+1)+" ("+str(sylo[j])+"-"+str(syhi[j])+") in region file "+regFile+" does not look like a valid slitlet: "+reason+".  Keeping it since it is in the region file.", type=fatboyLog.WARNING)
+    #end warnInvalidRegionSlitlets
 
     ## OVERRIDE execute
     def execute(self, fdu, prevProc=None):
@@ -402,6 +568,35 @@ class findSlitletProcess(fatboyProcess):
             self._log.writeLog(__name__, "Master flat not found for "+fdu.getFullId()+" (filter="+str(fdu.filter)+")!", type=fatboyLog.ERROR)
             return calibs
 
+        #3) If auto-detecting from the arclamp, find or create the master arclamp too
+        if (self.getOption("slitlet_autodetect_source", fdu.getTag()).lower() in ["arclamp", "both"] and not 'masterLamp' in calibs):
+            lampProperties = dict()
+            lampProperties['specmode'] = fdu.getProperty("specmode")
+            #3a) check for an already created master arclamp matching specmode/filter/grism and TAGGED for this object
+            masterLamp = self._fdb.getTaggedMasterCalib(ident=fdu._id, obstype="master_arclamp", filter=fdu.filter, section=fdu.section, properties=lampProperties, headerVals=headerVals)
+            if (masterLamp is None):
+                #3b) check for an already created master arclamp matching specmode/filter/grism
+                masterLamp = self._fdb.getMasterCalib(obstype="master_arclamp", filter=fdu.filter, section=fdu.section, properties=lampProperties, headerVals=headerVals, tag=fdu.getTag())
+            if (masterLamp is None):
+                #3c) Use createMasterArclampProcess.getCalibs to create masterLamp from individual arclamps
+                #Only works if process is included in XML file.  Returns None on a failure
+                cma_process = self._fdb.getProcessByName("createMasterArclamps")
+                if (cma_process is None or not isinstance(cma_process, fatboyProcess)):
+                    print("findSlitletProcess::getCalibs> WARNING: could not find process createMasterArclamps!  Check your XML file!")
+                    self._log.writeLog(__name__, "could not find process createMasterArclamps!  Check your XML file!", type=fatboyLog.WARNING)
+                else:
+                    cma_process.setDefaultOptions()
+                    lampCalibs = cma_process.getCalibs(fdu, prevProc)
+                    if ('masterLamp' in lampCalibs):
+                        masterLamp = lampCalibs['masterLamp']
+            if (masterLamp is not None):
+                calibs['masterLamp'] = masterLamp
+                print("findSlitletProcess::getCalibs> Using master arclamp "+masterLamp.getFullId()+" for slitlet detection...")
+                self._log.writeLog(__name__, "Using master arclamp "+masterLamp.getFullId()+" for slitlet detection...")
+            else:
+                print("findSlitletProcess::getCalibs> WARNING: slitlet_autodetect_source is "+self.getOption("slitlet_autodetect_source", fdu.getTag())+" but no master arclamp found for "+fdu.getFullId()+".  Auto-detection will use the flat only.")
+                self._log.writeLog(__name__, "slitlet_autodetect_source is "+self.getOption("slitlet_autodetect_source", fdu.getTag())+" but no master arclamp found for "+fdu.getFullId()+".  Auto-detection will use the flat only.", type=fatboyLog.WARNING)
+
         if (self.getOption("trace_slitlets_individually", fdu.getTag()).lower() == "yes"):
             #call traceOrders function to trace out individual echelle orders
             calibs = self.traceOrders(fdu, calibs)
@@ -430,8 +625,8 @@ class findSlitletProcess(fatboyProcess):
         self._optioninfo.setdefault('boundary', 'Width in pixels of a boundary to not attempt to fit at the edges of each segment.  Should be 100 for MIRADAS.')
         self._options.setdefault('cut1d_max_threshold', 2)
         self._optioninfo.setdefault('cut1d_max_threshold', 'Reject a trace datapoint if 1d cut max < this factor * quartile of cut.')
-        self._options.setdefault('edge_detection_method', 'cross_correlation')
-        self._optioninfo.setdefault('edge_detection_method', 'Method used at each step to find the slitlet edge position:\ncross_correlation (default) = cross-correlate 1-d cut with a reference cut and fit a\nGaussian to the correlation peak.  Best for slitlets separated by a genuine step edge\n(flux drops to ~0 between them).  Regresses badly on weak local-minimum boundaries (see\nlocal_minimum below) -- typically finds 0 datapoints for that edge.\nlocal_minimum = directly find the local minimum flux value in the 1-d cut (with subpixel\nparabolic refinement) instead of cross-correlating.  Much better for closely-packed\nslitlets where the boundary is only a weak dip in flux rather than a full step down to 0,\nwhich cross_correlation fails on -- but regresses badly on genuine step edges (a step\'s\nminimum sits at the edge of the search window, not at an interior parabolic minimum), so\nit is NOT a safe drop-in replacement for cross_correlation across a whole dataset.\nauto = try cross_correlation first for every edge (matches cross_correlation exactly for\nany edge it can trace); only for an edge where that finds literally 0 datapoints (the\nweak-dip failure mode above) does it retry that same edge with local_minimum instead of\ngiving up.  Recommended over local_minimum whenever a dataset mixes both edge types,\nwhich is the common case (see findSlitletProcess algorithm audit notes).')
+        self._options.setdefault('edge_detection_method', 'auto')
+        self._optioninfo.setdefault('edge_detection_method', 'Method used at each step to find the slitlet edge position:\ncross_correlation = cross-correlate 1-d cut with a reference cut and fit a\nGaussian to the correlation peak.  Best for slitlets separated by a genuine step edge\n(flux drops to ~0 between them).  Regresses badly on weak local-minimum boundaries (see\nlocal_minimum below) -- typically finds 0 datapoints for that edge.\nlocal_minimum = directly find the local minimum flux value in the 1-d cut (with subpixel\nparabolic refinement) instead of cross-correlating.  Much better for closely-packed\nslitlets where the boundary is only a weak dip in flux rather than a full step down to 0,\nwhich cross_correlation fails on -- but regresses badly on genuine step edges (a step\'s\nminimum sits at the edge of the search window, not at an interior parabolic minimum), so\nit is NOT a safe drop-in replacement for cross_correlation across a whole dataset.\nauto (default) = try cross_correlation first for every edge (matches cross_correlation exactly for\nany edge it can trace); only for an edge where that finds literally 0 datapoints (the\nweak-dip failure mode above) does it retry that same edge with local_minimum instead of\ngiving up.  Recommended over local_minimum whenever a dataset mixes both edge types,\nwhich is the common case (see findSlitletProcess algorithm audit notes).')
         self._options.setdefault('local_min_depth_threshold', '0.05')
         self._optioninfo.setdefault('local_min_depth_threshold', 'For edge_detection_method=local_minimum only: minimum dip depth required to accept a\ndatapoint, as a fraction of the 1-d cut\'s local median flux.  Rejects steps where no real\ndip is present (e.g. pure noise or a genuine data gap).')
         self._options.setdefault('edge_extend_to_chip', 'no')
@@ -453,6 +648,8 @@ class findSlitletProcess(fatboyProcess):
         self._optioninfo.setdefault('max_residual_error', 'Maximum sigma of residuals to fit to be rejected as an invalid fit, default 1.0')
         self._options.setdefault('min_coverage_fraction', '30')
         self._optioninfo.setdefault('min_coverage_fraction', 'Minimum percentage of a slitlet to trace out to be valid for a fit, default 30%')
+        self._options.setdefault('narrow_gaps_between_slitlets', 'no')
+        self._optioninfo.setdefault('narrow_gaps_between_slitlets', 'Set to yes for closely packed slitlets whose boundaries are only a dip in flux\nrather than a drop to background.  cross_correlation edge tracing rejects any datapoint\nfailing the cut1d_max_threshold (peak vs lower quartile) check, which assumes one side of\nevery edge is dark background, so every datapoint along a packed boundary is rejected.\nWith yes, such a datapoint is measured with local_minimum instead.  Unlike auto, which\nswitches a whole edge only when it finds 0 datapoints, this switches point by point, so\nit also handles an edge that is a step along part of the slit and packed along the rest.')
         self._options.setdefault('n_segments', '1')
         self._optioninfo.setdefault('n_segments', 'Number of piecewise functions to fit.  Should be 2 for MIRADAS, 1 for most other cases.')
         self._options.setdefault('order_step_size', '5')
@@ -478,6 +675,14 @@ class findSlitletProcess(fatboyProcess):
         self._optioninfo.setdefault('slitlet_autodetect_min_width', 'Minimum width of a slitlet for auto-detection')
         self._options.setdefault('slitlet_autodetect_use_orig_algorithm', 'no')
         self._optioninfo.setdefault('slitlet_autodetect_use_orig_algorithm', 'Set to yes to auto-detect slitlets with the original\nextractSpectra algorithm (extractSpectra_orig, versions <= 2.3.29): global sigma-clipped\nbackground, no trough splitting.')
+        self._options.setdefault('slitlet_autodetect_source', 'flat')
+        self._optioninfo.setdefault('slitlet_autodetect_source', 'Calibration frame used to auto-detect slitlets if no region file:\nflat (default) = steps in a 1-d cut of the master flat.\narclamp = correlation between adjacent rows of the master arclamp: rows within one slitlet\nshare the same line pattern, so a boundary between closely packed slitlets shows up even\nwhen the flat barely dips there, as long as adjacent slitlets are offset in wavelength.\nUses the full dispersion range, so is best suited to slitlets that are not strongly tilted.\nboth = slitlets and packed boundaries from the arclamp, outer edges refined to the flat\'s\nhalf-max, and flat regions with no coherent arc spectrum (e.g. a mask ID) reported and dropped.\nThe master arclamp is found or created via createMasterArclamps, which must be in the XML.')
+        self._options.setdefault('slitlet_autodetect_arc_min_corr', '0.9')
+        self._optioninfo.setdefault('slitlet_autodetect_arc_min_corr', 'For slitlet_autodetect_source = arclamp or both: minimum correlation between\nadjacent rows of the high-pass filtered arclamp for them to be part of the same slitlet.')
+        self._options.setdefault('slitlet_validity_max_flat_roughness', '0.045')
+        self._optioninfo.setdefault('slitlet_validity_max_flat_roughness', 'Flag a slitlet as invalid (e.g. a mask ID or alignment hole) if the robust row-to-row\nscatter of the flat across it, as a fraction of its flux, exceeds this.  Auto-detected\ninvalid slitlets are dropped; region file slitlets get a warning only.  0 = disable.')
+        self._options.setdefault('slitlet_validity_min_arc_corr', '0.9')
+        self._optioninfo.setdefault('slitlet_validity_min_arc_corr', 'When a master arclamp is used (slitlet_autodetect_source = arclamp or both), also flag a\nslitlet as invalid if the mean correlation between its adjacent arclamp rows is below this.\n0 = disable.')
         self._options.setdefault('slitlet_autodetect_sigma', '5')
         self._optioninfo.setdefault('slitlet_autodetect_sigma', 'Minimum sigma vs local noise to be a step\nfor slitlet detection')
         self._options.setdefault('slitlet_autodetect_use_median', 'no')
@@ -562,6 +767,7 @@ class findSlitletProcess(fatboyProcess):
         bndry = int(self.getOption('boundary', fdu.getTag()))
         minCovFrac = float(self.getOption("min_coverage_fraction", fdu.getTag()))
         cut1d_max_threshold = float(self.getOption("cut1d_max_threshold", fdu.getTag()))
+        narrow_gaps = (self.getOption("narrow_gaps_between_slitlets", fdu.getTag()).lower() == "yes")
         maxResidualError = float(self.getOption("max_residual_error", fdu.getTag()))
         edge_detection_method = self.getOption("edge_detection_method", fdu.getTag()).lower()
         local_min_depth_threshold = float(self.getOption("local_min_depth_threshold", fdu.getTag()))
@@ -580,7 +786,10 @@ class findSlitletProcess(fatboyProcess):
             if (masterFlat.hasProperty("normalized") or masterFlat.hasHeaderValue('NORMAL01')):
                 #has been normalized already
                 isNormalized = True
-            (sylo, syhi, slitx, slitw) = self.autoDetectSlitlets(fdu, masterFlat.getData(force_cpu=True).copy(), normal=isNormalized)
+            lampData = None
+            if ('masterLamp' in calibs):
+                lampData = calibs['masterLamp'].getData(force_cpu=True)
+            (sylo, syhi, slitx, slitw) = self.autoDetectSlitlets(fdu, masterFlat.getData(force_cpu=True).copy(), normal=isNormalized, lampData=lampData)
 
             nslits = len(sylo)
             nslits_ref = int(self.getOption("slitlet_autodetect_nslits", fdu.getTag()))
@@ -615,6 +824,9 @@ class findSlitletProcess(fatboyProcess):
             #disable this FDU
             fdu.disable()
             return calibs
+        if (regFile is not None and os.access(regFile, os.F_OK)):
+            #Keep region file slitlets as given but warn about any that look invalid
+            self.warnInvalidRegionSlitlets(fdu, calibs, sylo, syhi, regFile)
 
         #Check to see if slitmask already exists
         outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
@@ -788,6 +1000,8 @@ class findSlitletProcess(fatboyProcess):
                     #median value of 1-d cuts and max values of cross correlations are kept and used as rejection criteria later
                     meds = []
                     maxcors = []
+                    #Which datapoints were measured with local_minimum (maxcors not comparable across methods)
+                    lmflags = []
                     #Up to last 10 (x,y) pairs are kept and used in various rejection criteria
                     lastXs = []
                     lastYs = []
@@ -845,7 +1059,23 @@ class findSlitletProcess(fatboyProcess):
                             f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t6\n')
                             #Flux in cut1 is less than 5% of that in islit reference cut
                             continue
-                        if (active_edge_method == "local_minimum"):
+                        use_local_min = (active_edge_method == "local_minimum")
+                        if (not use_local_min):
+                            q1 = gpu_arraymedian(cut1d, nhigh=len(cut1d)//2) #quartile
+                            cmax = cut1d.max()
+                            if (cmax < 0):
+                                f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t7\n')
+                                #Peak flux in cut1d negative - should be caught by #6 but just in case
+                                continue
+                            if ((do_subtract_bkg and cmax/q1 < 3) or abs(cmax/q1) < cut1d_max_threshold):
+                                if (not narrow_gaps):
+                                    f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t7\n')
+                                    #Peak flux in cut1d < 3*quartile
+                                    continue
+                                #No background on either side, so this point is on a packed
+                                #boundary (a dip, not a step) -- use local_minimum for this point
+                                use_local_min = True
+                        if (use_local_min):
                             #Directly find the local minimum (weak dip) in cut1d instead of
                             #cross-correlating.  Search the whole cut1d window -- it is already
                             #centered on currY (the running prediction), same as cross_correlation
@@ -874,16 +1104,6 @@ class findSlitletProcess(fatboyProcess):
                             #"how strong is this signal" role that np.max(ccor) does for cross_correlation
                             maxcor_val = local_med-dip_val
                         else:
-                            q1 = gpu_arraymedian(cut1d, nhigh=len(cut1d)//2) #quartile
-                            cmax = cut1d.max()
-                            if (cmax < 0):
-                                f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t7\n')
-                                #Peak flux in cut1d negative - should be caught by #6 but just in case
-                                continue
-                            if ((do_subtract_bkg and cmax/q1 < 3) or abs(cmax/q1) < cut1d_max_threshold):
-                                f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t7\n')
-                                #Peak flux in cut1d < 3*quartile
-                                continue
                             #Cross correlate cut1d with islit
                             #Use numpy correlate since 1d cut -- not enough pixels to benefit from GPU
                             ccor = np.correlate(cut1d, islit, mode='same')
@@ -934,6 +1154,7 @@ class findSlitletProcess(fatboyProcess):
                             currX = xs[0]
                             meds.append(medVal)
                             maxcors.append(maxcor_val)
+                            lmflags.append(use_local_min)
                             xcoords.append(xs[j])
                             ycoords.append(lsq[0][1])
                             lastXs.append(xs[0])
@@ -997,6 +1218,7 @@ class findSlitletProcess(fatboyProcess):
                                 currX = xs[j]
                                 meds.append(medVal)
                                 maxcors.append(maxcor_val)
+                                lmflags.append(use_local_min)
                                 xcoords.append(xs[j])
                                 ycoords.append(lsq[0][1])
                                 lastXs.append(xs[j])
@@ -1009,6 +1231,7 @@ class findSlitletProcess(fatboyProcess):
                                 currX = xs[j]
                                 meds.append(medVal)
                                 maxcors.append(maxcor_val)
+                                lmflags.append(use_local_min)
                                 xcoords.append(xs[j])
                                 ycoords.append(lsq[0][1])
                                 lastXs.append(xs[j])
@@ -1028,6 +1251,7 @@ class findSlitletProcess(fatboyProcess):
                                 currX = xs[j]
                                 meds.append(medVal)
                                 maxcors.append(maxcor_val)
+                                lmflags.append(use_local_min)
                                 xcoords.append(xs[j])
                                 ycoords.append(lsq[0][1])
                                 lastXs.append(xs[j])
@@ -1056,6 +1280,7 @@ class findSlitletProcess(fatboyProcess):
                 #and max values of cross correlations and remove them
                 meds = np.array(meds)
                 maxcors = np.array(maxcors)
+                lmflags = np.array(lmflags, dtype=bool)
                 #b = (meds > arraymedian(meds)-2.5*meds.std())*(maxcors > arraymedian(maxcors)-2.5*maxcors.std())
                 xcoords = np.array(xcoords)
                 ycoords = np.array(ycoords)
@@ -1080,7 +1305,16 @@ class findSlitletProcess(fatboyProcess):
                             z1[-1] = np.concatenate([z1[-1], np.zeros(xstride)-yf0])
                         continue
 
-                    b = (meds[segmask] >= arraymedian(meds[segmask])-2.5*meds[segmask].std())*(maxcors[segmask] >= arraymedian(maxcors[segmask])-2.5*maxcors[segmask].std())
+                    b = (meds[segmask] >= arraymedian(meds[segmask])-2.5*meds[segmask].std())
+                    #Cross-correlation peaks and local minimum dip depths are on different
+                    #scales, so apply the maxcors criterion within each group separately
+                    seg_maxcors = maxcors[segmask]
+                    seg_lm = lmflags[segmask]
+                    bmax = np.ones(len(seg_maxcors), dtype=bool)
+                    for grp in [seg_lm, ~seg_lm]:
+                        if (grp.sum() > 0):
+                            bmax[grp] = seg_maxcors[grp] >= arraymedian(seg_maxcors[grp])-2.5*seg_maxcors[grp].std()
+                    b = b*bmax
                     seg_xcoords = xcoords[segmask][b]
                     seg_ycoords = ycoords[segmask][b]
 
@@ -1241,7 +1475,7 @@ class findSlitletProcess(fatboyProcess):
                 masterFlat.tagDataAs("slitqa", qaData)
                 masterFlat.writeTo(qafile, tag="slitqa")
                 masterFlat.removeProperty("slitqa")
-                del qaData
+                #Don't del qaData here -- the slitmask qa file below still needs it
             if (n_slit_failures == nslits):
                 #Every single slitlet needed a fallback -- this isn't "a few bad
                 #slitlets," it's nothing usable at all, so discard the image.
@@ -1349,7 +1583,10 @@ class findSlitletProcess(fatboyProcess):
             if (masterFlat.hasProperty("normalized") or masterFlat.hasHeaderValue('NORMAL01')):
                 #has been normalized already
                 isNormalized = True
-            (sylo, syhi, slitx, slitw) = self.autoDetectSlitlets(fdu, masterFlat.getData(force_cpu=True).copy(), normal=isNormalized)
+            lampData = None
+            if ('masterLamp' in calibs):
+                lampData = calibs['masterLamp'].getData(force_cpu=True)
+            (sylo, syhi, slitx, slitw) = self.autoDetectSlitlets(fdu, masterFlat.getData(force_cpu=True).copy(), normal=isNormalized, lampData=lampData)
 
             nslits = len(sylo)
             nslits_ref = int(self.getOption("slitlet_autodetect_nslits", fdu.getTag()))
@@ -1637,7 +1874,10 @@ class findSlitletProcess(fatboyProcess):
             if (masterFlat.hasProperty("normalized") or masterFlat.hasHeaderValue('NORMAL01')):
                 #has been normalized already
                 isNormalized = True
-            (sylo, syhi, slitx, slitw) = self.autoDetectSlitlets(fdu, masterFlat.getData(force_cpu=True).copy(), normal=isNormalized)
+            lampData = None
+            if ('masterLamp' in calibs):
+                lampData = calibs['masterLamp'].getData(force_cpu=True)
+            (sylo, syhi, slitx, slitw) = self.autoDetectSlitlets(fdu, masterFlat.getData(force_cpu=True).copy(), normal=isNormalized, lampData=lampData)
 
             nslits = len(sylo)
             nslits_ref = int(self.getOption("slitlet_autodetect_nslits", fdu.getTag()))
@@ -1673,6 +1913,9 @@ class findSlitletProcess(fatboyProcess):
             #disable this FDU
             fdu.disable()
             return calibs
+        if (regFile is not None and os.access(regFile, os.F_OK)):
+            #Keep region file slitlets as given but warn about any that look invalid
+            self.warnInvalidRegionSlitlets(fdu, calibs, sylo, syhi, regFile)
 
         #Check to see if slitmask already exists
         outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))

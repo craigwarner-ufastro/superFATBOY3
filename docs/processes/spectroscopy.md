@@ -94,6 +94,22 @@ fit is used for all.
 **Where slitlets come from:** automatically (set `slitlet_autodetect_x` to a column where the flat is well illuminated, and `slitlet_autodetect_nslits` to the number you
 expect as a check) or from a region file given with `region_file` (DS9 `.reg`, `.xml` or `.txt`).
 
+Auto-detection normally uses the flat. If closely packed slitlets merge together because the flat barely dips between them, set
+`slitlet_autodetect_source` to `both`. It then uses the master arclamp: rows of one slitlet all share the same arc line pattern, so
+the boundary between two slitlets shows up clearly, as long as they are offset in wavelength. The master arclamp is found or created on
+the fly (`createMasterArclamps` must be in the XML).
+
+**Invalid slitlets.** Illuminated regions that are not real slitlets, such as the mask ID strip at the top of LUCI masks, are flagged.
+Their flat is rough from row to row and their arc rows don't share one spectrum. Auto-detected ones are dropped with an `ERROR` in the log.
+Ones listed in a region file are kept, but a `WARNING` is logged.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `slitlet_autodetect_source` | `flat` | `flat`, `arclamp`, or `both`. `both` takes slitlets and packed boundaries from the arclamp and refines outer edges with the flat; `arclamp` alone has slightly wide outer edges. Correlates over the whole dispersion range, so is best for slitlets that are not strongly tilted. |
+| `slitlet_autodetect_arc_min_corr` | `0.9` | Minimum correlation between adjacent arclamp rows for them to be in the same slitlet |
+| `slitlet_validity_max_flat_roughness` | `0.045` | Flag a slitlet whose flat varies from row to row by more than this fraction of its flux (0 = off). Real slitlets on LUCI and MIRADAS score 0.001 to 0.024; the LUCI mask ID scores 0.09. |
+| `slitlet_validity_min_arc_corr` | `0.9` | With an arclamp in use, flag a slitlet whose arc rows correlate less than this on average (0 = off) |
+
 | Option | Default | Meaning |
 |---|---|---|
 | `slitlet_autodetect_x` | `1024` | Column (along dispersion) at which to take the 1-d cut that finds slitlets |
@@ -111,11 +127,12 @@ expect as a check) or from a region file given with `region_file` (DS9 `.reg`, `
 | `write_plots` | `no` | Save QA plots as PNG |
 
 **Closely-packed slitlets.** Where adjacent slitlets are separated by a genuine gap, the default edge detector (cross-correlation) works well. When they sit right
-next to each other and the boundary is only a shallow dip, it can find nothing for that edge. The new options handle this:
+next to each other and the boundary is only a shallow dip, it can find nothing for that edge. The default `auto` handles this:
 
 | Option | Default | Meaning |
 |---|---|---|
-| `edge_detection_method` | `cross_correlation` | `cross_correlation`, `local_minimum`, or **`auto`**. `auto` tries cross-correlation first for each edge and only falls back to the local-minimum finder for an edge where cross-correlation finds no points at all. **Recommended** whenever a dataset mixes both edge types. `local_minimum` on its own regresses on genuine step edges. |
+| `edge_detection_method` | `auto` | `cross_correlation`, `local_minimum`, or `auto`. `auto` tries cross-correlation first for each edge and only falls back to the local-minimum finder for an edge where cross-correlation finds no points at all, so it gives exactly the same result as `cross_correlation` on any edge that method can trace. `local_minimum` on its own regresses on genuine step edges. |
+| `narrow_gaps_between_slitlets` | `no` | With `yes`, a point on an edge where both sides of the cut are lit (a packed boundary) is measured with the local-minimum finder instead of being rejected. Unlike `auto`, this switches point by point, so it also handles an edge that is a clean step along part of the slit and packed along the rest. |
 | `slitlet_autodetect_min_trough_depth` | `0.3` | When splitting packed slitlets during auto-detection: minimum depth of the trough between two slitlets, as a fraction of the fainter slitlet's height. Lower (for example 0.1) for very shallow boundaries. |
 | `local_min_depth_threshold` | `0.05` | For `local_minimum`: minimum dip depth to accept a point |
 | `fit_function` | `polynomial` | `polynomial` or `spline`. At the low fit orders normally used here the two are numerically identical; `spline` helps only when you raise the order. |

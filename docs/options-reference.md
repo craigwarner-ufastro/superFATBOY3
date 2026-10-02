@@ -2,7 +2,7 @@
 
 *[Docs home](README.md)*
 
-**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.3.37.
+**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.3.38.
 Run `superFatboy3.py -list` yourself for the live list, or regenerate this file with
 `python3 docs/gen_options_reference.py`. For prose descriptions of what each process does, see the
 [process guide](processes/README.md).
@@ -361,7 +361,7 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `create_calib_only` | `no` |  |
 | `cut1d_max_threshold` | `2` | Reject a trace datapoint if 1d cut max < this factor * quartile of cut. |
 | `debug_mode` | `no` |  |
-| `edge_detection_method` | `cross_correlation` | Method used at each step to find the slitlet edge position: cross_correlation (default) = cross-correlate 1-d cut with a reference cut and fit a Gaussian to the correlation peak.  Best for slitlets separated by a genuine step edge (flux drops to ~0 between them).  Regresses badly on weak local-minimum boundaries (see local_minimum below) -- typically finds 0 datapoints for that edge. local_minimum = directly find the local minimum flux value in the 1-d cut (with subpixel parabolic refinement) instead of cross-correlating.  Much better for closely-packed slitlets where the boundary is only a weak dip in flux rather than a full step down to 0, which cross_correlation fails on -- but regresses badly on genuine step edges (a step's minimum sits at the edge of the search window, not at an interior parabolic minimum), so it is NOT a safe drop-in replacement for cross_correlation across a whole dataset. auto = try cross_correlation first for every edge (matches cross_correlation exactly for any edge it can trace); only for an edge where that finds literally 0 datapoints (the weak-dip failure mode above) does it retry that same edge with local_minimum instead of giving up.  Recommended over local_minimum whenever a dataset mixes both edge types, which is the common case (see findSlitletProcess algorithm audit notes). |
+| `edge_detection_method` | `auto` | Method used at each step to find the slitlet edge position: cross_correlation = cross-correlate 1-d cut with a reference cut and fit a Gaussian to the correlation peak.  Best for slitlets separated by a genuine step edge (flux drops to ~0 between them).  Regresses badly on weak local-minimum boundaries (see local_minimum below) -- typically finds 0 datapoints for that edge. local_minimum = directly find the local minimum flux value in the 1-d cut (with subpixel parabolic refinement) instead of cross-correlating.  Much better for closely-packed slitlets where the boundary is only a weak dip in flux rather than a full step down to 0, which cross_correlation fails on -- but regresses badly on genuine step edges (a step's minimum sits at the edge of the search window, not at an interior parabolic minimum), so it is NOT a safe drop-in replacement for cross_correlation across a whole dataset. auto (default) = try cross_correlation first for every edge (matches cross_correlation exactly for any edge it can trace); only for an edge where that finds literally 0 datapoints (the weak-dip failure mode above) does it retry that same edge with local_minimum instead of giving up.  Recommended over local_minimum whenever a dataset mixes both edge types, which is the common case (see findSlitletProcess algorithm audit notes). |
 | `edge_extend_to_chip` | `no` | If set to yes, and one edge of a slitlet is traced out, the other edge if it runs into the chip boundary will not be clipped. |
 | `edge_threshold` | `15` | Do not attempt to trace out slitlets within this many pixels of edges |
 | `fiber_width` | `5` | Width of fibers, used with peak local max |
@@ -372,23 +372,28 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `max_residual_error` | `2.0` | Maximum sigma of residuals to fit to be rejected as an invalid fit, default 1.0 |
 | `min_coverage_fraction` | `30` | Minimum percentage of a slitlet to trace out to be valid for a fit, default 30% |
 | `n_segments` | `1` | Number of piecewise functions to fit.  Should be 2 for MIRADAS, 1 for most other cases. |
+| `narrow_gaps_between_slitlets` | `no` | Set to yes for closely packed slitlets whose boundaries are only a dip in flux rather than a drop to background.  cross_correlation edge tracing rejects any datapoint failing the cut1d_max_threshold (peak vs lower quartile) check, which assumes one side of every edge is dark background, so every datapoint along a packed boundary is rejected. With yes, such a datapoint is measured with local_minimum instead.  Unlike auto, which switches a whole edge only when it finds 0 datapoints, this switches point by point, so it also handles an edge that is a step along part of the slit and packed along the rest. |
 | `order_step_size` | `5` | Step size in pixels for tracing out orders, default = 5. |
 | `padding` | `0` | Number of pixels to pad slitlets by.  Default=0 |
 | `region_file` | `None` | .reg, .xml, or .txt file describing slitlets |
 | `slitlet_attempt_autocorrect` | `no` | If slitlets found does not match slitlet_autodetect_nslits attempt to auto-correct before failing. |
 | `slitlet_autocorrect_gap_size` | `None` | Correct auto-detected slitlets to have uniform gaps between slitlets of this size. |
+| `slitlet_autodetect_arc_min_corr` | `0.9` | For slitlet_autodetect_source = arclamp or both: minimum correlation between adjacent rows of the high-pass filtered arclamp for them to be part of the same slitlet. |
 | `slitlet_autodetect_boxsize` | `5` | Boxsize for auto-detecting slitlets |
 | `slitlet_autodetect_min_flux_pct` | `0.001` | When flux drops below this percent of max, force break between slitlets |
 | `slitlet_autodetect_min_trough_depth` | `0.3` | Minimum depth of the trough between two adjacent slitlets, as a fraction of the fainter slitlet's height above background, to split them when the flux between them does not drop all the way to background.  Lower (e.g. 0.1) for closely packed slitlets with very shallow boundaries; too low risks splitting slitlets at dust or bad-row dips. |
 | `slitlet_autodetect_min_width` | `10` | Minimum width of a slitlet for auto-detection |
 | `slitlet_autodetect_nslits` | `0` | Set this to the number of slitlets if auto-detecting them as a check that it found the correct number of slitlets (0 = no check) |
 | `slitlet_autodetect_sigma` | `5` | Minimum sigma vs local noise to be a step for slitlet detection |
+| `slitlet_autodetect_source` | `flat` | Calibration frame used to auto-detect slitlets if no region file: flat (default) = steps in a 1-d cut of the master flat. arclamp = correlation between adjacent rows of the master arclamp: rows within one slitlet share the same line pattern, so a boundary between closely packed slitlets shows up even when the flat barely dips there, as long as adjacent slitlets are offset in wavelength. Uses the full dispersion range, so is best suited to slitlets that are not strongly tilted. both = slitlets and packed boundaries from the arclamp, outer edges refined to the flat's half-max, and flat regions with no coherent arc spectrum (e.g. a mask ID) reported and dropped. The master arclamp is found or created via createMasterArclamps, which must be in the XML. |
 | `slitlet_autodetect_use_median` | `no` | Set to yes to use median rather than sum for auto detection |
 | `slitlet_autodetect_use_orig_algorithm` | `no` | Set to yes to auto-detect slitlets with the original extractSpectra algorithm (extractSpectra_orig, versions <= 2.3.29): global sigma-clipped background, no trough splitting. |
 | `slitlet_autodetect_x` | `1024` | Central pixel in continuum direction for auto-detecting slitlets if no region file. |
 | `slitlet_trace_boxsize` | `21` | Boxsize in cross-dispersion direction of 1-d cut for tracing in individual mode |
 | `slitlet_trace_yhi` | `-1` | Upper bound in cross-dispersion direction of 1-d cut for tracing in group mode (-1 = 3/4 ysize) |
 | `slitlet_trace_ylo` | `-1` | Lower bound in cross-dispersion direction of 1-d cut for tracing in group mode (-1 = 1/4 ysize) |
+| `slitlet_validity_max_flat_roughness` | `0.045` | Flag a slitlet as invalid (e.g. a mask ID or alignment hole) if the robust row-to-row scatter of the flat across it, as a fraction of its flux, exceeds this.  Auto-detected invalid slitlets are dropped; region file slitlets get a warning only.  0 = disable. |
+| `slitlet_validity_min_arc_corr` | `0.9` | When a master arclamp is used (slitlet_autodetect_source = arclamp or both), also flag a slitlet as invalid if the mean correlation between its adjacent arclamp rows is below this. 0 = disable. |
 | `spline_smoothing` | `-1` | For fit_function=spline only: smoothing factor (scipy UnivariateSpline's s). -1 (default) = let scipy pick its own default smoothing.  Larger values smooth more (fewer, gentler wiggles); 0 = interpolate every point exactly (no smoothing at all). |
 | `subtract_background_level` | `no` | Subtract a running boxcar min from the 1-d cut	before attempting to find slitlets |
 | `trace_peak_local_max` | `no` | Set to yes for MEGARA or other fiber data np.where the curvature changes between fibers |

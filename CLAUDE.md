@@ -195,6 +195,31 @@ ever delete output directories you created yourself, never the user's own; a run
 15-25 minutes, and can also hang on a flaky NFS mount unrelated to any code issue (check `ps -o stat`
 for kernel `D` state before assuming a bug).
 
+## findSlitletProcess: packed slitlets, arclamp autodetect, invalid slitlets (2026-10-02, v2.3.38)
+
+Driven by `caden_luci_fs_test.xml` (LUCI MOS, 25 region-file slitlets, several packed with 1-2px boundaries).
+- **Region-file edges finding 0 datapoints** were all rejection code 7: `traceOrders`'s `cmax/q1 < cut1d_max_threshold`
+  check assumes one side of an edge is dark background, so a packed boundary (flux on both sides) is rejected before
+  cross-correlation even runs. `edge_detection_method` default is now **`auto`** (byte-identical to `cross_correlation` on
+  any edge that method can trace, by construction; verified on specBench + MIRADAS SOS). New `narrow_gaps_between_slitlets`
+  (default `no`): when `yes`, a point failing the q1 check is measured with local_minimum *for that point* instead of rejected.
+  Simply skipping the check was tried first and is worse (cross-correlation on a packed edge gives sigma 1.7-2.9 vs 0.09-0.24,
+  and the garbage nonzero point count blocks `auto`'s rescue). Phase-2 outlier rejection now applies the `maxcors` criterion
+  per edge-method group (cc peak vs dip depth are different scales).
+- **`slitlet_autodetect_source = flat|arclamp|both`** (default `flat`): correlation between adjacent rows of the
+  high-pass-filtered master arclamp is ~1 inside a slitlet, ~0 in background, and notches sharply at a packed boundary (LUCI
+  y=1035: flat dips 3%, arc corr 0.998->0.70). `both` = arc segmentation + flat half-max outer edges: 24/24 LUCI slitlets within
+  3px of the hand-made region file (flat autodetect merges two pairs). Needs the full dispersion range (±128-256px windows lose
+  boundaries), so not suited to strongly tilted slitlets. Master arclamp comes from getTaggedMasterCalib/getMasterCalib, falling
+  back to createMasterArclampProcess.getCalibs (same pattern as flatDivideSpec for the master flat).
+- **Invalid slitlets** (LUCI mask-ID "digits" strip): `findInvalidSlitlets()` - flat row-to-row MAD roughness over a 201-column
+  median (`slitlet_validity_max_flat_roughness`=0.045; real LUCI/MIRADAS slits 0.001-0.024, ID strip 0.083-0.09) and, with an
+  arclamp, mean arc row correlation (`slitlet_validity_min_arc_corr`=0.9). Dropped with ERROR in autodetect, WARNING-only for a
+  region file.
+- Fixed a crash from the 2026-09-11 hardening: the degraded-slitlet QA write did `del qaData`, then the normal slitmask QA write
+  used it -> `UnboundLocalError` whenever any slitlet fell back and `write_calib_output=yes`.
+- Gotcha: launching several runs from the same directory at once can race on creating `temp-fatboy/` (FileExistsError) - stagger.
+
 ## Algorithm-audit methodology, distilled from findSlitletProcess (2026-09-28)
 
 `findSlitletProcess` (`traceOrders`/`traceSlitlets`) just went through a full five-question robustness
