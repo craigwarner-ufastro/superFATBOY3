@@ -306,10 +306,10 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
                     else:
                         m = mdl.clean(slit, threshold=thresh, inpaint=inpaint, segment=True)
                     crMask[:, xlo:xhi][tempMask] = m[tempMask]
-                np = m.sum()
-                npix += np
-                print("\tSlit " + str((j + 1)) + ": cleaned " + str(np) + " pixels.")
-                self._log.writeLog(__name__, "Slit " + str((j + 1)) + ": cleaned " + str(np) + " pixels.", printCaller=False, tabLevel=1)
+                nslitpix = m.sum()
+                npix += nslitpix
+                print("\tSlit " + str((j + 1)) + ": cleaned " + str(nslitpix) + " pixels.")
+                self._log.writeLog(__name__, "Slit " + str((j + 1)) + ": cleaned " + str(nslitpix) + " pixels.", printCaller=False, tabLevel=1)
 
         # clean up GPU context
         if (self._fdb.getGPUMode()):
@@ -388,8 +388,8 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
                     tempMask = slitmask.getData()[ylo:yhi, :] == (j + 1)
                     slit = (data[ylo:yhi, :] * tempMask).astype(np.float32)
                     # Run lacos on this one slit.  Put return value into cr_data np.array. slit will contain cleaned_data
-                    (np, crslit, crdata) = lacos_spec(slit, None, None, gain=fdu.gain, readn=fdu.readnoise, sigclip=sigma, niter=npass, log=self._log, xorder=xorder, yorder=yorder, mask=1 - fdu.getBadPixelMask().getData()[ylo:yhi, :])
-                    npix += np
+                    (nslitpix, crslit, crdata) = lacos_spec(slit, None, None, gain=fdu.gain, readn=fdu.readnoise, sigclip=sigma, niter=npass, log=self._log, xorder=xorder, yorder=yorder, mask=1 - fdu.getBadPixelMask().getData()[ylo:yhi, :])
+                    npix += nslitpix
                     crmask[ylo:yhi, :][tempMask] = crslit[tempMask]
                     croutImage[ylo:yhi, :][tempMask] = crdata[tempMask].astype(np.float32)
                 else:
@@ -399,12 +399,12 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
                     tempMask = slitmask.getData()[:, xlo:xhi] == (j + 1)
                     slit = (data[:, xlo:xhi] * tempMask).astype(np.float32)
                     # Run lacos on this one slit.  Put return value into cr_data np.array. slit will contain cleaned_data
-                    (np, crslit, crdata) = lacos_spec(slit, None, None, gain=fdu.gain, readn=fdu.readnoise, sigclip=sigma, niter=npass, log=self._log, xorder=xorder, yorder=yorder, mask=1 - fdu.getBadPixelMask().getData()[:, xlo:xhi])
-                    npix += np
+                    (nslitpix, crslit, crdata) = lacos_spec(slit, None, None, gain=fdu.gain, readn=fdu.readnoise, sigclip=sigma, niter=npass, log=self._log, xorder=xorder, yorder=yorder, mask=1 - fdu.getBadPixelMask().getData()[:, xlo:xhi])
+                    npix += nslitpix
                     crmask[:, xlo:xhi][tempMask] = crslit[tempMask]
                     croutImage[:, xlo:xhi][tempMask] = crdata[tempMask].astype(np.float32)
-                print("\tSlit " + str((j + 1)) + ": cleaned " + str(np) + " pixels.")
-                self._log.writeLog(__name__, "Slit " + str((j + 1)) + ": cleaned " + str(np) + " pixels.", printCaller=False, tabLevel=1)
+                print("\tSlit " + str((j + 1)) + ": cleaned " + str(nslitpix) + " pixels.")
+                self._log.writeLog(__name__, "Slit " + str((j + 1)) + ": cleaned " + str(nslitpix) + " pixels.", printCaller=False, tabLevel=1)
 
         # Calculate crdata
         crdata = fdu.getData() - croutImage
