@@ -1405,7 +1405,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             if (mode == MODE_FITS):
                 outimage = pyfits.open(frames[0])
             elif (mode == MODE_RAW):
-                hdu = pyfits.PrimaryHDU(outtype(out))
+                hdu = pyfits.PrimaryHDU()
                 outimage = pyfits.HDUList([hdu])
             elif (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG):
                 outimage = pyfits.open(frames[0].filename)
@@ -1428,7 +1428,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             if (mode == MODE_FITS):
                 outexp = pyfits.open(frames[0])
             elif (mode == MODE_RAW):
-                hdu = pyfits.PrimaryHDU(outtype(out))
+                hdu = pyfits.PrimaryHDU()
                 outexp = pyfits.HDUList([hdu])
             elif (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG):
                 outexp = pyfits.open(frames[0].filename)
@@ -1450,7 +1450,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             if (mode == MODE_FITS):
                 outpix = pyfits.open(frames[0])
             elif (mode == MODE_RAW):
-                hdu = pyfits.PrimaryHDU(outtype(out))
+                hdu = pyfits.PrimaryHDU()
                 outpix = pyfits.HDUList([hdu])
             elif (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG):
                 outpix = pyfits.open(frames[0].filename)
@@ -1944,7 +1944,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                             zout+=zcoeffs[n]*xin**(i-l+1)*yin**(l-k)*zin**(k-1)
                         xrefout+=xcoeffs[n]*xrefin**(i-l+1)*yrefin**(l-k)*zrefin**(k-1)
                         yrefout+=ycoeffs[n]*xrefin**(i-l+1)*yrefin**(l-k)*zrefin**(k-1)
-                        zrefout+=ycoeffs[n]*xrefin**(i-l+1)*yrefin**(l-k)*zrefin**(k-1)
+                        zrefout+=zcoeffs[n]*xrefin**(i-l+1)*yrefin**(l-k)*zrefin**(k-1)
                         n+=1
 
             if (_verbosity == fatboyLog.VERBOSE):
@@ -2104,7 +2104,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
         tt = time.time()
 
         #Scale data by inmask and weight factor
-        if (data.dtype == uint8):
+        if (data.dtype == np.uint8):
             data = data.astype(np.int32) #Convert uint8 data to np.int32
         data = data*(inmask*(scalefac/exptime)) #Don't use *= because of stupid numpy "feature" throwing exception
         if (tmpexp is None):
@@ -2517,7 +2517,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             if (mode == MODE_FITS):
                 outimage = pyfits.open(frames[0])
             elif (mode == MODE_RAW):
-                hdu = pyfits.PrimaryHDU(outtype(out))
+                hdu = pyfits.PrimaryHDU()
                 outimage = pyfits.HDUList([hdu])
             elif (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG):
                 outimage = pyfits.open(frames[0].filename)
@@ -2540,7 +2540,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             if (mode == MODE_FITS):
                 outexp = pyfits.open(frames[0])
             elif (mode == MODE_RAW):
-                hdu = pyfits.PrimaryHDU(outtype(out))
+                hdu = pyfits.PrimaryHDU()
                 outexp = pyfits.HDUList([hdu])
             elif (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG):
                 outexp = pyfits.open(frames[0].filename)
@@ -2562,7 +2562,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             if (mode == MODE_FITS):
                 outpix = pyfits.open(frames[0])
             elif (mode == MODE_RAW):
-                hdu = pyfits.PrimaryHDU(outtype(out))
+                hdu = pyfits.PrimaryHDU()
                 outpix = pyfits.HDUList([hdu])
             elif (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG):
                 outpix = pyfits.open(frames[0].filename)

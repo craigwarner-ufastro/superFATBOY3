@@ -3,6 +3,7 @@ import time
 
 import numpy as np
 from superFATBOY.fatboyLibs import *
+from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
 from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyProcesses.badPixelMaskSpecProcess import (
@@ -20,6 +21,24 @@ except Exception as ex:
     hasSep = False
 
 block_size = 512
+
+#Fill pixels of data outside inSlit with the value of the nearest in-slit pixel along axis 0
+#(the spatial axis), column by column.  Columns with no in-slit pixels are set to 0.
+def fillOutsideSlit(data, inSlit):
+    nrows = data.shape[0]
+    r = np.arange(nrows).reshape(-1, 1)
+    #nearest in-slit row at or above (fwd) and at or below (bwd) each row
+    fwd = np.maximum.accumulate(np.where(inSlit, r, -1), axis=0)
+    bwd = np.minimum.accumulate(np.where(inSlit, r, nrows)[::-1], axis=0)[::-1]
+    useFwd = (fwd >= 0) & ((bwd >= nrows) | (r-fwd <= bwd-r))
+    src = np.where(useFwd, fwd, bwd)
+    valid = (src >= 0) & (src < nrows)
+    cols = np.broadcast_to(np.arange(data.shape[1]), data.shape)
+    out = np.where(inSlit, data, 0).astype(np.float32)
+    fill = (~inSlit) & valid
+    out[fill] = data[src[fill], cols[fill]]
+    return out
+#end fillOutsideSlit
 
 class removeCosmicRaysSpecProcess(fatboyProcess):
     _modeTags = ["spectroscopy", "miradas"]
@@ -370,41 +389,56 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
             slitmask = calibs['slitmask']
 
         data = fdu.getData().astype(np.float32)
+        goodPix = (1 - fdu.getBadPixelMask().getData()).astype(bool)
+        #lacos_spec fits object spectra along x and sky lines along y, i.e. assumes horizontal
+        #dispersion.  For vertical dispersion, run it on the transpose.
+        vertical = (fdu.dispersion == fdu.DISPERSION_VERTICAL)
         if ('slitmask' not in calibs or useWholeChip):
-            (npix, crmask, croutImage) = lacos_spec(data, None, None, gain=fdu.gain, readn=fdu.readnoise, sigclip=sigma, niter=npass, log=self._log, xorder=xorder, yorder=yorder, mask=1 - fdu.getBadPixelMask().getData())
+            if (vertical):
+                (npix, crmask, croutImage) = lacos_spec(data.T.copy(), None, None, gain=fdu.gain, readn=fdu.readnoise, sigclip=sigma, niter=npass, log=self._log, xorder=xorder, yorder=yorder, mask=goodPix.T.copy())
+                crmask = crmask.T.copy()
+                croutImage = croutImage.T.copy()
+            else:
+                (npix, crmask, croutImage) = lacos_spec(data, None, None, gain=fdu.gain, readn=fdu.readnoise, sigclip=sigma, niter=npass, log=self._log, xorder=xorder, yorder=yorder, mask=goodPix)
         else:
             # mos data
             crmask = np.ones(data.shape, dtype=np.int16)
             croutImage = np.zeros(data.shape, dtype=np.float32)
-            nslits = slitmask.getData().max()
+            smData = slitmask.getData(force_cpu=True)
+            if (vertical):
+                #Work in transposed frame so the spatial axis is always axis 0
+                data = data.T
+                smData = smData.T
+                goodPix = goodPix.T
+                crmask = crmask.T
+                croutImage = croutImage.T
+            nslits = int(smData.max())
             npix = 0
             # Loop over slitlets
             for j in range(nslits):
-                slit = np.where(slitmask.getData() == (j + 1))
-                if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    # horizontal dispersion for slits
-                    ylo = slit[0].min()
-                    yhi = slit[0].max() + 1
-                    tempMask = slitmask.getData()[ylo:yhi, :] == (j + 1)
-                    slit = (data[ylo:yhi, :] * tempMask).astype(np.float32)
-                    # Run lacos on this one slit.  Put return value into cr_data np.array. slit will contain cleaned_data
-                    (nslitpix, crslit, crdata) = lacos_spec(slit, None, None, gain=fdu.gain, readn=fdu.readnoise, sigclip=sigma, niter=npass, log=self._log, xorder=xorder, yorder=yorder, mask=1 - fdu.getBadPixelMask().getData()[ylo:yhi, :])
-                    npix += nslitpix
-                    crmask[ylo:yhi, :][tempMask] = crslit[tempMask]
-                    croutImage[ylo:yhi, :][tempMask] = crdata[tempMask].astype(np.float32)
-                else:
-                    # Vertical dispersion for slits
-                    xlo = slit[1].min()
-                    xhi = slit[1].max() + 1
-                    tempMask = slitmask.getData()[:, xlo:xhi] == (j + 1)
-                    slit = (data[:, xlo:xhi] * tempMask).astype(np.float32)
-                    # Run lacos on this one slit.  Put return value into cr_data np.array. slit will contain cleaned_data
-                    (nslitpix, crslit, crdata) = lacos_spec(slit, None, None, gain=fdu.gain, readn=fdu.readnoise, sigclip=sigma, niter=npass, log=self._log, xorder=xorder, yorder=yorder, mask=1 - fdu.getBadPixelMask().getData()[:, xlo:xhi])
-                    npix += nslitpix
-                    crmask[:, xlo:xhi][tempMask] = crslit[tempMask]
-                    croutImage[:, xlo:xhi][tempMask] = crdata[tempMask].astype(np.float32)
+                inSlit = (smData == (j + 1))
+                rows = np.where(inSlit.any(1))[0]
+                if (len(rows) == 0):
+                    continue
+                ylo = rows.min()
+                yhi = rows.max() + 1
+                tempMask = inSlit[ylo:yhi, :]
+                # Pixels of the bounding box outside this slit (gaps, neighboring slits) are filled
+                # from the nearest in-slit row rather than zeroed: a step to zero at the slit edge
+                # has a huge Laplacian and would be flagged as cosmic rays.  The filled pixels stay in
+                # the object/sky model fits - masking them out leaves rows only partly inside a tilted
+                # slit to a high-order fit over a short span, which extrapolates wildly.
+                slit = fillOutsideSlit(data[ylo:yhi, :], tempMask).astype(np.float32)
+                # Run lacos on this one slit.  Put return value into cr_data np.array. slit will contain cleaned_data
+                (nslitpix, crslit, crdata) = lacos_spec(slit, None, None, gain=fdu.gain, readn=fdu.readnoise, sigclip=sigma, niter=npass, log=self._log, xorder=xorder, yorder=yorder, mask=goodPix[ylo:yhi, :])
+                npix += nslitpix
+                crmask[ylo:yhi, :][tempMask] = crslit[tempMask]
+                croutImage[ylo:yhi, :][tempMask] = crdata[tempMask].astype(np.float32)
                 print("\tSlit " + str((j + 1)) + ": cleaned " + str(nslitpix) + " pixels.")
                 self._log.writeLog(__name__, "Slit " + str((j + 1)) + ": cleaned " + str(nslitpix) + " pixels.", printCaller=False, tabLevel=1)
+            if (vertical):
+                crmask = crmask.T.copy()
+                croutImage = croutImage.T.copy()
 
         # Calculate crdata
         crdata = fdu.getData() - croutImage

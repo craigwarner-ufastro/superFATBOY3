@@ -27,11 +27,11 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
     #Find type
     if (mode is None):
         mode = MODE_FITS
-        if (isinstance(frames[0], str)):
+        if (isinstance(input, str)):
             mode = MODE_FITS
-        elif (isinstance(frames[0], np.ndarray)):
+        elif (isinstance(input, np.ndarray)):
             mode = MODE_RAW
-        elif (isinstance(frames[0], fatboyDataUnit)):
+        elif (isinstance(input, fatboyDataUnit)):
             mode = MODE_FDU
 
     #Process input
@@ -175,8 +175,8 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
     tt = time.time()
 
     if (out is not None):
-        print("\tOutput file: "+outfile)
-        write_fatboy_log(log, logtype, "\tOutput file: "+outfile, __name__, printCaller=False, tabLevel=1)
+        print("\tOutput file: "+str(out))
+        write_fatboy_log(log, logtype, "\tOutput file: "+str(out), __name__, printCaller=False, tabLevel=1)
         if (mode == MODE_FITS):
             outimage[mef].data = fit
         elif (mode == MODE_RAW):

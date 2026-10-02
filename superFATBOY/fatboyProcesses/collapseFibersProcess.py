@@ -17,6 +17,11 @@ class collapseFibersProcess(fatboyProcess):
         #For collapse fibers, this should get a slitmask if MOS data
         #And optionally an arclamp and clean sky frame
         calibs = self.getCalibs(fdu, prevProc)
+        properties = dict()
+        properties['specmode'] = fdu.getProperty("specmode")
+        properties['dispersion'] = fdu.getProperty("dispersion")
+        headerVals = dict()
+        headerVals['grism_keyword'] = fdu.grism
 
         #Check if output exists first
         cffile = "collapsedFibers/cf_"+fdu.getFullId()

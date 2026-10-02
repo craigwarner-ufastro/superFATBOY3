@@ -30,7 +30,7 @@ except ImportError as ex:
     import astropy.io.fits as pyfits
     useAstropy = True
 import math
-import os, time
+import os, time, re
 import xml.dom.minidom
 from xml.dom.minidom import Node
 
@@ -599,7 +599,9 @@ extern "C" {
       __global__ void lacosNoiseModel_float(float *med5, float *deriv2, float *noise, float *sigmap, float gain, float readn) {
         const int i = blockDim.x*blockIdx.x + threadIdx.x;
         //create noise model
-        noise[i] = sqrt(abs(med5[i]*gain+readn*readn))/gain;
+        //as in lacos_spec.cl: replace med5 <= 0 with 0.00001 before taking the sqrt
+        float m5 = med5[i] > 0 ? med5[i] : 0.00001f;
+        noise[i] = sqrt(m5*gain+readn*readn)/gain;
         sigmap[i] = deriv2[i]/noise[i]/2;
       }
 
@@ -636,11 +638,10 @@ extern "C" {
         firstsel[i]*=starreject;
       }
 
-      __global__ void lacosUpdateOutput_float(float *oldoutput, float *tempOmask, float *med5, float *skymod) {
+      __global__ void lacosUpdateOutput_float(float *oldoutput, float *tempOmask, float *med5) {
         const int i = blockDim.x*blockIdx.x + threadIdx.x;
         med5[i] *= tempOmask[i];
         oldoutput[i] = (1-tempOmask[i])*oldoutput[i] + med5[i];
-        oldoutput[i] += skymod[i];
       }
       /************end LA cosmic (lacos) methods **************/
 
@@ -2292,7 +2293,7 @@ def fit1d(input, outfile=None, axis="X", order=3, lsigma=None, hsigma=None, nite
         else:
             print("fit1d> Error: File "+input+" does not exist!")
             if (log is not None):
-                log.writeLog(__name__, "File "+data+" does not exist!", type=fatboyLog.ERROR)
+                log.writeLog(__name__, "File "+input+" does not exist!", type=fatboyLog.ERROR)
             return None
     elif (isinstance(input, np.ndarray)):
         if (outfile is not None):
@@ -2322,7 +2323,7 @@ def fit1d(input, outfile=None, axis="X", order=3, lsigma=None, hsigma=None, nite
                 fit = np.polyval(coeffs, xs)
                 resid = input[j,:]-fit
                 m = resid[b].sum()*(1./n)
-                sd = np.sqrt(add.reduce(resid[b]*resid[b])*(1./(n-1))-m*n*(1./(n-1)))
+                sd = np.sqrt(np.add.reduce(resid[b]*resid[b])*(1./(n-1))-m*n*(1./(n-1)))
                 if (lsigma is not None):
                     b *= resid >= m-lsigma*sd
                 if (hsigma is not None):
@@ -2346,7 +2347,7 @@ def fit1d(input, outfile=None, axis="X", order=3, lsigma=None, hsigma=None, nite
                 fit = scipy.polyval(coeffs, ys)
                 resid = input[:,j]-fit
                 m = resid[b].sum()*(1./n)
-                sd = np.sqrt(add.reduce(resid[b]*resid[b])*(1./(n-1))-m*n*(1./(n-1)))
+                sd = np.sqrt(np.add.reduce(resid[b]*resid[b])*(1./(n-1))-m*n*(1./(n-1)))
                 if (lsigma is not None):
                     b *= resid >= m-lsigma*sd
                 if (hsigma is not None):
@@ -2894,13 +2895,18 @@ def getRADec(s,log=None, rel=False, dec=False, file=None):
     except Exception:
         print("fatboyLibs::getRADec> Error: malformed RA or Dec: "+s)
         if (log is not None):
-            log.writeLog(__name__, "Malformed RA or Dec: "+s+" in "+self.filename+"!", type=fatboyLog.ERROR)
+            log.writeLog(__name__, "Malformed RA or Dec: "+s+"!", type=fatboyLog.ERROR)
         x = 0.
     return x
 #end getRADec
 
 #return a 1-d np.array with wavelengths from the wavelength solution info in the header
 def getWavelengthSolution(fdu, islit, xsize):
+    #Detect the header format from this slitlet's own keywords, not slitlet 01's, which may
+    #be missing (e.g. slitlet 1 failed to calibrate)
+    slitKey = str(islit+1)
+    if (islit+1 < 10):
+        slitKey = '0'+slitKey
     xs = np.arange(xsize, dtype=np.float32)
     #Calculate wavelength solution
     wave = np.zeros(xsize, dtype=np.float32)
@@ -2910,7 +2916,7 @@ def getWavelengthSolution(fdu, islit, xsize):
             for i in range(1, fdu['PORDER']+1):
                 wave += fdu['PCOEFF_'+str(i)]*xs**i
             return wave
-        if ('PORDER01' in fdu):
+        if ('PORDER'+slitKey in fdu):
             #Use PORDERxx and PCFi_Sxx
             slitStr = str(islit+1)
             if (islit+1 < 10):
@@ -2919,7 +2925,7 @@ def getWavelengthSolution(fdu, islit, xsize):
             for i in range(1, fdu['PORDER'+slitStr]+1):
                 wave += fdu['PCF'+str(i)+'_S'+slitStr]*xs**i
             return wave
-        if ('PORDER01_SEG0' in fdu):
+        if ('PORDER'+slitKey+'_SEG0' in fdu):
             #multiple segments
             slitStr = str(islit+1)
             if (islit+1 < 10):
@@ -2939,7 +2945,7 @@ def getWavelengthSolution(fdu, islit, xsize):
                 wave[startidx:endidx] = segws
                 #wave[seg*stride:(seg+1)*stride] = segws
             return wave
-        if ('CRVALS01_SEG0' in fdu):
+        if ('CRVALS'+slitKey+'_SEG0' in fdu):
             #multiple segments, resampled
             slitStr = str(islit+1)
             if (islit+1 < 10):
@@ -2956,7 +2962,7 @@ def getWavelengthSolution(fdu, islit, xsize):
                 wave[startidx:endidx] = segws
                 #wave[seg*stride:(seg+1)*stride] = segws
             return wave
-        if ('CRVALS01' in fdu):
+        if ('CRVALS'+slitKey in fdu):
             #multiple slitlets, one segment
             slitStr = str(islit+1)
             if (islit+1 < 10):
@@ -2977,7 +2983,7 @@ def getWavelengthSolution(fdu, islit, xsize):
                 for i in range(1, hd['PORDER']+1):
                     wave += hd['PCOEFF_'+str(i)]*xs**i
                 return wave
-            if ('PORDER01' in hd):
+            if ('PORDER'+slitKey in hd):
                 #Use PORDERxx and PCFi_Sxx
                 slitStr = str(islit+1)
                 if (islit+1 < 10):
@@ -2986,7 +2992,7 @@ def getWavelengthSolution(fdu, islit, xsize):
                 for i in range(1, hd['PORDER'+slitStr]+1):
                     wave += hd['PCF'+str(i)+'_S'+slitStr]*xs**i
                 return wave
-            if ('HIERARCH PORDER01_SEG0' in hd):
+            if ('HIERARCH PORDER'+slitKey+'_SEG0' in hd):
                 #multiple segments
                 slitStr = str(islit+1)
                 if (islit+1 < 10):
@@ -3008,7 +3014,7 @@ def getWavelengthSolution(fdu, islit, xsize):
                 return wave
         if (fdu.hasProperty("resampledHeader")):
             hd = fdu.getProperty("resampledHeader")
-            if ('HIERARCH CRVALS01_SEG0' in hd):
+            if ('HIERARCH CRVALS'+slitKey+'_SEG0' in hd):
                 #multiple segments, resampled
                 slitStr = str(islit+1)
                 if (islit+1 < 10):
@@ -3025,7 +3031,7 @@ def getWavelengthSolution(fdu, islit, xsize):
                     wave[startidx:endidx] = segws
                     #wave[seg*stride:(seg+1)*stride] = segws
                 return wave
-            if ('CRVALS01' in hd):
+            if ('CRVALS'+slitKey in hd):
                 #multiple slitlets, one segment
                 slitStr = str(islit+1)
                 if (islit+1 < 10):
@@ -3041,7 +3047,7 @@ def getWavelengthSolution(fdu, islit, xsize):
             for i in range(1, fdu.getHeaderValue('PORDER')+1):
                 wave += fdu.getHeaderValue('PCOEFF_'+str(i))*xs**i
             return wave
-        if (fdu.hasHeaderValue("PORDER01")):
+        if (fdu.hasHeaderValue("PORDER"+slitKey)):
             #Use PORDERxx and PCFi_Sxx
             slitStr = str(islit+1)
             if (islit+1 < 10):
@@ -3050,7 +3056,7 @@ def getWavelengthSolution(fdu, islit, xsize):
             for i in range(1, fdu.getHeaderValue('PORDER'+slitStr)+1):
                 wave += fdu.getHeaderValue('PCF'+str(i)+'_S'+slitStr)*xs**i
             return wave
-        if (fdu.hasHeaderValue("PORDER01_SEG0")):
+        if (fdu.hasHeaderValue("PORDER"+slitKey+"_SEG0")):
             #multiple segments
             slitStr = str(islit+1)
             if (islit+1 < 10):
@@ -3070,7 +3076,7 @@ def getWavelengthSolution(fdu, islit, xsize):
                 wave[startidx:endidx] = segws
                 #wave[seg*stride:(seg+1)*stride] = segws
             return wave
-        if (fdu.hasHeaderValue("CRVALS01_SEG0")):
+        if (fdu.hasHeaderValue("CRVALS"+slitKey+"_SEG0")):
             #multiple segments, resampled
             slitStr = str(islit+1)
             if (islit+1 < 10):
@@ -3087,7 +3093,7 @@ def getWavelengthSolution(fdu, islit, xsize):
                 wave[startidx:endidx] = segws
                 #wave[seg*stride:(seg+1)*stride] = segws
             return wave
-        if (fdu.hasHeaderValue("CRVALS01")):
+        if (fdu.hasHeaderValue("CRVALS"+slitKey)):
             #multiple slitlets, one segment
             slitStr = str(islit+1)
             if (islit+1 < 10):
@@ -3136,21 +3142,12 @@ def gpusum(data, lthreshold=None, hthreshold=None, nonzero=False):
 #return if an FDU has multiple wavelength solutions for individual slitlets
 def hasMultipleWavelengthSolutions(fdu):
     if (isinstance(fdu, pyfits.header.Header)):
-        if ('PORDER01' in fdu):
-            return True
-        if ('PORDER01_SEG0' in fdu):
-            return True
-        return False
+        return hasAnySlitWavelengthSolution(fdu)
     try:
         if (fdu.hasProperty("wcHeader")):
-            hd = fdu.getProperty("wcHeader")
-            if ('PORDER01' in hd):
+            if (hasAnySlitWavelengthSolution(fdu.getProperty("wcHeader"))):
                 return True
-            if ('HIERARCH PORDER01_SEG0' in hd):
-                return True
-        if (fdu.hasHeaderValue("PORDER01")):
-            return True
-        if (fdu.hasHeaderValue("PORDER01_SEG0")):
+        if (hasAnySlitWavelengthSolution(fdu._header)):
             return True
     except Exception as ex:
         print("fatboyLibs::hasMultipleWavelengthSolutions> Error: datatype must be fatboyDataUnit or pyfits Header object.")
@@ -3158,29 +3155,28 @@ def hasMultipleWavelengthSolutions(fdu):
 #end hasMultipleWavelengthSolutions
 
 #return if an FDU has a wavelength solution
+#True if a header has a per-slitlet wavelength solution for any slitlet (PORDERnn or
+#PORDERnn_SEGm) -- not just slitlet 1, which may simply have failed to calibrate.
+def hasAnySlitWavelengthSolution(hd):
+    for key in hd:
+        if (re.match(r'^(HIERARCH )?PORDER\d\d+(_SEG\d+)?$', str(key))):
+            return True
+    return False
+#end hasAnySlitWavelengthSolution
+
 def hasWavelengthSolution(fdu):
     if (isinstance(fdu, pyfits.header.Header)):
         if ('PORDER' in fdu):
             return True
-        if ('PORDER01' in fdu):
-            return True
-        if ('PORDER01_SEG0' in fdu):
-            return True
-        return False
+        return hasAnySlitWavelengthSolution(fdu)
     try:
         if (fdu.hasProperty("wcHeader")):
             hd = fdu.getProperty("wcHeader")
-            if ('PORDER' in hd):
-                return True
-            if ('PORDER01' in hd):
-                return True
-            if ('HIERARCH PORDER01_SEG0' in hd):
+            if ('PORDER' in hd or hasAnySlitWavelengthSolution(hd)):
                 return True
         if (fdu.hasHeaderValue("PORDER")):
             return True
-        if (fdu.hasHeaderValue("PORDER01")):
-            return True
-        if (fdu.hasHeaderValue("PORDER01_SEG0")):
+        if (hasAnySlitWavelengthSolution(fdu._header)):
             return True
     except Exception as ex:
         print("fatboyLibs::hasWavelengthSolution> Error: datatype must be fatboyDataUnit or pyfits Header object.")
@@ -3290,7 +3286,7 @@ def lacos_spec(indata, outfile, outmask, mef=0, gain=4.1, readn=30.0, xorder = 9
         if (not os.access(fname, os.F_OK)):
             print("lacos_spec> Error: File "+fname+" does not exist!")
             if (log is not None):
-                log.writeLog(__name__, "File "+data+" does not exist!", type=fatboyLog.ERROR)
+                log.writeLog(__name__, "File "+fname+" does not exist!", type=fatboyLog.ERROR)
             return None
         outimage = pyfits.open(fname)
         mef = findMef(outimage)
@@ -3452,7 +3448,7 @@ def lacos_spec(indata, outfile, outmask, mef=0, gain=4.1, readn=30.0, xorder = 9
         del finalsel
         med5 = medfilt2d(inputmask, 5, zlo=-9999)
 
-        lacosUpdateOutput(oldoutput, tempOmask, med5, skymod)
+        lacosUpdateOutput(oldoutput, tempOmask, med5)
         print(tempOmask.mean(), med5.mean(), skymod.mean(), oldoutput.mean())
         del inputmask
 
@@ -3473,7 +3469,13 @@ def lacos_spec(indata, outfile, outmask, mef=0, gain=4.1, readn=30.0, xorder = 9
         if (i > niter):
             stop = True
         #delete temp files
-    crmask = 1-tempOmask.astype(int16)
+    #add sky and object spectra back in, once, after the last iteration (as in lacos_spec.cl)
+    oldoutput += skymod
+    if (writeOut):
+        outimage = pyfits.open(outfile, "update")
+        outimage[mef].data = oldoutput
+        outimage.close()
+    crmask = 1-tempOmask.astype(np.int16)
     if (writeMask):
         outimage[mef].data = crmask
         outimage.verify('silentfix')
@@ -3529,6 +3531,7 @@ def lacosNoiseModel(med5, deriv2, gain, readn):
 #end lacosNoiseModel
 
 def lacosSelect(sel, sigmap, lower1, sigclip, lower2, doCount=False, mask=None, oldoutput=None):
+    sel_in = sel
     #Returns count if doCount = True
     blocks = sel.size//512
     sel = sel.astype(np.float32)
@@ -3553,7 +3556,10 @@ def lacosSelect(sel, sigmap, lower1, sigclip, lower2, doCount=False, mask=None, 
         return (inputmask, npix[0])
     else:
         kernel = fatboy_mod.get_function("lacosSelect_float")
-        kernel((blocks,1), (block_size,1,1), (cp.asarray(sel), cp.asarray(sigmap), np.float32(lower1), np.float32(sigclip), np.float32(lower2)))
+        #Updates the caller's sel in place (sel_in, since sel was rebound by astype above)
+        sel_gpu = gpuInOut(sel_in)
+        kernel((blocks,1), (block_size,1,1), (sel_gpu, cp.asarray(sigmap), np.float32(lower1), np.float32(sigclip), np.float32(lower2)))
+        gpuSyncBack(sel_in, sel_gpu)
 #end lacosSelect
 
 def lacosStarReject(med3, med7, noise, firstsel, sigmap, objlim):
@@ -3575,11 +3581,10 @@ def lacosStarReject(med3, med7, noise, firstsel, sigmap, objlim):
     return firstsel
 #end lacosStarReject
 
-def lacosUpdateOutput(oldoutput, tempOmask, med5, skymod):
-    oldoutput = oldoutput.astype(np.float32)
+def lacosUpdateOutput(oldoutput, tempOmask, med5):
+    #Updates oldoutput in place: replace CR pixels with the median of their non-CR neighbors
     tempOmask = tempOmask.astype(np.float32)
     med5 = med5.astype(np.float32)
-    skymod = skymod.astype(np.float32)
     blocks = oldoutput.size//512
     if (oldoutput.size % 512 != 0):
         blocks += 1
@@ -3588,7 +3593,9 @@ def lacosUpdateOutput(oldoutput, tempOmask, med5, skymod):
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("lacosUpdateOutput_float")
-    kernel((blocks,1), (block_size,1,1), (cp.asarray(oldoutput), cp.asarray(tempOmask), cp.asarray(med5), cp.asarray(skymod)))
+    oldoutput_gpu = gpuInOut(oldoutput)
+    kernel((blocks,1), (block_size,1,1), (oldoutput_gpu, cp.asarray(tempOmask), cp.asarray(med5)))
+    gpuSyncBack(oldoutput, oldoutput_gpu)
 #end lacosUpdateOutput
 
 ############# end LA Cosmic helper routines #################
@@ -4397,6 +4404,24 @@ def shiftAddSlitmask(slitmask, nslits, horizontal=True):
     kernel((blocks,1), (block_size,1,1), (cp.asarray(slitmask), ylo, yhi, np.int32(cols), np.int32(nslits), np.int32(slitmask.size), np.int32(horizontal)))
     return (ylo.get(), yhi.get())
 #end shiftAddSlitmask
+
+#Iteratively remove points more than sig standard deviations from the mean (used by tri_register)
+def removeOutliersSigmaClip(origData, sig, iter):
+    n = 0
+    oldstddev = 0
+    data = origData.copy()
+    while (n < iter and len(data) > 0):
+        mean = data.mean()
+        stddev = data.std()
+        if (stddev == oldstddev):
+            break
+        lo = mean-sig*stddev
+        hi = mean+sig*stddev
+        oldstddev = stddev
+        data = data[np.logical_and(data > lo, data < hi)]
+        n+=1
+    return data
+#end removeOutliersSigmaClip
 
 #Return a mean, median, and std using a sigma clipping algorithm
 def sigmaFromClipping(origData, sig, iter):

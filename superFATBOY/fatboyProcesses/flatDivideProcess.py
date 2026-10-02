@@ -6,6 +6,7 @@ import numpy as np
 from superFATBOY.fatboyCalib import fatboyCalib
 from superFATBOY.fatboyDataUnit import fatboyDataUnit
 from superFATBOY.fatboyLibs import *
+from superFATBOY.fatboyImage import fatboyImage
 from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY import gpu_imcombine, imcombine

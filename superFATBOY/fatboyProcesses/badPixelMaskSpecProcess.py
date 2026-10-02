@@ -4,6 +4,7 @@
 #in execute, add interpolating logic
 
 from superFATBOY.fatboyLibs import *
+from superFATBOY import gpu_imcombine, imcombine
 from superFATBOY.fatboyDataUnit import fatboyDataUnit
 from superFATBOY.fatboyImage import fatboyImage
 from superFATBOY.fatboyLog import fatboyLog
@@ -515,7 +516,7 @@ def bpm_replace_biharmonic_2d(data, bpm=None, niter=1, arg=None):
                 continue
             eqs = np.array(eqs, dtype=np.float64)
             ws = np.array(ws, dtype=np.float64)
-            alphas = linalg.solve(eqs, ws)
+            alphas = np.linalg.solve(eqs, ws)
             wxy = []
             for i in range(ymin, ymax):
                 for k in range(xmin, xmax):
@@ -663,8 +664,8 @@ class BadPixelMaskSpecProcess(fatboyProcess):
                     sigclip = sigmaFromClipping(sourceFDU.getData(), clipping_sigma, 5)
                     med = sigclip[1]
                     stddev = sigclip[2]
-                    lo = med-sig*stddev
-                    hi = med+sig*stddev
+                    lo = med-clipping_sigma*stddev
+                    hi = med+clipping_sigma*stddev
                 #Create bad pixel mask
                 (nx, ny) = fdu.getShape()
                 gpu_bad_pixel_mask = self.get_bpm_mod().get_function("gpu_bad_pixel_mask")
@@ -695,8 +696,8 @@ class BadPixelMaskSpecProcess(fatboyProcess):
                         sigclip = sigmaFromClipping(sourceFDU.getData()[slit], clipping_sigma, 5)
                         med = sigclip[1]
                         stddev = sigclip[2]
-                        lo.append(med-sig*stddev)
-                        hi.append(med+sig*stddev)
+                        lo.append(med-clipping_sigma*stddev)
+                        hi.append(med+clipping_sigma*stddev)
                 lo = np.array(lo, dtype=np.float32)
                 hi = np.array(hi, dtype=np.float32)
                 #Create bad pixel mask
@@ -722,8 +723,8 @@ class BadPixelMaskSpecProcess(fatboyProcess):
                     sigclip = sigmaFromClipping(sourceFDU.getData(), clipping_sigma, 5)
                     med = sigclip[1]
                     stddev = sigclip[2]
-                    lo = med-sig*stddev
-                    hi = med+sig*stddev
+                    lo = med-clipping_sigma*stddev
+                    hi = med+clipping_sigma*stddev
                 #Create bad pixel mask
                 data = np.logical_or(sourceFDU.getData() < lo, sourceFDU.getData() > hi)
             else:
@@ -748,8 +749,8 @@ class BadPixelMaskSpecProcess(fatboyProcess):
                         sigclip = sigmaFromClipping(sourceFDU.getData()[slit], clipping_sigma, 5)
                         med = sigclip[1]
                         stddev = sigclip[2]
-                        lo = med-sig*stddev
-                        hi = med+sig*stddev
+                        lo = med-clipping_sigma*stddev
+                        hi = med+clipping_sigma*stddev
                     #Update bad pixel mask for this slit
                     data[slit] = np.logical_or(sourceFDU.getData()[slit] < lo, sourceFDU.getData()[slit] > hi)
 
@@ -1125,14 +1126,14 @@ class BadPixelMaskSpecProcess(fatboyProcess):
                 removeEmpty(source)
                 for j in range(len(source)):
                     source[j] = source[j].strip()
-                sourceFDU = combineSourceFrames(source)
+                sourceFDU = self.combineSourceFrames(source, fdu)
             elif (source.endswith('.fit') or source.endswith('.fits')):
                 #FITS file given
                 sourceFDU = fatboySpecCalib(self._pname, "bpm_source", fdu, filename=source, log=self._log)
             elif (source.endswith('.dat') or source.endswith('.list') or source.endswith('.txt')):
                 #ASCII file list
                 source = readFileIntoList(source)
-                sourceFDU = combineSourceFrames(source)
+                sourceFDU = self.combineSourceFrames(source, fdu)
 
             if (sourceFDU is None):
                 #obstype given

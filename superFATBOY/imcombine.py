@@ -262,11 +262,9 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                         qsstring = frames[l].getName()+' mean '+str(lthreshold)+' '+str(hthreshold)+' '+str(nonzero)
                     b = None
                     #Check quick start file
-                    if (hasqs and qsstring is not None):
-                        bqs = np.where(qskeys == qsstring)[0]
-                        if (len(bqs) != 0):
-                            immean = qsvals[bqs[0]]
-                            useqs = True
+                    if (hasqs and qsstring is not None and qsstring in qsDict):
+                        immean = qsDict[qsstring]
+                        useqs = True
                     if (not useqs):
                         if (mode == MODE_FITS):
                             data = mm[l][mef].data
@@ -303,7 +301,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                         else:
                             immean = (data+0.).mean()
                         if (qsstring is not None):
-                            qslist.append(qsstring+': '+str(immean))
+                            qsDict[qsstring] = immean
 
                 #Calculate median
                 if (zero.find('median') != -1 or scale.find('median') != -1 or weight.find('median') != -1):
@@ -338,11 +336,9 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                     elif (mode == MODE_FDU or mode == MODE_FDU_TAG):
                         qsstring = frames[l].getName()+' sigma '+str(lthreshold)+' '+str(hthreshold)+' '+str(nonzero)
                     #Check quick start file
-                    if (hasqs and qsstring is not None):
-                        bqs = np.where(qskeys == qsstring)[0]
-                        if (len(bqs) != 0):
-                            imstd = qsvals[bqs[0]]
-                            useqs = True
+                    if (hasqs and qsstring is not None and qsstring in qsDict):
+                        imstd = qsDict[qsstring]
+                        useqs = True
                     if (not useqs):
                         if (mode == MODE_FITS):
                             data = mm[l][mef].data
@@ -383,7 +379,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                         else:
                             imstd = (data+0.).std(ddof=1)
                         if (qsstring is not None):
-                            qslist.append(qsstring+': '+str(imstd))
+                            qsDict[qsstring] = imstd
 
                 s = ""
                 if (mode == MODE_FITS):
@@ -1001,7 +997,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             hdulist = pyfits.open(frames[0])
         elif (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG or mode == MODE_FDU_DIFF_PAIRING):
             header = frames[0]._header
-        write_fits_file(expfile, exp, dtype="float32", header=header, headerExt=newHeader, fitsobj=hdulist, mef=mef, log=log)
+        write_fits_file(expmask, exp, dtype="float32", header=header, headerExt=newHeader, fitsobj=hdulist, mef=mef, log=log)
         del exp
     if (_verbosity == fatboyLog.VERBOSE):
         print("Write data: ",time.time()-tt,"; Total: ",time.time()-t)

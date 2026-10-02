@@ -334,6 +334,13 @@ class shiftAddProcess(fatboyProcess):
             updateHeaderEntry(fdu._header, fdu._keywords['exptime_keyword'], fdu.exptime)  # Use wrapper function to update header
             return True
 
+        if ('nslits' in calibs and calibs['nslits'] < 1):
+            # e.g. a double subtraction shift larger than the slitlets left nothing to stack
+            print("shiftAddProcess::execute> ERROR: Slitmask for "+fdu.getFullId()+" contains no slitlets.  Discarding Image!")
+            self._log.writeLog(__name__, "Slitmask for "+fdu.getFullId()+" contains no slitlets.  Discarding Image!", type=fatboyLog.ERROR)
+            fdu.disable()
+            return False
+
         # call shiftAddImage helper function to do gpu/cpu shifting and adding
         self.shiftAddImage(fdu, calibs)
 

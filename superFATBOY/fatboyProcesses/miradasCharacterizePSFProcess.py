@@ -1,6 +1,7 @@
 import numpy as np
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
+from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
 from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY import gpu_drihizzle, drihizzle
 from superFATBOY.gpu_arraymedian import *
@@ -140,8 +141,8 @@ class miradasCharacterizePSFProcess(fatboyProcess):
                                 guess[0] = maxVals[j]
                                 lsq = fitGaussian2d(data[j,:,:], maskNeg=True, maxWidth=3, guess=guess)
                                 if (lsq[1] == False):
-                                    print("miradasCharacterizePSFProcess::characterizePSF>: ERROR fitting Gaussian for cut "+str(j)+": "+str(ex))
-                                    self._log.writeLog(__name__, "ERROR fitting Gaussian for cut "+str(j)+": "+str(ex), type=fatboyLog.ERROR)
+                                    print("miradasCharacterizePSFProcess::characterizePSF>: ERROR fitting Gaussian for cut "+str(j))
+                                    self._log.writeLog(__name__, "ERROR fitting Gaussian for cut "+str(j), type=fatboyLog.ERROR)
                                     psf[j,1] = -1
                                     psf[j,2] = -1
                                     psf[j,3] = -1

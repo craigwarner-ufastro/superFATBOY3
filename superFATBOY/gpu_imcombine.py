@@ -106,6 +106,41 @@ def space(x):
 
 nx = 64
 
+#Mean of data within [lthreshold, hthreshold] (either may be None), excluding zeros if nonzero.
+#Same selection as CPU imcombine's mean for zero/scale/weight = mean.
+def gpumean(data, lthreshold=None, hthreshold=None, nonzero=False):
+    d = cp.asarray(data, dtype=cp.float64)
+    b = cp.ones(d.shape, dtype=bool)
+    if (lthreshold is not None):
+        b &= (d >= lthreshold)
+    if (hthreshold is not None):
+        b &= (d <= hthreshold)
+    if (nonzero):
+        b &= (d != 0)
+    nb = int(b.sum())
+    if (nb == 0):
+        return 0.
+    return float(d[b].sum()/nb)
+#end gpumean
+
+#Sample standard deviation (ddof=1) of the same selection as gpumean, about the given mean
+def gpustd(data, mean=None, lthreshold=None, hthreshold=None, nonzero=False):
+    d = cp.asarray(data, dtype=cp.float64)
+    b = cp.ones(d.shape, dtype=bool)
+    if (lthreshold is not None):
+        b &= (d >= lthreshold)
+    if (hthreshold is not None):
+        b &= (d <= hthreshold)
+    if (nonzero):
+        b &= (d != 0)
+    nb = int(b.sum())
+    if (nb < 2):
+        return 0.
+    if (mean is None):
+        mean = d[b].sum()/nb
+    return float(cp.sqrt(((d[b]-mean)**2).sum()/(nb-1)))
+#end gpustd
+
 def imcombine(frames, outfile=None, expmask=None, method='median', reject='none', lsigma=3, hsigma=3, weight='none', lthreshold=None, hthreshold=None, scale='none', zero='none', nlow=0, nhigh=0, mclip='mean', qsfile=None, nonzero=False, even=True, inmask=None, expkey='EXP_TIME', niter=5, log=None, mef=0, outtype=np.float32, mode=None, returnHeader=False, dataTag=None):
     t = time.time()
     _verbosity = fatboyLog.NORMAL
@@ -770,7 +805,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             hdulist = pyfits.open(frames[0])
         elif (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG or mode == MODE_FDU_DIFF_PAIRING):
             header = frames[0]._header
-        write_fits_file(expfile, exp, dtype="float32", header=header, headerExt=newHeader, fitsobj=hdulist, mef=mef, log=log)
+        write_fits_file(expmask, exp, dtype="float32", header=header, headerExt=newHeader, fitsobj=hdulist, mef=mef, log=log)
         del exp
     if (_verbosity == fatboyLog.VERBOSE):
         print("Write data: ",time.time()-tt,"; Total: ",time.time()-t)

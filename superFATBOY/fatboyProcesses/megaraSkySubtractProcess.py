@@ -540,7 +540,7 @@ class megaraSkySubtractProcess(fatboyProcess):
             print("megaraSkySubtractProcess::skySubtract> Sky subtracting "+str(len(fiberList))+" object fibers only...")
             self._log.writeLog(__name__, "Sky subtracting "+str(len(fiberList))+" object fibers only...")
         ssData = np.zeros(fdu.getData().shape, dtype=np.float32)
-        outmask = np.zeros(fdu.getData().shape, dtype=int16)
+        outmask = np.zeros(fdu.getData().shape, dtype=np.int16)
         if (fdu.hasProperty("cleanFrame")):
             cleanSSData = np.zeros(fdu.getData().shape, dtype=np.float32)
         if (doNM):

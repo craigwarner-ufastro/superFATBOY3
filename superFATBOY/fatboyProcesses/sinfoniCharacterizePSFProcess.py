@@ -134,8 +134,8 @@ class sinfoniCharacterizePSFProcess(fatboyProcess):
                             guess[0] = maxVals[j]
                             lsq = fitGaussian2d(data[j,:,:], maskNeg=True, maxWidth=3, guess=guess)
                             if (lsq[1] == False):
-                                print("sinfoniCharacterizePSFProcess::characterizePSF>: ERROR fitting Gaussian for cut "+str(j)+": "+str(ex))
-                                self._log.writeLog(__name__, "ERROR fitting Gaussian for cut "+str(j)+": "+str(ex), type=fatboyLog.ERROR)
+                                print("sinfoniCharacterizePSFProcess::characterizePSF>: ERROR fitting Gaussian for cut "+str(j))
+                                self._log.writeLog(__name__, "ERROR fitting Gaussian for cut "+str(j), type=fatboyLog.ERROR)
                                 psf[j,1] = -1
                                 psf[j,2] = -1
                                 psf[j,3] = -1

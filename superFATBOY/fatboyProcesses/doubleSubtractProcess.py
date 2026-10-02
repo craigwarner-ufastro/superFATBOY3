@@ -430,6 +430,18 @@ class doubleSubtractProcess(fatboyProcess):
             updateHeaderEntry(fdu._header, fdu._keywords['exptime_keyword'], fdu.exptime) #Use wrapper function to update header
             return True
 
+        #If the sky frame had the target nodded off the slit (e.g. a telluric standard observed
+        #with an off-slit sky), the sky-subtracted frame has no negative trace to double subtract.
+        #Use only the positive rather than force a meaningless shift.
+        minNegFrac = float(self.getOption("min_negative_flux_fraction", fdu.getTag()))
+        if (minNegFrac > 0):
+            negFrac = self.getNegativeFluxFraction(fdu)
+            if (negFrac < minNegFrac):
+                print("doubleSubtractProcess::execute> WARNING: "+fdu.getFullId()+" has almost no negative flux (negative/positive = "+formatNum(negFrac)+" < min_negative_flux_fraction = "+str(minNegFrac)+").  The sky frame likely has the target off the slit.  Skipping double subtraction and using only the positive.")
+                self._log.writeLog(__name__, fdu.getFullId()+" has almost no negative flux (negative/positive = "+formatNum(negFrac)+" < min_negative_flux_fraction = "+str(minNegFrac)+").  The sky frame likely has the target off the slit.  Skipping double subtraction and using only the positive.", type=fatboyLog.WARNING)
+                fdu.setProperty("use_only_positive", True)
+                return True
+
         #Call get calibs to return dict() of calibration frames.
         #For doubleSubtract, this dict should have one entry 'masterFlat' which is an fdu
         calibs = self.getCalibs(fdu, prevProc)
@@ -451,6 +463,23 @@ class doubleSubtractProcess(fatboyProcess):
         fdu._header.add_history('Double subtracted with shift ' + str(calibs['shift']))
         return True
     #end execute
+
+    #Total negative flux / total positive flux in the sky-subtracted frame (cleanFrame if present)
+    def getNegativeFluxFraction(self, fdu):
+        tag = None
+        if (fdu.hasProperty("cleanFrame")):
+            tag = "cleanFrame"
+        if (self._fdb.getGPUMode()):
+            (pos, neg) = self.getPosNegForDS(fdu.getData(tag=tag))
+        else:
+            data = fdu.getData(tag=tag)
+            pos = np.where(data > 0, data, 0)
+            neg = np.where(data < 0, -data, 0)
+        posSum = float(pos.sum())
+        if (posSum <= 0):
+            return 1.0
+        return float(neg.sum())/posSum
+    #end getNegativeFluxFraction
 
     #find the shift between positive and negative continua
     def findDoubleSubtractShift(self, fdu):
@@ -580,6 +609,8 @@ class doubleSubtractProcess(fatboyProcess):
         self._optioninfo.setdefault('find_shift_box_yhi', 'Used to specify a range of the chip in cross-dispersion\ndirection to sum a 1-d cut across and attemt to find shift.')
         self._options.setdefault('find_shift_constrain_boxsize', None)
         self._optioninfo.setdefault('find_shift_constrain_boxsize', 'Constrain the fit to a box of this size, centered\nat the initial guess based on RA and Dec offsets.')
+        self._options.setdefault('min_negative_flux_fraction', '0.1')
+        self._optioninfo.setdefault('min_negative_flux_fraction', 'If the sky-subtracted frame\'s total negative flux is less than this fraction of its\npositive flux, there is no negative trace to double subtract (e.g. the sky frame had the\ntarget nodded off the slit, as for some telluric standards).  Skip double subtraction and\nuse only the positive.  0 = never skip.')
         self._options.setdefault('use_header', 'no')
         self._optioninfo.setdefault('use_header', 'Use the information in the header -\nRA, DEC, PIXSCALE - instead of\nattempting to find shift.')
         self._options.setdefault('write_noisemaps', 'no')

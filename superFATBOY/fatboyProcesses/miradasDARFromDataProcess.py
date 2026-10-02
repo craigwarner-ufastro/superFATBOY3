@@ -1,6 +1,7 @@
 import numpy as np
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
+from superFATBOY.fatboyDataUnit import fatboyDataUnit
 from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY import drihizzle
 import os, time

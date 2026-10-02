@@ -113,7 +113,7 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
         if (isinstance(constrain_guesses, list)):
             guesses = np.array(constrain_guesses)
         elif (isinstance(constrain_guesses, str) and os.access(constrain_guesses, os.F_OK)):
-            guesses = loadtxt(constrain_guesses)
+            guesses = np.loadtxt(constrain_guesses)
         else:
             print("gpu_xregister> Error: invalid constrain_guesses")
             write_fatboy_log(log, logtype, "invalid constrain_guesses", __name__, messageType=fatboyLog.ERROR)
@@ -289,7 +289,7 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
                 currDec = frames[j].dec
         elif (mode == MODE_FDU_DIFFERENCE):
             currData = frames[j+1].getData()-frames[j].getData()
-            currName = frame[j+1].getFullId()+"-"+frame[j].getFullId()
+            currName = frames[j+1].getFullId()+"-"+frames[j].getFullId()
             #2-1, 3-2, etc.
         elif (mode == MODE_FDU_TAG):
             currData = frames[j].getData(tag=dataTag)
@@ -385,7 +385,7 @@ def xregister(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsiz
                 cbx2 = ccor.shape[1]
                 cbx1 = max(0, cbx2-constrain_boxsize)
             ccor = ccor[cby1:cby2, cbx1:cbx2].copy()
-            ccor = ascontiguousarray(ccor)
+            ccor = np.ascontiguousarray(ccor)
             #Use .copy() to make sure data is contiguous for GPU
 
         if (median_filter2d):

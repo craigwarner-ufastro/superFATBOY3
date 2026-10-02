@@ -2,6 +2,7 @@ import numpy as np
 import math
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
+from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
 from superFATBOY.fatboyLog import fatboyLog
 from superFATBOY import drihizzle
 import os, time

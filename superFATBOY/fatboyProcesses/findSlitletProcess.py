@@ -1169,8 +1169,8 @@ class findSlitletProcess(fatboyProcess):
                                 print ("LSQ 1")
                                 import traceback
                                 traceback.print_exc()
-                                print("findSlitletProcess::traceOrders> Warning: Order "+str(slitidx)+", syval="+str(syval)+": Leastsq FAILED at "+str(xs[j])+" with "+str(ex))
-                                self._log.writeLog(__name__, "Order "+str(slitidx)+", syval="+str(syval)+": Leastsq FAILED at "+str(xs[j])+" with "+str(ex), type=fatboyLog.WARNING)
+                                print("findSlitletProcess::traceOrders> Warning: Order "+str(slitidx)+", syval="+str(syval)+": Leastsq FAILED at "+str(xs[j]))
+                                self._log.writeLog(__name__, "Order "+str(slitidx)+", syval="+str(syval)+": Leastsq FAILED at "+str(xs[j]), type=fatboyLog.WARNING)
                                 continue
                             maxcor_val = np.max(ccor)
                         lsq[0][1] += ylo_slit+yoff_slit
@@ -1747,7 +1747,7 @@ class findSlitletProcess(fatboyProcess):
                 cut1d = flatData[int(xs[j]-halfbox):int(xs[j]+halfbox+1),:].sum(0).astype(np.float64)
 
             y = np.where(cut1d > np.median(cut1d))
-            x = r_[True, cut1d[1:] > cut1d[:-1]] & r_[cut1d[:-1] > cut1d[1:], True] & r_[True, True, cut1d[2:] > cut1d[:-2]] & r_[cut1d[:-2] > cut1d[2:], True, True]
+            x = np.r_[True, cut1d[1:] > cut1d[:-1]] & np.r_[cut1d[:-1] > cut1d[1:], True] & np.r_[True, True, cut1d[2:] > cut1d[:-2]] & np.r_[cut1d[:-2] > cut1d[2:], True, True]
             x[:y[0][0]] = False
             x[y[0][-1]+1:] = False
             z = np.where(x)[0]

@@ -19,6 +19,7 @@ except Exception:
 from .fatboyDataUnit import *
 from .fatboyLog import fatboyLog
 from .fatboyLibs import LOGTYPE_NONE, LOGTYPE_ASCII, LOGTYPE_FATBOY
+from .fatboyLibs import gpuInOut, gpuSyncBack
 
 blocks = 2048*4
 block_size = 512
@@ -1702,7 +1703,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             if mode == MODE_FITS:
                 outimage = pyfits.open(frames[0])
             elif mode == MODE_RAW:
-                hdu = pyfits.PrimaryHDU(outtype(out))
+                hdu = pyfits.PrimaryHDU()
                 outimage = pyfits.HDUList([hdu])
             elif mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG:
                 outimage = pyfits.open(frames[0].filename)
@@ -1726,7 +1727,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             if mode == MODE_FITS:
                 outexp = pyfits.open(frames[0])
             elif mode == MODE_RAW:
-                hdu = pyfits.PrimaryHDU(outtype(out))
+                hdu = pyfits.PrimaryHDU()
                 outexp = pyfits.HDUList([hdu])
             elif mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG:
                 outexp = pyfits.open(frames[0].filename)
@@ -1749,7 +1750,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             if mode == MODE_FITS:
                 outpix = pyfits.open(frames[0])
             elif mode == MODE_RAW:
-                hdu = pyfits.PrimaryHDU(outtype(out))
+                hdu = pyfits.PrimaryHDU()
                 outpix = pyfits.HDUList([hdu])
             elif mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG:
                 outpix = pyfits.open(frames[0].filename)
@@ -2222,7 +2223,13 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             tt = time.time()
 
             offset = 0.0
-            calcXYZin((blocks,1), (block_size,1,1), (cp.asarray(xin), cp.asarray(yin), cp.asarray(zin), np.int32(nx), np.int32(ny), np.int32(nz), np.float32(offset-nx//2), np.float32(offset-ny//2), np.float32(offset-nz//2)))
+            io0_gpu = gpuInOut(xin)
+            io1_gpu = gpuInOut(yin)
+            io2_gpu = gpuInOut(zin)
+            calcXYZin((blocks,1), (block_size,1,1), (io0_gpu, io1_gpu, io2_gpu, np.int32(nx), np.int32(ny), np.int32(nz), np.float32(offset-nx//2), np.float32(offset-ny//2), np.float32(offset-nz//2)))
+            gpuSyncBack(xin, io0_gpu)
+            gpuSyncBack(yin, io1_gpu)
+            gpuSyncBack(zin, io2_gpu)
             xout = np.empty(shape=(nz,ny,nx), dtype=np.float32)
             yout = np.empty(shape=(nz,ny,nx), dtype=np.float32)
             zout = np.empty(shape=(nz,ny,nx), dtype=np.float32)
@@ -2258,7 +2265,13 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             #Compute transformation
             #Do this for the first pass only
             calcTransOpt3d = mod.get_function("calcTransOpt3d")
-            calcTransOpt3d((blocks,1), (block_size,1,1), (cp.asarray(xout), cp.asarray(yout), cp.asarray(zout), cp.asarray(xin), cp.asarray(yin), cp.asarray(zin), cp.asarray(xcoeffs), cp.asarray(ycoeffs), cp.asarray(zcoeffs), np.int32(order), np.float32(offset), nx*ny*np.int32(nz)))
+            io0_gpu = gpuInOut(xout)
+            io1_gpu = gpuInOut(yout)
+            io2_gpu = gpuInOut(zout)
+            calcTransOpt3d((blocks,1), (block_size,1,1), (io0_gpu, io1_gpu, io2_gpu, cp.asarray(xin), cp.asarray(yin), cp.asarray(zin), cp.asarray(xcoeffs), cp.asarray(ycoeffs), cp.asarray(zcoeffs), np.int32(order), np.float32(offset), np.int32(nx*ny*nz)))
+            gpuSyncBack(xout, io0_gpu)
+            gpuSyncBack(yout, io1_gpu)
+            gpuSyncBack(zout, io2_gpu)
             #Compute transformation on refrerence pixels in python
             n = 0
             for i in range(order+1):
@@ -2266,7 +2279,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                     for k in range(1,l+1):
                         xrefout+=xcoeffs[n]*xrefin**(i-l+1)*yrefin**(l-k)*zrefin**(k-1)
                         yrefout+=ycoeffs[n]*xrefin**(i-l+1)*yrefin**(l-k)*zrefin**(k-1)
-                        zrefout+=ycoeffs[n]*xrefin**(i-l+1)*yrefin**(l-k)*zrefin**(k-1)
+                        zrefout+=zcoeffs[n]*xrefin**(i-l+1)*yrefin**(l-k)*zrefin**(k-1)
                         n+=1
 
             if (_verbosity == fatboyLog.VERBOSE):
@@ -2431,7 +2444,9 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             blocks += 1
         #Scale data by inmask and weight factor
         multArrFloatIntScalar = mod.get_function("multArrFloatIntScalar")
-        multArrFloatIntScalar((blocks,1), (block_size,1,1), (cp.asarray(data), cp.asarray(inmask), scalefac/np.float32(exptime), np.int32(data.size)))
+        io0_gpu = gpuInOut(data)
+        multArrFloatIntScalar((blocks,1), (block_size,1,1), (io0_gpu, cp.asarray(inmask), np.float32(scalefac/exptime), np.int32(data.size)))
+        gpuSyncBack(data, io0_gpu)
         if (tmpexp is None):
             #Exposure map should be exposure time * good pixel mask unless a previous exposure map has been loaded for inunits = cps
             tmpexp = (inmask*scalefac).astype(np.float32)
@@ -2447,26 +2462,46 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             yout_g = yout
             zout_g = zout
         else:
-            xout_g = ascontiguousarray(xout[:data.shape[0], :data.shape[1], :data.shape[2]])
-            yout_g = ascontiguousarray(yout[:data.shape[0], :data.shape[1], :data.shape[2]])
-            zout_g = ascontiguousarray(zout[:data.shape[0], :data.shape[1], :data.shape[2]])
+            xout_g = np.ascontiguousarray(xout[:data.shape[0], :data.shape[1], :data.shape[2]])
+            yout_g = np.ascontiguousarray(yout[:data.shape[0], :data.shape[1], :data.shape[2]])
+            zout_g = np.ascontiguousarray(zout[:data.shape[0], :data.shape[1], :data.shape[2]])
 
         xsize = newdata.shape[2]
         ysize = newdata.shape[1]
         if (kernel == 'turbo'):
             if (doPix):
                 turboKernel = mod.get_function("turboKernel3dPix")
-                turboKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(pixmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), np.float32(xsh[j]-xshmin), np.float32(ysh[j]-yshmin), np.float32(zsh[j]-zshmin), np.int32(xsize), np.int32(ysize), np.int32(data.size), np.float32(dropsize)))
+                io0_gpu = gpuInOut(newdata)
+                io1_gpu = gpuInOut(expmap)
+                io2_gpu = gpuInOut(pixmap)
+                turboKernel((blocks,1), (block_size,1,1), (io0_gpu, io1_gpu, io2_gpu, cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), np.float32(xsh[j]-xshmin), np.float32(ysh[j]-yshmin), np.float32(zsh[j]-zshmin), np.int32(xsize), np.int32(ysize), np.int32(data.size), np.float32(dropsize)))
+                gpuSyncBack(newdata, io0_gpu)
+                gpuSyncBack(expmap, io1_gpu)
+                gpuSyncBack(pixmap, io2_gpu)
             else:
                 turboKernel = mod.get_function("turboKernel3d")
-                turboKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), np.float32(xsh[j]-xshmin), np.float32(ysh[j]-yshmin), np.float32(zsh[j]-zshmin), np.int32(xsize), np.int32(ysize), np.int32(data.size), np.float32(dropsize)))
+                io0_gpu = gpuInOut(newdata)
+                io1_gpu = gpuInOut(expmap)
+                turboKernel((blocks,1), (block_size,1,1), (io0_gpu, io1_gpu, cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), np.float32(xsh[j]-xshmin), np.float32(ysh[j]-yshmin), np.float32(zsh[j]-zshmin), np.int32(xsize), np.int32(ysize), np.int32(data.size), np.float32(dropsize)))
+                gpuSyncBack(newdata, io0_gpu)
+                gpuSyncBack(expmap, io1_gpu)
         elif (kernel == 'point'):
             if (doPix):
                 pointKernel = mod.get_function("pointKernel3dPix")
-                pointKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(pixmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), np.float32(xsh[j]-xshmin), np.float32(ysh[j]-yshmin), np.float32(zsh[j]-zshmin), np.int32(xsize), np.int32(ysize), np.int32(data.size)))
+                io0_gpu = gpuInOut(newdata)
+                io1_gpu = gpuInOut(expmap)
+                io2_gpu = gpuInOut(pixmap)
+                pointKernel((blocks,1), (block_size,1,1), (io0_gpu, io1_gpu, io2_gpu, cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), np.float32(xsh[j]-xshmin), np.float32(ysh[j]-yshmin), np.float32(zsh[j]-zshmin), np.int32(xsize), np.int32(ysize), np.int32(data.size)))
+                gpuSyncBack(newdata, io0_gpu)
+                gpuSyncBack(expmap, io1_gpu)
+                gpuSyncBack(pixmap, io2_gpu)
             else:
                 pointKernel = mod.get_function("pointKernel3d")
-                pointKernel((blocks,1), (block_size,1,1), (cp.asarray(newdata), cp.asarray(expmap), cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), np.float32(xsh[j]-xshmin), np.float32(ysh[j]-yshmin), np.float32(zsh[j]-zshmin), np.int32(xsize), np.int32(ysize), np.int32(data.size)))
+                io0_gpu = gpuInOut(newdata)
+                io1_gpu = gpuInOut(expmap)
+                pointKernel((blocks,1), (block_size,1,1), (io0_gpu, io1_gpu, cp.asarray(data), cp.asarray(tmpexp), cp.asarray(xout_g), cp.asarray(yout_g), cp.asarray(zout_g), np.float32(xsh[j]-xshmin), np.float32(ysh[j]-yshmin), np.float32(zsh[j]-zshmin), np.int32(xsize), np.int32(ysize), np.int32(data.size)))
+                gpuSyncBack(newdata, io0_gpu)
+                gpuSyncBack(expmap, io1_gpu)
         tt = time.time()
 
         #If requested, update FDUs here
@@ -2486,9 +2521,13 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             #Apply weighting
             if (weight == 'exptime'):
                 if (outunits == 'cps'):
-                    divFloatArrays((blocks, blocky), (block_size,1,1), (cp.asarray(drihizzled_data), cp.asarray(expmap_data), np.int32(drihizzled_data.size)))
+                    io0_gpu = gpuInOut(drihizzled_data)
+                    divFloatArrays((blocks, blocky), (block_size,1,1), (io0_gpu, cp.asarray(expmap_data), np.int32(drihizzled_data.size)))
+                    gpuSyncBack(drihizzled_data, io0_gpu)
                 else:
-                    divFloatArrays((blocks, blocky), (block_size,1,1), (cp.asarray(drihizzled_data), cp.asarray(expmap_data), np.int32(drihizzled_data.size)))
+                    io0_gpu = gpuInOut(drihizzled_data)
+                    divFloatArrays((blocks, blocky), (block_size,1,1), (io0_gpu, cp.asarray(expmap_data), np.int32(drihizzled_data.size)))
+                    gpuSyncBack(drihizzled_data, io0_gpu)
                     if (outunits == 'counts'):
                         drihizzled_data*=exptime
             frames[j].tagDataAs("drihizzled", data=drihizzled_data)
@@ -2529,9 +2568,13 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                 blocks //= 2
             if (weight == 'exptime'):
                 if (outunits == 'cps'):
-                    divFloatArrays((blocks, blocky), (block_size,1,1), (cp.asarray(temp[mef].data), cp.asarray(tempexpmap), np.int32(temp[mef].data.size)))
+                    io0_gpu = gpuInOut(temp[mef].data)
+                    divFloatArrays((blocks, blocky), (block_size,1,1), (io0_gpu, cp.asarray(tempexpmap), np.int32(temp[mef].data.size)))
+                    gpuSyncBack(temp[mef].data, io0_gpu)
                 else:
-                    divFloatArrays((blocks, blocky), (block_size,1,1), (cp.asarray(temp[mef].data), cp.asarray(tempexpmap), np.int32(temp[mef].data.size)))
+                    io0_gpu = gpuInOut(temp[mef].data)
+                    divFloatArrays((blocks, blocky), (block_size,1,1), (io0_gpu, cp.asarray(tempexpmap), np.int32(temp[mef].data.size)))
+                    gpuSyncBack(temp[mef].data, io0_gpu)
                     if (outunits == 'counts'):
                         temp[mef].data*=exptime
             temp.verify('silentfix')
@@ -2615,9 +2658,13 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
     #Apply weighting
     if (weight == 'exptime' and kernel != 'uniform'):
         if (outunits == 'cps'):
-            divFloatArrays((blocks,blocky), (block_size,1,1), (cp.asarray(imagedata), cp.asarray(expdata), np.int32(imagedata.size)))
+            io0_gpu = gpuInOut(imagedata)
+            divFloatArrays((blocks,blocky), (block_size,1,1), (io0_gpu, cp.asarray(expdata), np.int32(imagedata.size)))
+            gpuSyncBack(imagedata, io0_gpu)
     elif (kernel != 'uniform'):
-        divFloatArrays((blocks,blocky), (block_size,1,1), (cp.asarray(imagedata), cp.asarray(expdata), np.int32(imagedata.size)))
+        io0_gpu = gpuInOut(imagedata)
+        divFloatArrays((blocks,blocky), (block_size,1,1), (io0_gpu, cp.asarray(expdata), np.int32(imagedata.size)))
+        gpuSyncBack(imagedata, io0_gpu)
         if (outunits == 'counts'):
             imagedata *= totexp
 
@@ -2639,7 +2686,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             if (mode == MODE_FITS):
                 outimage = pyfits.open(frames[0])
             elif (mode == MODE_RAW):
-                hdu = pyfits.PrimaryHDU(outtype(out))
+                hdu = pyfits.PrimaryHDU()
                 outimage = pyfits.HDUList([hdu])
             elif (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG):
                 outimage = pyfits.open(frames[0].filename)
@@ -2662,7 +2709,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             if (mode == MODE_FITS):
                 outexp = pyfits.open(frames[0])
             elif (mode == MODE_RAW):
-                hdu = pyfits.PrimaryHDU(outtype(out))
+                hdu = pyfits.PrimaryHDU()
                 outexp = pyfits.HDUList([hdu])
             elif (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG):
                 outexp = pyfits.open(frames[0].filename)
@@ -2684,7 +2731,7 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             if (mode == MODE_FITS):
                 outpix = pyfits.open(frames[0])
             elif (mode == MODE_RAW):
-                hdu = pyfits.PrimaryHDU(outtype(out))
+                hdu = pyfits.PrimaryHDU()
                 outpix = pyfits.HDUList([hdu])
             elif (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG):
                 outpix = pyfits.open(frames[0].filename)

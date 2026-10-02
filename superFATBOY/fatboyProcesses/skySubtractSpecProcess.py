@@ -751,7 +751,7 @@ class skySubtractSpecProcess(fatboyProcess):
                     methodList.pop(j)
                     continue
                 methodList[j][1] = methodList[j][1].lower()
-                if (not methodlist[j][1] in ssmethods):
+                if (not methodList[j][1] in ["dither", "ifu_onsource_dither", "median", "median_boxcar", "offsource_dither", "offsource_multi_dither", "step"]):
                     print("skySubtractSpecProcess::findSkySubtractMethods> Warning: line "+str(j)+" misformatted in "+skymethod)
                     self._log.writeLog(__name__, " line "+str(j)+" misformatted in "+skymethod, type=fatboyLog.WARNING)
                     methodList.pop(j)
@@ -1338,7 +1338,7 @@ class skySubtractSpecProcess(fatboyProcess):
         if (not masterSky.hasProperty("crmask")):
             #Hopefully we don't get here because this means we are reading a previous masterSky from disk with no corresponding crmask on disk
             #create tagged data "crmask"
-            crmask = np.ones(masterSky.getShape(), int16)
+            crmask = np.ones(masterSky.getShape(), np.int16)
             masterSky.tagDataAs("crmask", crmask)
         #Get this FDU's crmask
         crmask = fdu.getData(tag="crmask")

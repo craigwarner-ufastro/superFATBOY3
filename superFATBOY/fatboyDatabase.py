@@ -95,10 +95,16 @@ class fatboyDatabase:
     #end _initialize_dicts_and_lists
 
     ## Add a new slitmask with new shape after e.g. rectification or resampling
-    def addNewSlitmask(self, oldSlitmask, newData, pname):
-        slitmask = fatboySpecCalib(pname, "slitmask", oldSlitmask, data=newData, tagname=oldSlitmask._id, log=self._log)
+    def addNewSlitmask(self, oldSlitmask, newData, pname, tagname=None, objectTag=None):
+        if (tagname is None):
+            tagname = oldSlitmask._id
+        slitmask = fatboySpecCalib(pname, "slitmask", oldSlitmask, data=newData, tagname=tagname, log=self._log)
         slitmask.setProperty("specmode", oldSlitmask.getProperty("specmode"))
         slitmask.setProperty("dispersion", oldSlitmask.getProperty("dispersion"))
+        if (objectTag is not None):
+            #Only visible to this object (e.g. a slitmask rectified with this object's transform).
+            #Assign a new list - _objectTags is shared with the source calib.
+            slitmask._objectTags = [objectTag]
         self.appendCalib(slitmask)
         return slitmask
     #end addNewSlitmask
@@ -1019,7 +1025,7 @@ class fatboyDatabase:
     #end getTaggedMasterCalib
 
     ## Return True if a master calibration frame matching this pname, obstype, and filename exists
-    def hasMasterCalib(self, pname=None, ident=None, obstype=None, filename=None):
+    def hasMasterCalib(self, pname=None, ident=None, obstype=None, filename=None, section=None):
         #pname = process name that created it, e.g. darkSubtract for a masterDark
         for calib in self._calibs:
             if (not calib.inUse):

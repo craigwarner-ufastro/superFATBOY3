@@ -6,6 +6,7 @@ from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
 
 from superFATBOY import gpu_drihizzle, drihizzle
 import numpy as np
+import re
 from scipy.optimize import leastsq
 
 block_size = 512
@@ -120,7 +121,49 @@ class calibStarDivideProcess(fatboyProcess):
         self._options.setdefault('debug_mode', 'no')
         self._optioninfo.setdefault('debug_mode', 'Show plots of each slitlet and print out debugging information.')
         self._options.setdefault('write_fits_table', 'no')
+        self._options.setdefault('calib_star_spectrum', '0')
+        self._optioninfo.setdefault('calib_star_spectrum', 'Which extracted spectrum of the standard is the calibration star (1-based).\n0 (default) = the brightest, e.g. the star in a MOS standard that also extracts faint\nsources from other slitlets.')
     #end setDefaultOptions
+
+    #Slitlet index (0-based) of extracted spectrum j, from the SPEC_nn header keyword written by
+    #extractSpectra ("Slitlet N: [ylo:yhi]").  MOS wavelength solutions are keyed by slitlet, not
+    #by spectrum number.  Falls back to j if the keyword is missing.
+    def spectrumSlitIndex(self, fdu, j):
+        key = 'SPEC_%02d' % (j+1)
+        if (fdu.hasHeaderValue(key)):
+            m = re.match(r'Slitlet (\d+):', str(fdu.getHeaderValue(key)))
+            if (m is not None):
+                return int(m.group(1))-1
+        return j
+    #end spectrumSlitIndex
+
+    #Does fdu (or a header) have a wavelength solution for 0-based slitlet islit?
+    def slitHasWavelengthSolution(self, fdu, islit):
+        slitStr = '%02d' % (islit+1)
+        keys = ['PORDER', 'PORDER'+slitStr, 'PORDER'+slitStr+'_SEG0', 'HIERARCH PORDER'+slitStr+'_SEG0', 'CRVALS'+slitStr, 'CRVALS'+slitStr+'_SEG0']
+        if (isinstance(fdu, pyfits.header.Header)):
+            return any(k in fdu for k in keys)
+        if (fdu.hasProperty("wcHeader") and any(k in fdu.getProperty("wcHeader") for k in keys)):
+            return True
+        return any(fdu.hasHeaderValue(k) for k in keys)
+    #end slitHasWavelengthSolution
+
+    #Row of the standard's extracted spectra to use as the calibration star.  A MOS standard
+    #extracts a spectrum from every slitlet with a source; the star is the brightest one unless
+    #calib_star_spectrum picks one explicitly.
+    def findStarRow(self, standard, fdu):
+        stdData = standard.getData()
+        if (stdData.shape[0] == 1):
+            return 0
+        row = int(self.getOption("calib_star_spectrum", fdu.getTag()))
+        if (row > 0 and row <= stdData.shape[0]):
+            row -= 1
+        else:
+            row = int(np.argmax(np.median(stdData, 1)))
+        print("calibStarDivideProcess::findStarRow> Using spectrum "+str(row+1)+" of "+str(stdData.shape[0])+" (slitlet "+str(self.spectrumSlitIndex(standard, row)+1)+") of standard "+standard.getFullId()+" as the calibration star.")
+        self._log.writeLog(__name__, "Using spectrum "+str(row+1)+" of "+str(stdData.shape[0])+" (slitlet "+str(self.spectrumSlitIndex(standard, row)+1)+") of standard "+standard.getFullId()+" as the calibration star.")
+        return row
+    #end findStarRow
 
     ## Wavelength Calibrate data
     def calibStarDivide(self, fdu, calibs):
@@ -141,6 +184,8 @@ class calibStarDivideProcess(fatboyProcess):
         xsize = fdu.getShape()[1] #xsize is in wavelength direction
         nspec = fdu.getShape()[0]
         csxsize = calibs['standard'].getShape()[1]
+        starRow = self.findStarRow(calibs['standard'], fdu)
+        csSlit = self.spectrumSlitIndex(calibs['standard'], starRow)
 
         #Create output dir if it doesn't exist
         outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
@@ -182,10 +227,10 @@ class calibStarDivideProcess(fatboyProcess):
         #Calculate discrete wavelength np.array for calib star
         xs = np.arange(csxsize, dtype=np.float32)
         cswave = np.zeros(csxsize, dtype=np.float32)
-        if (doWavelength and hasWavelengthSolution(calibs['standard'])):
-            cswave = getWavelengthSolution(calibs['standard'], 0, csxsize)
+        if (doWavelength and self.slitHasWavelengthSolution(calibs['standard'], csSlit)):
+            cswave = getWavelengthSolution(calibs['standard'], csSlit, csxsize)
             if (fdu.hasProperty("resampled")):
-                resamp_cswave = getWavelengthSolution(calibs['standard'].getProperty("resampledHeader"), 0, resampcsxsize)
+                resamp_cswave = getWavelengthSolution(calibs['standard'].getProperty("resampledHeader"), csSlit, resampcsxsize)
         elif (csxsize == xsize):
             #Do pixel to pixel division
             doWavelength = False
@@ -202,27 +247,35 @@ class calibStarDivideProcess(fatboyProcess):
         if (doWavelength and not doIndivSlitlets):
             #Transform once to common wavelength scale
             #Use helper function
-            (ystar, b, good) = self.resampleStandard(calibs['standard'], cswave, wave)
+            (ystar, b, good) = self.resampleStandard(calibs['standard'], cswave, wave, row=starRow)
             if (fdu.hasProperty("cleanFrame")):
-                (ystar_clean, b_clean, good_clean) = self.resampleStandard(calibs['standard'], cswave, wave, tag="cleanFrame")
+                (ystar_clean, b_clean, good_clean) = self.resampleStandard(calibs['standard'], cswave, wave, tag="cleanFrame", row=starRow)
             if (fdu.hasProperty("resampled")):
-                (ystar_resamp, b_resamp, good_resamp) = self.resampleStandard(calibs['standard'], resamp_cswave, resamp_wave, tag="resampled")
+                (ystar_resamp, b_resamp, good_resamp) = self.resampleStandard(calibs['standard'], resamp_cswave, resamp_wave, tag="resampled", row=starRow)
 
         #Loop over specList and extract spectra
         for j in range(nspec):
             if (doWavelength and doIndivSlitlets):
-                #Calculate wavelength solution for this spectrum
-                wave = getWavelengthSolution(fdu, j, xsize)
+                #Calculate wavelength solution for this spectrum, from its own slitlet's solution
+                jslit = self.spectrumSlitIndex(fdu, j)
+                if (not self.slitHasWavelengthSolution(fdu, jslit)):
+                    print("calibStarDivideProcess::calibStarDivide> Warning: No wavelength solution for spectrum "+str(j+1)+" (slitlet "+str(jslit+1)+") of "+fdu.getFullId()+".  Not dividing this spectrum!")
+                    self._log.writeLog(__name__, "No wavelength solution for spectrum "+str(j+1)+" (slitlet "+str(jslit+1)+") of "+fdu.getFullId()+".  Not dividing this spectrum!", type=fatboyLog.WARNING)
+                    if (doFitsTable):
+                        columns.append(pyfits.Column(name='Wavelength_'+str(j+1), format='D', array=np.zeros(xsize)))
+                        columns.append(pyfits.Column(name='Spectrum_'+str(j+1), format='D', array=rssdata[j,:]))
+                    continue
+                wave = getWavelengthSolution(fdu, jslit, xsize)
                 if (doFitsTable):
                     columns.append(pyfits.Column(name='Wavelength_'+str(j+1), format='D', array=wave))
                 #Transform standard star to commmon wavelength
                 #Use helper function
-                (ystar, b, good) = self.resampleStandard(calibs['standard'], cswave, wave)
+                (ystar, b, good) = self.resampleStandard(calibs['standard'], cswave, wave, row=starRow)
                 if (fdu.hasProperty("cleanFrame")):
-                    (ystar_clean, b_clean, good_clean) = self.resampleStandard(calibs['standard'], cswave, wave, tag="cleanFrame")
+                    (ystar_clean, b_clean, good_clean) = self.resampleStandard(calibs['standard'], cswave, wave, tag="cleanFrame", row=starRow)
                 if (fdu.hasProperty("resampled")):
-                    resamp_wave = getWavelengthSolution(fdu.getProperty("resampledHeader"), j, resampxsize)
-                    (ystar_resamp, b_resamp, good_resamp) = self.resampleStandard(calibs['standard'], resamp_cswave, resamp_wave, tag="resampled")
+                    resamp_wave = getWavelengthSolution(fdu.getProperty("resampledHeader"), jslit, resampxsize)
+                    (ystar_resamp, b_resamp, good_resamp) = self.resampleStandard(calibs['standard'], resamp_cswave, resamp_wave, tag="resampled", row=starRow)
             if (doWavelength):
                 #Output data will be zero outside of wavelength range used
                 rssdata[j, b[good]] = (fdu.getData()[j][b][good]/ystar[good])
@@ -232,12 +285,14 @@ class calibStarDivideProcess(fatboyProcess):
                     rssresamp[j, b_resamp[good_resamp]] = (fdu.getData(tag="resampled")[j][b_resamp][good_resamp]/ystar_resamp[good_resamp])
             else:
                 #Simply divide all values np.where calib star is nonzero
-                b = calibs['standard'].getData()[0,:] != 0
-                rssdata[j,b] = fdu.getData()[j,b]/calibs['standard'].getData()[0,b]
+                b = calibs['standard'].getData()[starRow,:] != 0
+                rssdata[j,b] = fdu.getData()[j,b]/calibs['standard'].getData()[starRow,b]
                 if (fdu.hasProperty("cleanFrame")):
-                    rssclean[j,b_clean] = fdu.getData(tag="cleanFrame")[j,b_clean]/calibs['standard'].getData(tag="cleanFrame")[0,b_clean]
+                    b_clean = calibs['standard'].getData(tag="cleanFrame")[starRow,:] != 0
+                    rssclean[j,b_clean] = fdu.getData(tag="cleanFrame")[j,b_clean]/calibs['standard'].getData(tag="cleanFrame")[starRow,b_clean]
                 if (fdu.hasProperty("resampled")):
-                    rssresamp[j,b_resamp] = fdu.getData(tag="resampled")[j,b_resamp]/calibs['standard'].getData(tag="resampled")[0,b_resamp]
+                    b_resamp = calibs['standard'].getData(tag="resampled")[starRow,:] != 0
+                    rssresamp[j,b_resamp] = fdu.getData(tag="resampled")[j,b_resamp]/calibs['standard'].getData(tag="resampled")[starRow,b_resamp]
 
             if (doFitsTable):
                 columns.append(pyfits.Column(name='Spectrum_'+str(j+1), format='D', array=rssdata[j,:]))
@@ -254,7 +309,7 @@ class calibStarDivideProcess(fatboyProcess):
         return True
     #end calibStarDivide
 
-    def resampleStandard(self, calib, cswave, wave, tag=None):
+    def resampleStandard(self, calib, cswave, wave, tag=None, row=0):
         #Transform to common wavelength scale
         calibData = calib.getData()
         if (tag is not None):
@@ -272,7 +327,7 @@ class calibStarDivideProcess(fatboyProcess):
             ref = np.where(np.abs(cswave-wave[b][i]) == np.min(np.abs(cswave-wave[b][i])))[0][0]
             if (cswave[ref] == wave[b][i]):
                 #Special case, exact same wavelength
-                ystar.append(calibData[0, ref])
+                ystar.append(calibData[row, ref])
                 continue
             elif (cswave[ref] > wave[b][i]):
                 #wavelength in calib star > wavelength in spectrum.
@@ -291,7 +346,7 @@ class calibStarDivideProcess(fatboyProcess):
                 continue
             w1 = abs(cswave[ref]-wave[b][i])
             w2 = abs(cswave[ref2]-wave[b][i])
-            ystar.append((w2*calibData[0, ref]+w1*calibData[0, ref2])/(w1+w2))
+            ystar.append((w2*calibData[row, ref]+w1*calibData[row, ref2])/(w1+w2))
         ystar = np.array(ystar,dtype=np.float32)
         #Normalize to 1
         ystar /= gpu_arraymedian(ystar, nonzero=True)

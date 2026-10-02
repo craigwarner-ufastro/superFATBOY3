@@ -363,7 +363,7 @@ def tri_register(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, ybox
             currName = frames[j].getFullId()
         elif (mode == MODE_FDU_DIFFERENCE):
             currData = frames[j+1].getData()-frames[j].getData()
-            currName = frame[j+1].getFullId()+"-"+frame[j].getFullId()
+            currName = frames[j+1].getFullId()+"-"+frames[j].getFullId()
             #2-1, 3-2, etc.
         elif (mode == MODE_FDU_TAG):
             currData = frames[j].getData(tag=dataTag)

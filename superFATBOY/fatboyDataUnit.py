@@ -548,7 +548,7 @@ class fatboyDataUnit:
                         else:
                             #shape = (y, x) = (NAXIS2, NAXIS1)
                             self._shape = (self._header['NAXIS2'], self._header['NAXIS1'])
-                if (shape is None):
+                if (self._shape is None):
                     #Not found in header, now use data
                     temp = pyfits.open(self.filename)
                     self._shape = temp[self._mef].data.shape
@@ -781,7 +781,7 @@ class fatboyDataUnit:
         fileprefix = str(fileprefix[fileprefix.rfind('/')+1:]) #convert from unicode to str if necessary!
         if (groupType == 'manual'):
             self._id = fileprefix
-        elif (groupType == 'keyword' and keyword is not None and os.access(self.filename, OS.F_OK)):
+        elif (groupType == 'keyword' and keyword is not None and os.access(self.filename, os.F_OK)):
             if (keyword in self._header):
                 self._id = fileprefix+'_'+str(self._header[keyword]).replace(' ','_')
             else:

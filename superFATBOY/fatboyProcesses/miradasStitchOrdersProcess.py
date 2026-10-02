@@ -1,5 +1,6 @@
 from superFATBOY.fatboyProcess import fatboyProcess
 from superFATBOY.fatboyLibs import *
+from superFATBOY.datatypeExtensions.fatboySpecCalib import fatboySpecCalib
 from superFATBOY.fatboyLog import fatboyLog
 import numpy as np
 import os

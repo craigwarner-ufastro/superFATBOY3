@@ -87,7 +87,7 @@ class circeImage(fatboyImage):
                 self._fdb.checkMemoryManagement(self) #check memory status
             if (self.getObsType(True) == self.FDU_TYPE_BAD_PIXEL_MASK):
                 #bad pixel masks should be type bool
-                if (self._data.dtype != dtype("bool")):
+                if (self._data.dtype != np.dtype("bool")):
                     self._data = self._data.astype("bool")
             return self._data
         else:

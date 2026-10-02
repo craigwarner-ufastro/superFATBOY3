@@ -101,7 +101,7 @@ class sinfoniRegisterStackProcess(fatboyProcess):
                 print("sinfoniRegisterStackProcess::alignFrames> ERROR: align_shifts_file "+shiftsFile+" not found! Alignment and stacking not done!")
                 self._log.writeLog(__name__, "align_shifts_file "+shiftsFile+" not found! Alignment and stacking not done!", type=fatboyLog.ERROR)
                 return None
-            shifts = loadtxt(shiftsFile).transpose() #need to transpose to get proper shape
+            shifts = np.loadtxt(shiftsFile).transpose() #need to transpose to get proper shape
         else:
             print("sinfoniRegisterStackProcess::alignFrames> ERROR: Invalid align method "+alignMethod+"!  Alignment and stacking not done!")
             self._log.writeLog(__name__, "Invalid align method "+alignMethod+"!  Alignment and stacking not done!", type=fatboyLog.ERROR)

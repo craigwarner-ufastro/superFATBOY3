@@ -1571,7 +1571,7 @@ class rectifyProcess(fatboyProcess):
     def calculateMOSContinuaTrans(self, fdu, coords, mosMode, calibs):
         if (isinstance(coords, str) and os.access(coords, os.F_OK)):
             #This is a coord_list filename
-            coord_list = loadtxt(coords)
+            coord_list = np.loadtxt(coords)
             if (mosMode == "use_slitpos"):
                 (xin, yin, yout, xslitin) = (coord_list[:,0], coord_list[:,1], coord_list[:,2], coord_list[:,3])
             elif (mosMode == "independent_slitlets"):
@@ -2282,7 +2282,7 @@ class rectifyProcess(fatboyProcess):
     def calculateMOSSkylineTrans(self, fdu, coords, calibs):
         if (isinstance(coords, str) and os.access(coords, os.F_OK)):
             #This is a coord_list filename
-            coord_list = loadtxt(coords)
+            coord_list = np.loadtxt(coords)
             #islit was coord_list[:3] (missing comma -- sliced rows not the islit column) and
             #the iseg check used the wrong column/threshold; same bug class as
             #calculateMOSContinuaTrans's coord_list path -- see rectify audit notes.
@@ -2607,6 +2607,54 @@ class rectifyProcess(fatboyProcess):
     #end calculateMOSSkylineTrans
 
     #Calculate MOS rectification transformation
+    #For the global continuum fits (whole_chip, use_slitpos): are the traced continua numerous and
+    #spread out enough in the cross-dispersion direction to constrain the fit?  e.g. a telluric
+    #standard with one usable continuum fits y_out = ~2*y and squashes the chip to half height.
+    def continuaConstrainGlobalFit(self, fdu, coords, mosMode, calibs):
+        if (mosMode not in ["whole_chip", "use_slitpos"] or not isinstance(coords, tuple)):
+            return True
+        minContinua = int(self.getOption("mos_min_continua_global_fit", fdu.getTag()))
+        if (minContinua <= 0):
+            return True
+        yin = np.asarray(coords[1])
+        yout = np.asarray(coords[2])
+        ncont = len(np.unique(np.round(yout)))
+        if (len(yin) > 0):
+            yspan = float(yin.max()-yin.min())
+        else:
+            yspan = 0.
+        smData = calibs['slitmask'].getData(force_cpu=True)
+        if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
+            rows = np.where(smData.max(1) > 0)[0]
+        else:
+            rows = np.where(smData.max(0) > 0)[0]
+        slitExtent = float(rows.max()-rows.min()) if len(rows) > 0 else 0.
+        if (ncont >= minContinua and yspan >= 0.25*slitExtent):
+            return True
+        print("rectifyProcess::continuaConstrainGlobalFit> WARNING: Only "+str(ncont)+" continua spanning "+formatNum(yspan)+" of "+formatNum(slitExtent)+" pixels traced for "+fdu.getFullId()+" - too few to constrain a "+mosMode+" fit (need mos_min_continua_global_fit = "+str(minContinua)+" spanning at least 25% of the slitlets).")
+        self._log.writeLog(__name__, "Only "+str(ncont)+" continua spanning "+formatNum(yspan)+" of "+formatNum(slitExtent)+" pixels traced for "+fdu.getFullId()+" - too few to constrain a "+mosMode+" fit (need mos_min_continua_global_fit = "+str(minContinua)+" spanning at least 25% of the slitlets).", type=fatboyLog.WARNING)
+        return False
+    #end continuaConstrainGlobalFit
+
+    #Find a continuum transform already calculated for another object with the same mask (same
+    #slitmask source and frame shape), e.g. the science mask when rectifying its telluric standard.
+    def findOtherContinuumTransform(self, fdu, calibs):
+        obstype = "ytrans_rect"
+        if (fdu.dispersion == fdu.DISPERSION_VERTICAL):
+            obstype = "xtrans_rect"
+        properties = dict()
+        properties['specmode'] = fdu.getProperty("specmode")
+        properties['dispersion'] = fdu.getProperty("dispersion")
+        trans = self._fdb.getMasterCalib(filter=fdu.filter, obstype=obstype, section=fdu.section, shape=fdu.getShape(), properties=properties, tag=fdu.getTag())
+        if (trans is not None):
+            print("rectifyProcess::findOtherContinuumTransform> WARNING: Using continuum transformation "+trans.getFullId()+" from another object with the same mask for "+fdu.getFullId()+".")
+            self._log.writeLog(__name__, "Using continuum transformation "+trans.getFullId()+" from another object with the same mask for "+fdu.getFullId()+".", type=fatboyLog.WARNING)
+        else:
+            print("rectifyProcess::findOtherContinuumTransform> ERROR: No continuum transformation from another object available for "+fdu.getFullId()+".  Fitting anyway - the cross-dispersion scale may be wrong!")
+            self._log.writeLog(__name__, "No continuum transformation from another object available for "+fdu.getFullId()+".  Fitting anyway - the cross-dispersion scale may be wrong!", type=fatboyLog.ERROR)
+        return trans
+    #end findOtherContinuumTransform
+
     #Adds 'xtrans_rect' and 'ytrans_rect' to calibs and returns calibs
     def calcMOSRectification(self, fdu, rctfdus, skyFDU, calibs):
         mosMode = self.getOption("mos_mode", fdu.getTag())
@@ -2651,10 +2699,21 @@ class rectifyProcess(fatboyProcess):
             else:
                 #Use data frames themselves to trace out continua
                 coords = self.traceMOSContinuaRectification(fdu, rctfdus, mosMode, calibs)
+            #A global fit needs continua spread across the chip to constrain its cross-dispersion
+            #terms.  Reuse another object's transform for the same mask if this one can't.
+            prevTrans = None
+            if (not self.continuaConstrainGlobalFit(fdu, coords, mosMode, calibs)):
+                prevTrans = self.findOtherContinuumTransform(fdu, calibs)
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                calibs['ytrans_rect'] = self.calculateMOSContinuaTrans(fdu, coords, mosMode, calibs)
+                if (prevTrans is not None):
+                    calibs['ytrans_rect'] = prevTrans
+                else:
+                    calibs['ytrans_rect'] = self.calculateMOSContinuaTrans(fdu, coords, mosMode, calibs)
             else:
-                calibs['xtrans_rect'] = self.calculateMOSContinuaTrans(fdu, coords, mosMode, calibs)
+                if (prevTrans is not None):
+                    calibs['xtrans_rect'] = prevTrans
+                else:
+                    calibs['xtrans_rect'] = self.calculateMOSContinuaTrans(fdu, coords, mosMode, calibs)
         else:
             print("rectifyProcess::calcMOSRectification> Skipping continua rectification...")
             self._log.writeLog(__name__, "Skipping continua rectification...")
@@ -2815,15 +2874,11 @@ class rectifyProcess(fatboyProcess):
                     calibs['masterLamp'].setProperty("rectified", True)
 
             #Check for slitmask frames to update from disk too
-            if ('slitmask' in calibs and not calibs['slitmask'].hasProperty("rectified")):
-                #Check if output exists
-                rctfile = "rectified/rct_"+calibs['slitmask'].getFullId()
-                #This will append new slitmask
-                if (self.checkOutputExists(calibs['slitmask'], rctfile)):
-                    #Now get new slitmask with correct shape
-                    calibs['slitmask'] = fdu.getSlitmask(pname=None, properties=properties, headerVals=headerVals)
-                    #output file already exists and overwrite = no.  Update data from disk and set "rectified" = True
-                    calibs['slitmask'].setProperty("rectified", True)
+            if ('slitmask' in calibs and self.slitmaskNeedsRectifying(calibs['slitmask'], fdu)):
+                #Check if this object's rectified slitmask exists on disk
+                rctSlitmask = self.loadRectifiedSlitmask(calibs['slitmask'], fdu)
+                if (rctSlitmask is not None):
+                    calibs['slitmask'] = rctSlitmask
                     #Update nslits property
                     nslits = calibs['slitmask'].getData(force_cpu=True).max()
                     calibs['slitmask'].setProperty("nslits", nslits)
@@ -2881,6 +2936,49 @@ class rectifyProcess(fatboyProcess):
         fdu._header.add_history('Rectified')
         return True
     #end execute
+
+    #A slitmask traced from a master flat is shared by every object that uses that flat, but
+    #each object has its own rectification transform, so it is rectified separately per object.
+    #The source slitmask records which objects it has been rectified for; each rectified copy is
+    #tagged for its object (so other objects never pick it up) and named after it.
+    def slitmaskNeedsRectifying(self, slitmask, fdu):
+        if (slitmask.hasProperty("rectified")):
+            #Already a rectified copy
+            return False
+        if (slitmask.hasProperty("rectified_for") and fdu._id in slitmask.getProperty("rectified_for")):
+            return False
+        return True
+    #end slitmaskNeedsRectifying
+
+    def markSlitmaskRectified(self, slitmask, fdu):
+        if (slitmask.hasProperty("rectified_for")):
+            slitmask.getProperty("rectified_for").append(fdu._id)
+        else:
+            slitmask.setProperty("rectified_for", [fdu._id])
+    #end markSlitmaskRectified
+
+    def rectifiedSlitmaskName(self, slitmask, fdu):
+        return slitmask._id+"_"+fdu._id
+    #end rectifiedSlitmaskName
+
+    #Load this object's rectified slitmask from disk if it exists and overwrite_files = no.
+    #Returns the new tagged slitmask, or None.
+    def loadRectifiedSlitmask(self, slitmask, fdu):
+        outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
+        rctfile = outdir+"/rectified/rct_"+self.rectifiedSlitmaskName(slitmask, fdu)+".fits"
+        if (not os.access(rctfile, os.F_OK) or self._fdb.getParam('overwrite_files', fdu.getTag()).lower() != "no"):
+            return None
+        image = pyfits.open(rctfile)
+        data = image[slitmask._mef].data
+        if (not data.dtype.isnative):
+            data = data.byteswap()
+            data = data.view(data.dtype.newbyteorder('<'))
+        image.close()
+        rctSlitmask = self._fdb.addNewSlitmask(slitmask, data, self._pname, tagname=self.rectifiedSlitmaskName(slitmask, fdu), objectTag=fdu._id)
+        rctSlitmask.setProperty("rectified", True)
+        self.markSlitmaskRectified(slitmask, fdu)
+        return rctSlitmask
+    #end loadRectifiedSlitmask
 
     ## OVERRIDE getCalibs
     def getCalibs(self, fdu, prevProc = None):
@@ -3421,7 +3519,7 @@ class rectifyProcess(fatboyProcess):
             crMask *= fdu.getProperty("crmask") #crmask is good pixel mask
 
         #First update slitmask before anything else.  Use "uniform" kernel.
-        if ('slitmask' in calibs and not calibs['slitmask'].hasProperty("rectified")):
+        if ('slitmask' in calibs and self.slitmaskNeedsRectifying(calibs['slitmask'], fdu)):
             slitmask = calibs['slitmask']
             (data, header, expmap, pixmap) = drihizzle_method(slitmask, None, None, inmask=crMask, weight='exptime', kernel="uniform", xtrans=calibs['xtrans_rect'].getData(), ytrans=calibs['ytrans_rect'].getData(), log=self._log, mode=gpu_drihizzle.MODE_FDU)
             #Now update slitmask to remove guide star boxes
@@ -3471,7 +3569,8 @@ class rectifyProcess(fatboyProcess):
             #Keep original slitx, slitw -- use temp vars to get return values
             (sylo, syhi, tempx, tempw) = findRegions(data, nslits, slitmask, gpu=self._fdb.getGPUMode(), log=self._log)
 
-            rctSlitmask = self._fdb.addNewSlitmask(slitmask, data, self._pname)
+            #Tag for this object: another object sharing this slitmask has its own transform
+            rctSlitmask = self._fdb.addNewSlitmask(slitmask, data, self._pname, tagname=self.rectifiedSlitmaskName(slitmask, fdu), objectTag=fdu._id)
             #update properties
             rctSlitmask.setProperty("nslits", nslits)
             rctSlitmask.setProperty("regions", (sylo, syhi, slitx, slitw))
@@ -3480,7 +3579,7 @@ class rectifyProcess(fatboyProcess):
             rctSlitmask.updateData(data)
             rctSlitmask.updateHeader(header)
             rctSlitmask.setProperty("rectified", True)
-            slitmask.setProperty("rectified", True)
+            self.markSlitmaskRectified(slitmask, fdu)
             #Write to disk if requested
             if (writeCalibs):
                 rctfile = outdir+"/rectified/rct_"+rctSlitmask.getFullId()
@@ -3692,6 +3791,8 @@ class rectifyProcess(fatboyProcess):
         self._optioninfo.setdefault('mos_fit_order', 'MOS only.  Order of polynomial to use to fit continua.')
         self._options.setdefault('rectify_max_transform_factor', 2.0)
         self._optioninfo.setdefault('rectify_max_transform_factor', 'If a continuum trace fit extrapolates to transform values\nmore than this many times the image size, retry with a linear\nfit rather than risk a hugely oversized rectified output image.')
+        self._options.setdefault('mos_min_continua_global_fit', '3')
+        self._optioninfo.setdefault('mos_min_continua_global_fit', 'For mos_mode = whole_chip or use_slitpos: minimum number of traced continua, spanning\nat least 25% of the slitlets, needed to fit the continuum transformation.  With fewer (e.g.\na telluric standard with one bright star), reuse the continuum transformation already\ncalculated for another object with the same mask.  0 = always fit.')
         self._options.setdefault('mos_max_slit_width', 10)
         self._optioninfo.setdefault('mos_max_slit_width', 'Anything with a greater width is assumed to be a guide star\nbox and will be blanked out at this stage.')
         self._options.setdefault('mos_mode', 'use_slitpos')
