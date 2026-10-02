@@ -64,6 +64,7 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
         if (cr_algorithm == "deepcr" and not hasDeepCR):
             print("removeCosmicRaysSpecProcess::execute> WARNING: deepCR specified as cosmic ray removal algorithm but not installed.  Using DCR instead.")
             self._log.writeLog(__name__, "deepCR specified as cosmic ray removal algorithm but not installed.  Using DCR instead.", type=fatboyLog.WARNING)
+            cr_algorithm = "dcr"
 
         success = False
         if (cr_algorithm == "dcr"):
@@ -77,8 +78,8 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
         elif (cr_algorithm == "deepcr"):
             success = self.runDeepCR(fdu, calibs)
         else:
-            print("removeCosmicRaysSpecProcess::execute> ERROR: invalid cosmic ray removal algorithm " + cr_algorithm + ".  Must be dcr or lacos. Discarding Image!")
-            self._log.writeLog(__name__, "Invalid cosmic ray removal algorithm " + cr_algorithm + ".  Must be dcr or lacos. Discarding Image!", type=fatboyLog.ERROR)
+            print("removeCosmicRaysSpecProcess::execute> ERROR: invalid cosmic ray removal algorithm " + cr_algorithm + ".  Must be dcr, lacos, or deepcr. Discarding Image!")
+            self._log.writeLog(__name__, "Invalid cosmic ray removal algorithm " + cr_algorithm + ".  Must be dcr, lacos, or deepcr. Discarding Image!", type=fatboyLog.ERROR)
             # disable this FDU
             fdu.disable()
             return False
@@ -263,7 +264,7 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
         if (self.getOption("mos_use_whole_chip", fdu.getTag()).lower() == "yes"):
             useWholeChip = True
 
-        data = fdu.getData().astype(np.float32)
+        data = fdu.getData(force_cpu=True).astype(np.float32)
         slitmask = None
 
         # Initialize model
@@ -294,16 +295,16 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
             crMask = np.ones(data.shape, dtype=np.int16)
             if (inpaint):
                 cleanData = np.zeros(data.shape, dtype=np.float32)
-            nslits = slitmask.getData().max()
+            nslits = slitmask.getData(force_cpu=True).max()
             npix = 0
             # Loop over slitlets
             for j in range(nslits):
-                slit = np.where(slitmask.getData() == (j + 1))
+                slit = np.where(slitmask.getData(force_cpu=True) == (j + 1))
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                     # horizontal dispersion for slits
                     ylo = slit[0].min()
                     yhi = slit[0].max() + 1
-                    tempMask = slitmask.getData()[ylo:yhi, :] == (j + 1)
+                    tempMask = slitmask.getData(force_cpu=True)[ylo:yhi, :] == (j + 1)
                     slit = (data[ylo:yhi, :] * tempMask).astype(np.float32)
                     # Run deepCR on this one slit.
                     if (inpaint):
@@ -316,7 +317,7 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
                     # Vertical dispersion for slits
                     xlo = slit[1].min()
                     xhi = slit[1].max() + 1
-                    tempMask = slitmask.getData()[:, xlo:xhi] == (j + 1)
+                    tempMask = slitmask.getData(force_cpu=True)[:, xlo:xhi] == (j + 1)
                     slit = (data[:, xlo:xhi] * tempMask).astype(np.float32)
                     # Run deepCR on this one slit.
                     if (inpaint):
@@ -383,13 +384,13 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
         if (self.getOption("mos_use_whole_chip", fdu.getTag()).lower() == "yes"):
             useWholeChip = True
 
-        data = fdu.getData().astype(np.float32)
+        data = fdu.getData(force_cpu=True).astype(np.float32)
         slitmask = None
         if ('slitmask' in calibs):
             slitmask = calibs['slitmask']
 
-        data = fdu.getData().astype(np.float32)
-        goodPix = (1 - fdu.getBadPixelMask().getData()).astype(bool)
+        data = fdu.getData(force_cpu=True).astype(np.float32)
+        goodPix = (1 - fdu.getBadPixelMask().getData(force_cpu=True)).astype(bool)
         #lacos_spec fits object spectra along x and sky lines along y, i.e. assumes horizontal
         #dispersion.  For vertical dispersion, run it on the transpose.
         vertical = (fdu.dispersion == fdu.DISPERSION_VERTICAL)
@@ -400,10 +401,13 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
                 croutImage = croutImage.T.copy()
             else:
                 (npix, crmask, croutImage) = lacos_spec(data, None, None, gain=fdu.gain, readn=fdu.readnoise, sigclip=sigma, niter=npass, log=self._log, xorder=xorder, yorder=yorder, mask=goodPix)
+            #Only cosmic ray pixels change; elsewhere keep the input exactly (no model round-off)
+            croutImage = np.where(crmask == 0, croutImage, data).astype(np.float32)
         else:
             # mos data
             crmask = np.ones(data.shape, dtype=np.int16)
-            croutImage = np.zeros(data.shape, dtype=np.float32)
+            #Start from the input so pixels outside the slitlets and unflagged pixels are unchanged
+            croutImage = data.copy()
             smData = slitmask.getData(force_cpu=True)
             if (vertical):
                 #Work in transposed frame so the spatial axis is always axis 0
@@ -433,7 +437,9 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
                 (nslitpix, crslit, crdata) = lacos_spec(slit, None, None, gain=fdu.gain, readn=fdu.readnoise, sigclip=sigma, niter=npass, log=self._log, xorder=xorder, yorder=yorder, mask=goodPix[ylo:yhi, :])
                 npix += nslitpix
                 crmask[ylo:yhi, :][tempMask] = crslit[tempMask]
-                croutImage[ylo:yhi, :][tempMask] = crdata[tempMask].astype(np.float32)
+                #Only replace pixels flagged as cosmic rays
+                isCR = tempMask & (crslit == 0)
+                croutImage[ylo:yhi, :][isCR] = crdata[isCR].astype(np.float32)
                 print("\tSlit " + str((j + 1)) + ": cleaned " + str(nslitpix) + " pixels.")
                 self._log.writeLog(__name__, "Slit " + str((j + 1)) + ": cleaned " + str(nslitpix) + " pixels.", printCaller=False, tabLevel=1)
             if (vertical):
@@ -441,7 +447,7 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
                 croutImage = croutImage.T.copy()
 
         # Calculate crdata
-        crdata = fdu.getData() - croutImage
+        crdata = fdu.getData(force_cpu=True) - croutImage
         # Put number of cosmic rays in header
         fdu._header.add_history('Cosmic rays removed: ' + str(npix))
         # Update crmask and data depending on cosmic_ray_method

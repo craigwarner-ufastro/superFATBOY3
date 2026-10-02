@@ -910,6 +910,21 @@ class skySubtractSpecProcess(fatboyProcess):
         return calibs
     #end getCalibs
 
+    #Dither-based sky methods pair frames by their RA/Dec offsets.  A frame with no RA/Dec (none of
+    #ra_keyword / dec_keyword found in its header) can't be paired: report it clearly and drop it,
+    #rather than fail with a TypeError on None during pairing.
+    def requireRADec(self, fdus, skymethod):
+        keep = []
+        for frame in fdus:
+            if (frame.ra is None or frame.dec is None):
+                print("skySubtractSpecProcess::requireRADec> ERROR: "+frame.getFullId()+" has no RA/Dec (looked for "+str(frame._keywords.get('ra_keyword'))+" / "+str(frame._keywords.get('dec_keyword'))+"), which sky_method = "+skymethod+" needs to pair dithered frames.  Set ra_keyword/dec_keyword for this instrument (e.g. in its template).  Discarding image!")
+                self._log.writeLog(__name__, frame.getFullId()+" has no RA/Dec (looked for "+str(frame._keywords.get('ra_keyword'))+" / "+str(frame._keywords.get('dec_keyword'))+"), which sky_method = "+skymethod+" needs to pair dithered frames.  Set ra_keyword/dec_keyword for this instrument (e.g. in its template).  Discarding image!", type=fatboyLog.ERROR)
+                frame.disable()
+            else:
+                keep.append(frame)
+        return keep
+    #end requireRADec
+
     #Match individual frames based on sky_method
     def matchSkies(self, fdu, properties, headerVals):
         skymethod = properties['sky_method'].lower()
@@ -931,6 +946,8 @@ class skySubtractSpecProcess(fatboyProcess):
             sky_dithering_range = float(self.getOption('sky_dithering_range', fdu.getTag()))/3600.
             #get FDUs matching this identifier, filter, grism, specmode, sorted by index
             skyfdus = self._fdb.getSortedFDUs(ident = fdu._id, filter=fdu.filter, properties=properties, headerVals=headerVals, sortby=sort_key)
+            #Dither pairing needs each frame's position
+            skyfdus = self.requireRADec(skyfdus, skymethod)
             if (len(skyfdus) == 2 and skyfdus[0] != fdu):
                 skyfdus.reverse() #reverse list
             #If only this object found, cannot subtract sky

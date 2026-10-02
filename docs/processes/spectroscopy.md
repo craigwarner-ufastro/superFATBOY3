@@ -172,6 +172,11 @@ unless you set `mos_use_whole_chip = yes`.
 | `mos_use_whole_chip` | `no` | Run the algorithm on the whole chip instead of slitlet by slitlet |
 
 For each algorithm there are several more tuning options (`deepcr_*`, `stray_light_*`, `dcr_lower_radius`, ...); see the [reference](../options-reference.md#cosmicraysspec).
+
+**L.A. Cosmic notes.** It follows `lacos_spec.cl`: object spectra are fitted along the dispersion direction and sky lines along the slit, then
+removed before the Laplacian search, and added back once at the end. For vertically dispersed data each slitlet is transposed first, so the fits
+always run along the right axes. In MOS mode each slitlet is processed in its bounding box; pixels of the box outside the slitlet are filled
+with the nearest in-slit value rather than zero, so slitlet edges are not mistaken for cosmic rays.
 The noisemap is left untouched by cosmic ray removal, so it can be used to find where rays were.
 
 ## flatDivideSpec
@@ -233,6 +238,10 @@ detector background cancel, which also gives you a negative spectrum to be combi
 | `remove_residuals`, `residual_removal_method` | `no`, `median_boxcar` | Try to remove sky-subtraction residuals afterwards (`median_boxcar` or `response_curve`) |
 | `default_master_sky` | `None` | Use this master sky |
 
+The dither methods pair frames by their RA/Dec offsets, so every frame needs a position: the header keywords listed in `ra_keyword` /
+`dec_keyword` (by default `RAOFFSET`/`RA`/`TELRA` and `DECOFFSE`/`DEC`/`TELDEC`). A frame with none of them is discarded with an `ERROR` naming the
+keywords; set the right keywords for your instrument (for example in its template).
+
 Per-object override: put `<property name="sky_method" value="step"/>` on an `<object>` or `<calib>` (used in the FLAMINGOS-1 MOS template, which
 reduces a standard star taken with a stepped pattern alongside dithered science frames).
 
@@ -271,6 +280,7 @@ How the work is divided depends on `mos_mode` (MOS and IFU data):
 | `continuum_trace_xinit` | middle of chip | Column at which to start tracing (MIRADAS: 1800) |
 | `max_continua_per_slit` | `1` | Trace up to this many continua per slitlet (MIRADAS: 3) |
 | `min_threshold` | `5` | Minimum significance, in sigma, for a continuum (MIRADAS: 4) |
+| `mos_min_continua_global_fit` | `3` | For `whole_chip` and `use_slitpos`: if fewer continua are traced (or they span less than 25% of the slitlets), the global fit can't constrain the cross-dispersion terms, so the continuum transformation already calculated for another object with the same mask is reused (with a warning). Typical case: a telluric standard with one bright star. `0` = always fit. |
 | `min_sky_threshold` | `2.5` | Minimum significance for a sky or lamp line |
 | `sky_max_slope` | `0.04` | Maximum slope of a sky line. Raise for strongly tilted lines (MIRADAS: 0.6). |
 | `sky_boxsize` | `6` | Box size in pixels for tracing lines (MIRADAS: 10) |
@@ -298,7 +308,7 @@ How the work is divided depends on `mos_mode` (MOS and IFU data):
 - With `write_calib_output` and `write_output` you also get `stats_<frame>.txt` (continua) and `stats_<frame>-skylines.txt` in `rectified/`: one row per traced point with a code saying whether it was kept or why it was rejected.
   If a trace looks wrong, start there.
 
-Output: `rectified/rct_*.fits` (plus `continua_*`, `skylines_*`, `qa_*`, `region_*`). A rectified clean sky, master arclamp and slitmask are stored for later steps.
+Output: `rectified/rct_*.fits` (plus `continua_*`, `skylines_*`, `qa_*`, `region_*`). A rectified clean sky, master arclamp and slitmask are stored for later steps. Each object gets its own rectified slitmask, made with its own transformation (`rectified/rct_<slitmask>_<object>.fits`), since objects sharing a mask (for example a science field and its standard) can have different transformations.
 
 ## doubleSubtract
 
@@ -319,6 +329,7 @@ It acts only on frames that came from `dither` or an even-count `step` sky subtr
 | `find_shift_box_ylo`, `find_shift_box_yhi` | `0`, `-1` | Range in the cross-dispersion direction |
 | `find_shift_constrain_boxsize` | `None` | Constrain the correlation to a window of this size around a guess from the RA and Dec offsets |
 | `use_header` | `no` | Use the RA, Dec and pixel scale in the header for the shift instead of measuring it |
+| `min_negative_flux_fraction` | `0.1` | If the frame's total negative flux is below this fraction of its positive flux there is no negative spectrum to shift (the sky frame had the target off the slit, as for some telluric standards), so double subtraction is skipped with a warning. `0` = never skip. |
 
 ## shiftAdd
 
@@ -451,8 +462,15 @@ Divides the extracted object spectra by the spectrum of a standard star, removin
 `<calib type="standard">`. Its wavelength scale is reconstructed from the header and, where it differs from the object's, resampled to the object's scale by linear interpolation; only the overlap
 is usable. The header records which standard was used.
 
+Declare the standard as `<calib type="standard" ...>` in the `<dataset>`, not as an `<object>`: an `<object>` is reduced as a second science target and
+`calibStarDivide` then finds no standard.
+
+For a MOS standard, every slitlet with a source is extracted, so the standard can have several spectra. The calibration star is the brightest one
+(or the one chosen with `calib_star_spectrum`), and each spectrum uses its own slitlet's wavelength solution.
+
 | Option | Default | Meaning |
 |---|---|---|
+| `calib_star_spectrum` | `0` | Which extracted spectrum of the standard is the star (1-based); `0` = the brightest |
 | `write_fits_table` | `no` | Also write the divided spectra as a FITS binary table |
 | `debug_mode` | `no` | Show plots |
 

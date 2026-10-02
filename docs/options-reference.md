@@ -2,7 +2,7 @@
 
 *[Docs home](README.md)*
 
-**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.3.39.
+**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.3.43.
 Run `superFatboy3.py -list` yourself for the live list, or regenerate this file with
 `python3 docs/gen_options_reference.py`. For prose descriptions of what each process does, see the
 [process guide](processes/README.md).
@@ -204,6 +204,7 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 
 | Option | Default | Notes |
 |---|---|---|
+| `calib_star_spectrum` | `0` | Which extracted spectrum of the standard is the calibration star (1-based). 0 (default) = the brightest, e.g. the star in a MOS standard that also extracts faint sources from other slitlets. |
 | `create_calib_only` | `no` |  |
 | `debug_mode` | `no` | Show plots of each slitlet and print out debugging information. |
 | `write_calib_output` | `no` |  |
@@ -314,6 +315,7 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `find_shift_box_yhi` | `-1` | Used to specify a range of the chip in cross-dispersion direction to sum a 1-d cut across and attemt to find shift. |
 | `find_shift_box_ylo` | `0` | Used to specify a range of the chip in cross-dispersion direction to sum a 1-d cut across and attemt to find shift. |
 | `find_shift_constrain_boxsize` | `None` | Constrain the fit to a box of this size, centered at the initial guess based on RA and Dec offsets. |
+| `min_negative_flux_fraction` | `0.1` | If the sky-subtracted frame's total negative flux is less than this fraction of its positive flux, there is no negative trace to double subtract (e.g. the sky frame had the target nodded off the slit, as for some telluric standards).  Skip double subtraction and use only the positive.  0 = never skip. |
 | `use_header` | `no` | Use the information in the header - RA, DEC, PIXSCALE - instead of attempting to find shift. |
 | `write_calib_output` | `no` |  |
 | `write_noisemaps` | `no` |  |
@@ -625,6 +627,7 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `mos_find_lines_alternate_method` | `no` | Use alternate method to find sky/lamp lines in slitlets. Should be yes if slits are extremely curved like fire data. |
 | `mos_fit_order` | `2` | MOS only.  Order of polynomial to use to fit continua. |
 | `mos_max_slit_width` | `10` | Anything with a greater width is assumed to be a guide star box and will be blanked out at this stage. |
+| `mos_min_continua_global_fit` | `3` | For mos_mode = whole_chip or use_slitpos: minimum number of traced continua, spanning at least 25% of the slitlets, needed to fit the continuum transformation.  With fewer (e.g. a telluric standard with one bright star), reuse the continuum transformation already calculated for another object with the same mask.  0 = always fit. |
 | `mos_mode` | `use_slitpos` | independent_slitlets \| use_slitpos \| whole_chip |
 | `mos_sky_fallback` | `identity` | What to do for a slit/segment with no traced skylines (or an unusable fit): identity (leave untransformed, previous behavior -- and still the default), pooled_good_slits (fit one whole_chip-style surface from every other slit in this exposure that DOES have traced skylines) or nearest_neighbor_slits (same idea, but pooled from just the mos_sky_neighbor_count physically nearest good slits instead of all of them). Same vocabulary as independent_slitlets_fallback for continua, under its own name since skyline rectification always fits per-slit -- there is no use_slitpos/whole_chip mode here to gate it behind. See the rectify audit notes. |
 | `mos_sky_fit_order` | `2` | MOS only! Fit order for MOS skyline rectification within each slitlet |

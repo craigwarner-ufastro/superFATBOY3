@@ -2164,7 +2164,11 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             z = (zmax-zmin)*zy+intz
             #Process all data with unique output pixel simultaneously
             while (len(b[0]) > 0):
-                if (geomDist is not None or xtrans is not None or ytrans is not None or ztrans is not None):
+                #Without a distortion the mapping is assumed one-to-one, but float32 rounding of the
+                #computed coordinates (e.g. 0.99999994) can floor two inputs onto the same output pixel,
+                #and numpy's a[idx] += v keeps only one of duplicate indices -- whole planes of flux were
+                #lost.  Use the unique-index loop whenever the targets actually collide.
+                if (geomDist is not None or xtrans is not None or ytrans is not None or ztrans is not None or np.unique(z).size != z.size):
                     u = unique1d_wrap(z)
                     intzu = intz[u]
                     intyu = inty[u]
@@ -2297,7 +2301,11 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             zy = (ymax-ymin)*intx+inty
             z = (zmax-zmin)*zy+intz
             while (len(b[0]) > 0):
-                if (geomDist is not None or xtrans is not None or ytrans is not None or ztrans is not None):
+                #Without a distortion the mapping is assumed one-to-one, but float32 rounding of the
+                #computed coordinates (e.g. 0.99999994) can floor two inputs onto the same output pixel,
+                #and numpy's a[idx] += v keeps only one of duplicate indices -- whole planes of flux were
+                #lost.  Use the unique-index loop whenever the targets actually collide.
+                if (geomDist is not None or xtrans is not None or ytrans is not None or ztrans is not None or np.unique(z).size != z.size):
                     u = unique1d_wrap(z)
                     intxu = intx[u]
                     intyu = inty[u]

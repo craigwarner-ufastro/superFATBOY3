@@ -195,6 +195,43 @@ ever delete output directories you created yourself, never the user's own; a run
 15-25 minutes, and can also hang on a flaky NFS mount unrelated to any code issue (check `ps -o stat`
 for kernel `D` state before assuming a bug).
 
+## Documentation convention (from Craig, 2026-10-02) - follow on every change
+
+- **`CHANGELOG.md` is grouped by class/module** (Framework: fatboyDatabase, fatboyLibs, gpu_drihizzle, ...;
+  Processes: findSlitlets, rectify, ...), short summary bullets with the version. Every commit that changes
+  behavior, adds an option, or fixes a bug adds a line to the matching section. Keep the Validation status and
+  Open issues tables at the top current. (Old chronological notes are in its appendix.)
+- **Every new option gets an `_optioninfo` entry** next to its `_options.setdefault` (that's what `-list`
+  prints), then rerun `python3 docs/gen_options_reference.py` and describe it in the matching
+  `docs/processes/*.md` page. Algorithmic changes also get a note in that page.
+
+## Calib star, LA Cosmic, 3-d drizzle, undefined names (2026-10-02, v2.3.43-44)
+
+- **Calib star (LUCI A1689)** needed `<calib type="standard">` in the XML (it was an `<object>`), plus:
+  per-object rectified slitmasks (rectify), `mos_min_continua_global_fit` (one continuum can't constrain
+  a whole_chip fit - it gave y-scale 1.986), `min_negative_flux_fraction` (doubleSubtract; sky frame had
+  the star off the slit), MOS standards in calibStarDivide (`calib_star_spectrum`, SPEC_nn slit mapping).
+- **LA Cosmic** reviewed against `lacos_spec.cl`: sky model now added back once after the loop; IRAF noise
+  floor; vertical dispersion transposed; MOS slit bounding boxes filled from the nearest in-slit row (masking
+  them out of the fits instead made a tilted slit's partial rows extrapolate wildly - tested); frame assembled
+  from the input, only flagged pixels replaced; runLacos/runDeepCR use `force_cpu=True` like runDcr.
+  Synthetic test scripts were in the session scratchpad (`lacos_test_tilt.py` pattern: tilted slits, injected
+  CRs, recall / false positives / edge false positives / bias).
+- **CuPy RawKernel scalar packing**: int64 scalars are converted correctly, but **float64 scalars into a
+  `float` slot read as 0** (confirmed with a 1-line RawKernel test). Any `python_float op np.float32(x)`
+  kernel argument is suspect; ints are fine.
+- **CPU `drihizzle3d`** lost whole planes of flux: float32 rounding mapped two inputs to one output and
+  numpy `a[idx] += v` keeps one duplicate. The no-distortion shortcut now falls back to the unique-index
+  loop when targets collide (2-d was unaffected and left unchanged).
+- **Undefined-name sweep that sees through star imports**: copy each file, replace `from X import *` with
+  the module's actual exported names, run pyflakes. Found 133 latent NameErrors; 7 remain (see CHANGELOG
+  open issues). Rerun this after large edits.
+- **Regression method used**: specBench on current code vs the previous commit (git worktree, copy the
+  untracked `.so` files in), compare every output FITS with `np.array_equal(..., equal_nan=True)` - plain
+  array_equal reports NaN-containing files as different. Result for v2.3.44: 571/571 identical.
+- **Open**: createCleanSkies `quartile` GPU (`even=False`, median of 3) vs CPU (lower quartile); SINFONI
+  `padx`/`pady` commented out by Craig - recheck on SINFONI data.
+
 ## Full LUCI MOS run (caden_luci_test.xml) and the InOut / drihizzle bugs it exposed (2026-10-02, v2.3.40-42)
 
 `xml/caden_luci_claude_auto.xml` (autodetect, `slitlet_autodetect_source=both`, nslits=24) -> `superFATBOYdata/cadenLUCI-py3-gpu`

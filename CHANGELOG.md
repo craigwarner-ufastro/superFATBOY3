@@ -1,9 +1,253 @@
 # Changelog
 
-Running list of changes made on the `refactor` branch, for human review. (For low-level
-implementation notes aimed at a future Claude session picking this work back up, see `CLAUDE.md`.)
+Changes made on the `refactor` branch, grouped by class / module. Each entry is a short summary with
+the version it landed in; `git log` has the full story, and `CLAUDE.md` has implementation notes for
+whoever picks this work up next. User-facing option documentation lives in `docs/` (and
+`superFatboy3.py -list`).
 
-## 2026-09-16 — oriBench.xml (NIR imaging) end-to-end test: PASSED, and cross-checked 4 ways
+**Convention:** every commit that changes behavior, adds an option, or fixes a bug adds a line to
+the matching section here. New options are listed with their default.
+
+## Validation status
+
+| Dataset | Mode | Status |
+|---|---|---|
+| oriBench (FLAMINGOS-1 NIR imaging) | CPU + GPU | Matches the frozen py2 original (CPU and GPU) to 4+ decimals on alignment shifts |
+| specBench (FLAMINGOS-1 MOS) | CPU + GPU | Full chain through calibStarDivide |
+| OSIRIS, KAST longslit | CPU + GPU | Full chain |
+| MIRADAS SOL / SOS / MOS | CPU + GPU | Full chain |
+| LUCI MOS (caden_luci_test) | GPU (+ CPU cross-check) | Full chain incl. calib star (v2.3.43); wavelength solutions match the pre-refactor run to 0.02-0.05 px; CPU and GPU extracted spectra identical |
+| specBench regression, v2.3.44 vs v2.3.42 | CPU | All 571 output files identical (NaN-aware), apart from the renamed per-object rectified slitmask |
+| MEGARA, FourStar, SINFONI, others | - | Not yet run through the refactored pipeline |
+
+## Open issues
+
+- **createCleanSkies `combine_method=quartile`**: GPU passes `even=False` to imcombine and CPU uses
+  the default `even=True`. With 3 frames GPU gives the median of all 3 and CPU the mean of the lowest
+  2 (the true lower quartile). Present since the initial commit; ~2-3% (p99 40%) difference in clean
+  skies. Needs a decision on which is intended.
+- **sinfoniCollapseSlitlets** `padx`/`pady` (use-derivatives centroiding branch, not the default
+  2-d Gaussian): commented out as a likely copy/paste from sinfoniCharacterizePSF, which pads for both
+  methods. Re-check when SINFONI data is run.
+- **doubleSubtract / shiftAdd `updateNoisemap`**: never called; references undefined
+  `noisemaps_dbs_gpu` / `noisemaps_sa_gpu`.
+- **rectifyProcess**: `mos_sky_fallback` / `independent_slitlets_fallback` default is still
+  `identity` (validation favors `nearest_neighbor_slits`); moment-centroid rescue not yet ported to
+  skyline tracing; specBench science-frame continuum trace still loses 15-30% of points.
+- **miradasCollapseSpaxels**: exact-value peak finding is fragile to float reduction order.
+- **removeCosmicRaysSpec / badPixelMaskSpec**: algorithm audits not started (LA Cosmic reviewed, below).
+
+---
+
+## Framework
+
+### fatboyDatabase
+- Unattended runs no longer hang on an error: the "press ENTER" prompt is opt-in via
+  `interactive_on_error` (default `no`). A process exception disables just that frame. (2.3.x, Sept 11)
+- Ingestion: a bad input file is isolated and logged; more than `max_init_failures` (default 3)
+  failures, or every file failing, aborts the run. (Sept 11)
+- Postcondition check: a process returning success but leaving no readable data disables the frame.
+- `addNewSlitmask()` takes optional `tagname` / `objectTag` (object-tagged calibs). (2.3.43)
+- `hasMasterCalib()`: `section` was used but not a parameter. (2.3.43)
+
+### fatboyProcess
+- `recursivelyExecute()` catches exceptions and honors a `False` return, disabling only the failed
+  calibration frame instead of crashing the run (used by ~23 calibration processes). (Sept 11)
+
+### fatboyDataUnit / datatypes
+- `initialize()`: when NAXIS1/NAXIS2 are missing from the header the shape is now read from the data
+  as intended (the check tested an undefined name, so such files were disabled as "misformatted").
+  (2.3.43)
+- Header-keyword file grouping crashed (`OS.F_OK`). (2.3.43)
+- `renormalize()` converts the bad pixel mask to match GPU mode. (Sept 16)
+- osirisSpectrum / circeImage `getData()` accept `force_cpu`. (83f5b4f)
+- Imaging frames without RA/Dec (`ra_keyword`/`dec_keyword`: RAOFFSET/RA/TELRA, DECOFFSE/DEC/TELDEC)
+  are disabled with an ERROR (unchanged behavior, documented here).
+
+### fatboyLibs
+- **GPU results discarded** (PyCUDA `drv.InOut` semantics lost in the CuPy port): `cp.empty(array)`
+  family fixed in ~18 sites (Sept 15-16); `gpuInOut()` / `gpuSyncBack()` helpers added and used for every
+  in-place kernel argument after auditing all 132 `drv.InOut`/`drv.Out` uses in `main`:
+  applyObjMask, apply2PassObjMask, divideArraysFloatGPU, noisemaps_sqrtAndDivide, normalizeFlat,
+  normalizeMOSFlat (incl. replaced-pixel counters), normalizeMOSSource, subtractImages, generateQAData,
+  LA Cosmic helpers. (2.3.40)
+- `np.min(a,b)`/`np.max(a,b)` two-scalar comparisons (35 sites) silently ignored the comparison when
+  `b == 0`; reverted to builtin `min`/`max`. (Sept 16)
+- 25 quoted dtype strings with an injected `np.` (`.astype("np.int32")`); 10 were comparisons that were
+  always true. (Sept 16)
+- `gpusum()` rewritten for CuPy; `linterp_gpu`/`linterp_cpu`, `whereEqual`, `getCentroid` fixes.
+- `extractSpectra()` robust rewrite; original kept as `extractSpectra_orig` and selectable with
+  `slitlet_autodetect_use_orig_algorithm`. (2.3.30)
+- Wavelength-solution helpers (`hasWavelengthSolution`, `hasMultipleWavelengthSolutions`,
+  `getWavelengthSolution`) no longer assume slitlet 1 has a solution. (2.3.43)
+- `fit1d()`: undefined `add` (crashed LA Cosmic and any `fit1d` user). (2.3.43)
+- `removeOutliersSigmaClip()` restored (used by tri_register). (2.3.43)
+- LA Cosmic (`lacos_spec` and helpers) - see removeCosmicRaysSpec below.
+
+### gpu_arraymedian
+- Scalar-median path accepts CuPy input. (Sept 15)
+
+### gpu_drihizzle (GPU drizzle)
+- CUDA illegal-address crash: a `float32` cast on the wrong operand packed a float64 into a float
+  kernel argument. (1a2a1dc)
+- uniformKernel scatter bounds; padding threads no longer write past the array end. (421323f)
+- Final weighting for `weight=exptime, outunits=counts` restored to main's (raw sum). The rewrite
+  divided by the exposure map, which rescaled every rectified frame and made rectify's point_replace
+  produce garbage pixels at slit edges. (2.3.41)
+- `drihizzle3d`: in-place kernel outputs were discarded (output all zeros) and a float64 scalar
+  argument corrupted the kernel arguments; now matches the CPU version. (2.3.43)
+
+### drihizzle (CPU drizzle)
+- `drihizzle3d`: float32 rounding of output coordinates could map two inputs to one output pixel, and
+  numpy's `a[idx] += v` kept only one - whole planes of flux were lost (18% in a test). Now uses the
+  unique-index loop whenever targets collide; matches the GPU to float rounding. (2.3.44)
+- `drihizzle3d`: bare `uint8` NameError. (2.3.43)
+- `zrefout` (3D reference pixel) used `ycoeffs` instead of `zcoeffs` (also in main). (2.3.43)
+- `MODE_RAW` output with `outfile` referenced undefined `out`/`outtype`. (2.3.43)
+
+### gpu_imcombine / imcombine
+- `nfint.astype()` on a plain int. (Sept 16)
+- GPU `gpumean`/`gpustd` were never defined: any GPU combine with mean/sigma zero, scale, or weight
+  crashed. Implemented to match the CPU selection (inclusive thresholds, optional nonzero, ddof=1).
+  (2.3.43)
+- CPU quick-start file cache used removed variables (`qskeys`/`qsvals`/`qslist`); exposure-mask output
+  used undefined `expfile`. (2.3.43)
+
+### pysurfit / gpu_pysurfit
+- GPU std uses `ddof=1` like the CPU. `.sum()/N` replaced by `.mean()`. (Sept 11)
+- `pysurfit` input-type detection and output message referenced undefined names. (2.3.43)
+
+### xregister / gpu_xregister / tri_register
+- Bare `ndarray`, `loadtxt`, `ascontiguousarray`; `frame` vs `frames` in difference mode. (Sept 16, 2.3.43)
+
+### superFatboy3.py / setup.py
+- `-gpu N` sets `CUDA_VISIBLE_DEVICES` (CuPy ignores `CUDA_DEVICE`). (Sept 11)
+- `numpy>=2.0` pin reverted to `numpy>=1.0` (conflicted with scipy 1.11). (Sept 11)
+- Templates and line lists shipped in `package_data`. (2.3.37)
+
+---
+
+## Processes
+
+### findSlitlets
+- `traceOrders`: one bad segment no longer discards the whole image; it gets a straight fallback. (Sept 11)
+- Auto-detect crashes in GPU mode (`force_cpu`) and CPU mode (`concatenate`). (d3dbd22)
+- `traceSlitlets` writes a per-datapoint `stats_<flat>.txt` like `traceOrders`. (2.3.27)
+- New `edge_detection_method` (`cross_correlation` | `local_minimum` | `auto`); **default `auto`** since
+  2.3.38 (identical to cross_correlation on any edge it can trace). (2.3.27, 2.3.38)
+- New `fit_function` (`polynomial` | `spline`), `spline_smoothing`. (2.3.28)
+- New `narrow_gaps_between_slitlets` (default `no`): measure packed-boundary points with the local
+  minimum instead of rejecting them. (2.3.38)
+- New `slitlet_autodetect_source` (`flat` default | `arclamp` | `both`) and
+  `slitlet_autodetect_arc_min_corr` (0.9): detect slitlets from adjacent-row arclamp correlation;
+  falls back to the flat when its count misses `slitlet_autodetect_nslits`. (2.3.38, 2.3.39)
+- New invalid-slitlet check, `slitlet_validity_max_flat_roughness` (0.045) and
+  `slitlet_validity_min_arc_corr` (0.9): drop non-slitlet regions (mask ID strip) in auto-detect,
+  warn for region files. (2.3.38)
+- New `local_min_search_radius` (3): anchored local-minimum search, so a packed boundary that turns
+  into a step doesn't drift into the next slitlet. (2.3.39)
+- QA-file `UnboundLocalError` when a slitlet needed a fallback. (2.3.38)
+
+### rectify
+- Runaway continuum fits guarded by `rectify_max_transform_factor` (2.0); untransformed slits logged
+  as ERROR. (Sept 11)
+- MOS/longslit continuum and skyline trace audits: per-datapoint stats files, local-significance and
+  moment-centroid rescues, `checkFitSanity`, `independent_slitlets_fallback` / `mos_sky_fallback`
+  (`identity` default). (2.3.32-2.3.34)
+- GPU crMask pre-conversion that corrupted the slitmask reverted. (3c65264)
+- Rectified slitmasks are now per object (`rct_<slitmask>_<object>.fits`, tagged for that object);
+  previously the first object marked the shared slitmask "rectified" and later objects (e.g. the
+  calibration star) never got their own. (2.3.43)
+- New `mos_min_continua_global_fit` (3): a whole_chip/use_slitpos continuum fit with fewer continua,
+  or spanning <25% of the slitlets, reuses another object's continuum transform for the same mask.
+  (2.3.43)
+
+### wavelengthCalibrate
+- Negative-index slice wraparound near the array edges (8 sites, pre-existing). (Sept 15)
+
+### extractSpectra
+- Gaussian weighting referenced undefined `extract_xlo`/`extract_xhi`. (Sept 15)
+
+### calibStarDivide
+- MOS standards: the calibration star is the brightest extracted spectrum (new
+  `calib_star_spectrum`, 0 = brightest), and each spectrum uses its own slitlet's wavelength solution
+  (via `SPEC_nn`). Pixel-division branch used undefined `b_clean`/`b_resamp` (also in main). (2.3.43)
+
+### doubleSubtract
+- New `min_negative_flux_fraction` (0.1): skip double subtraction when the frame has no negative
+  trace (sky frame with the target off the slit, e.g. a telluric standard). (2.3.43)
+
+### shiftAdd
+- An empty slitmask is an ERROR instead of an IndexError. (2.3.43)
+
+### flatDivide / flatDivideSpec
+- GPU flat division was a no-op whenever the frame was on the host (result discarded). (2.3.40)
+- Writing a CuPy array into an astropy HDU. (Sept 15)
+
+### skySubtract (imaging)
+- Restored the dropped `fatboyLibs` import. (Sept 16)
+
+### skySubtractSpec
+- Sky-method file validation referenced `methodlist`/`ssmethods`. (2.3.43)
+- Dither pairing: frames with no RA/Dec get a clear ERROR naming the keywords and are dropped,
+  instead of a TypeError. (2.3.44)
+
+### removeCosmicRays (imaging)
+- GPU cosmic ray removal returned all zeros (result discarded). (48d2e68)
+
+### removeCosmicRaysSpec / LA Cosmic
+- `runDeepCR`/`runLacos` shadowed numpy as `np` (UnboundLocalError). (2.3.42)
+- `runLacos`/`runDeepCR` mixed CuPy and numpy arrays in GPU mode; they now use CPU data like `runDcr`.
+  (2.3.44)
+- `runLacos` assembled the cleaned frame from zeros, so in `replace` mode every pixel between
+  slitlets was set to 0 and unflagged pixels carried model round-off. It now starts from the input
+  and replaces only flagged pixels (LUCI: 15,768 changed pixels per frame, none outside slitlets).
+  (2.3.44)
+- "deepCR not installed, using DCR instead" didn't actually switch to DCR. (2.3.44)
+- `lacos_spec` crashed on its last line (`int16`) and in `fit1d`. (2.3.43)
+- Sky + object model added back once after the last iteration, as in `lacos_spec.cl` (was added
+  every iteration). Noise floor follows IRAF (`med5 <= 0 -> 0.00001`). (2.3.43)
+- `lacosSelect` (no-count branch) and `lacosUpdateOutput` never wrote their results back (also in
+  main), so cleaning didn't happen on the GPU. (2.3.43)
+- Vertical dispersion: slits are transposed so the object/sky fits run along the right axes. (2.3.43)
+- MOS: pixels of each slit's bounding box outside the slit are filled from the nearest in-slit row
+  instead of zero. Synthetic tilted-slit test: false detections 4330 -> 815, slit-edge 594 -> 3,
+  mean bias -12.9 -> -0.2, recall ~95%. (2.3.43)
+
+### badPixelMask / badPixelMaskSpec
+- `.astype()` on plain floats; `bpm_replace_median_neighbor_gpu` result discarded. (Sept 16)
+- Sigma clipping used undefined `sig`; missing imcombine imports; `combineSourceFrames` call. (2.3.43)
+
+### biasSubtract
+- Mixed CuPy/numpy subtraction in GPU mode. (83f5b4f)
+
+### linearity
+- `pow(float, int)` in a CUDA kernel didn't compile under NVRTC. (Sept 15)
+
+### createMasterArclamps / flatDivideSpec noisemaps
+- Kernel name typo `noisemaps_twilight_float`. (Sept 15)
+
+### alignStack
+- Default `align_method` is `triangles`. (6b1eeb4)
+
+### collapseFibers
+- `properties`/`headerVals` undefined in the output-exists path. (2.3.43)
+
+### miradasCollapseSpaxels
+- `nslits` must be int; out-of-bounds slice guards. (865f487, 28e6443)
+
+### miradasDARFromConditions / miradasDARFromData
+- Undefined `nslits` fixed (by Craig). (2.3.44)
+
+### MIRADAS / SINFONI processes
+- Missing `fatboySpecCalib` / `fatboyDataUnit` imports (paths taken when calibs come from XML).
+  (2.3.43)
+
+---
+
+## Appendix: original chronological notes (through 2026-09-16)
+
+### 2026-09-16 — oriBench.xml (NIR imaging) end-to-end test: PASSED, and cross-checked 4 ways
 
 Ran the NIR imaging regression test (`superFatboy3.py oriBench.xml`) for the first time since the
 refactor — this exercises dark subtraction, flat fielding, bad pixel masking, sky subtraction,
@@ -88,7 +332,7 @@ time that code is touched.
 we have real proof the refactor hasn't changed any of the pipeline's actual science results, not
 just that it "doesn't crash."
 
-## 2026-09-15 — specBench.xml (MOS spectroscopy) end-to-end test: PASSED
+### 2026-09-15 — specBench.xml (MOS spectroscopy) end-to-end test: PASSED
 
 Ran the Flamingos-1 MOS spectroscopy regression test (`superFatboy3.py specBench.xml`) for the
 first time since the refactor. It took 12 run/crash/fix cycles, but it now completes the entire
@@ -141,7 +385,7 @@ orders, so worth a look — but it's not a crash, and not something introduced b
 **Conclusion**: the numpy/math cleanup and the PyCUDA→CuPy migration are now confirmed solid for
 MOS and longslit spectroscopy end to end. Imaging mode is the next thing to test.
 
-## 2026-09-11 — Top-level error-handling audit
+### 2026-09-11 — Top-level error-handling audit
 
 Investigated why the pipeline still crashes outright on bad data instead of degrading gracefully,
 starting from the `fatboyDatabase.py` entry point.
@@ -161,7 +405,7 @@ starting from the `fatboyDatabase.py` entry point.
   only aborts if the number of bad files crosses a threshold (default: more than 3, or literally
   everything failed) — since that pattern means something systemic is wrong, not "one bad frame."
 
-## 2026-09-11 — findSlitletProcess and rectifyProcess hardening
+### 2026-09-11 — findSlitletProcess and rectifyProcess hardening
 
 (Implemented, flagged at the time as not yet validated against real data — now validated by the
 specBench.xml test above.)
@@ -178,7 +422,7 @@ specBench.xml test above.)
 - Made the existing "nothing to rectify here" fallback louder (an actual error instead of an
   easy-to-miss warning), so it's obvious when a region wasn't properly corrected.
 
-## 2026-09-10 to 2026-09-11 — Continuing the Gemini-started refactor
+### 2026-09-10 to 2026-09-11 — Continuing the Gemini-started refactor
 
 - Finished removing the last two remaining `from numpy import *` wildcard imports, which also
   turned up three real bugs (bare `sqrt`/`tan`/`sin`/`cos` calls with no valid function to resolve
