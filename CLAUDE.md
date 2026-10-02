@@ -195,6 +195,37 @@ ever delete output directories you created yourself, never the user's own; a run
 15-25 minutes, and can also hang on a flaky NFS mount unrelated to any code issue (check `ps -o stat`
 for kernel `D` state before assuming a bug).
 
+## Full LUCI MOS run (caden_luci_test.xml) and the InOut / drihizzle bugs it exposed (2026-10-02, v2.3.40-42)
+
+`xml/caden_luci_claude_auto.xml` (autodetect, `slitlet_autodetect_source=both`, nslits=24) -> `superFATBOYdata/cadenLUCI-py3-gpu`
+and `xml/caden_luci_claude_region.xml` (the user's region file) -> `cadenLUCI-claude-region`. Reference
+`superFATBOYdata/cadenLUCI` (2026-04-03) **predates the Gemini refactor** (5b4bbbd, 2026-06-18), so it is effectively a
+pre-refactor oracle - but it only got through shiftAdd + wavelengthCalibrate slits 1-5 (no extraction).
+- **InOut family (v2.3.40)**: CuPy kernel calls passing `cp.asarray(host_array)` inline for an argument the kernel writes
+  silently discard the result (PyCUDA's `drv.InOut` copied back). Hit for real: `flatDivideImage` returned frames
+  **undivided** whenever the data was on the host (MIRADAS verified runs happened to have it on device - checked).
+  Fixed with `gpuInOut(x)`/`gpuSyncBack(x, x_gpu)` in fatboyLibs. The audit method: list every `drv.InOut`/`drv.Out` in
+  `main` (132), match to the current call by kernel name + order, classify the argument (inline asarray = suspect; named
+  device buffer = check it's used after the call). Script pattern was in this session's scratchpad (`inout_audit.py`).
+- **gpu_drihizzle final weighting (v2.3.41)**: the CuPy rewrite divided `weight=exptime, outunits=counts` output by the
+  expmap and multiplied by totexp; main returns the raw sum. rectify uses counts + point_replace (which divides by
+  expmap itself) -> double division -> ~70 garbage px/frame (to 9e8) at slit edges -> distorted clean frame -> wrong
+  doubleSubtract shift (-16/-22 vs true -12) -> 4-10 rows lost per slit -> 0-5 of 24 spectra extracted. Diagnosed by
+  checking flux conservation stage by stage (`pos/neg` sums of clean frames before/after rectify).
+- **removeCosmicRaysSpec (v2.3.42)**: `runDeepCR`/`runLacos` assigned a local `np` -> UnboundLocalError on every np call.
+- After fixes: no tracebacks; wavelength solutions match April slits 1-5 to 0.06-0.23 A median (0.02-0.05 px, 4.35 A/px),
+  all 24 slits calibrate at 0.38-0.64 A RMS; extraction finds spectra in 14/24 slits (both runs).
+- **CPU vs GPU cross-check** (`xml/caden_luci_claude_region_cpu.xml` -> `cadenLUCI-claude-region-cpu`, same code, CPU
+  drihizzle always matched main): byte-identical through skySubtracted; rectified/shiftAdded agree to ~1e-5; **extracted
+  spectra identical** (14x2050, median diff 0); wavelength solutions within 1.87 A max. Remaining GPU/CPU differences:
+  `rct_cleanSky` (turbo kernel, counts) GPU ~2% higher median (p99 1.57x) - not yet investigated, probable cause of the
+  1.87 A; `dbs_` outside the slitmask GPU writes 0, CPU leaves values (cosmetic).
+- **Known open**: calib star A1689 - shiftAdd "Could not find slitmask associated with A1689.0123" (no
+  `slitmask_dbs_A1689` written) and doubleSubtract shift -25 vs rectify trace -11 (guess +/-16) -> calibStarDivide has no
+  standard. `drihizzle3d` (SINFONI only) has the InOut problem throughout (np.empty buffers filled via inline asarray) - needs
+  the same device-allocation rewrite the 2D version got. LA Cosmic GPU: `lacosSelect` no-count branch and
+  `lacosUpdateOutput` were already no-ops on main (astype copies never returned) - LA Cosmic GPU never fully worked.
+
 ## findSlitletProcess: packed slitlets, arclamp autodetect, invalid slitlets (2026-10-02, v2.3.38)
 
 Driven by `caden_luci_fs_test.xml` (LUCI MOS, 25 region-file slitlets, several packed with 1-2px boundaries).
