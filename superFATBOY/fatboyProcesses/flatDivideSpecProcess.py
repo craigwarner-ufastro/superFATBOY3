@@ -367,7 +367,9 @@ class flatDivideSpecProcess(fatboyProcess):
             else:
                 fatboy_mod = get_fatboy_mod()
             divArrays = fatboy_mod.get_function("divideArrays_float")
-            divArrays((blocks,1), (block_size,1,1), (cp.asarray(image), cp.asarray(flat), np.int32(image.size)))
+            image_gpu = gpuInOut(image)
+            divArrays((blocks,1), (block_size,1,1), (image_gpu, cp.asarray(flat), np.int32(image.size)))
+            gpuSyncBack(image, image_gpu)
         else:
             #find points np.where flat is zero and set them to 1 to avoid divideByZeroException
             flatzeros = flat == 0

@@ -43,6 +43,19 @@ blocks = 2048*4
 block_size = 512
 nbr_values = blocks * block_size
 
+#PyCUDA's drv.InOut(x) copied a kernel's in-place results back into a host array; CuPy
+#does not, so cp.asarray(host_array) passed inline to a kernel that writes to it silently
+#discards the results.  Pass gpuInOut(x) to the kernel, then call gpuSyncBack(x, x_gpu)
+#afterward to copy the results back into x if it was a host (numpy) array.
+def gpuInOut(x):
+    if (isinstance(x, cp.ndarray)):
+        return x
+    return cp.asarray(x)
+
+def gpuSyncBack(x, x_gpu):
+    if (x_gpu is not x):
+        x[...] = cp.asnumpy(x_gpu)
+
 def get_fatboy_mod():
     fatboy_mod = None
     if (hasCuda and superFATBOY.gpuEnabled()):
@@ -1294,7 +1307,9 @@ def applyObjMask(image, objMask):
     else:
         fatboy_mod = get_fatboy_mod()
     applyObjMaskFunc = fatboy_mod.get_function("applyObjMask_float")
-    applyObjMaskFunc((blocks,1), (block_size,1,1), (cp.asarray(image), cp.asarray(objMask)))
+    image_gpu = gpuInOut(image)
+    applyObjMaskFunc((blocks,1), (block_size,1,1), (image_gpu, cp.asarray(objMask)))
+    gpuSyncBack(image, image_gpu)
     return image
 #end applyObjMask
 
@@ -1316,9 +1331,12 @@ def apply2PassObjMask(image, objMask, boxcarSize, rejectLevel):
     else:
         fatboy_mod = get_fatboy_mod()
     createObjMaskFunc = fatboy_mod.get_function("createObjMask")
-    createObjMaskFunc((blocks,1), (block_size,1,1), (cp.asarray(objMask)))
+    objMask_gpu = gpuInOut(objMask)
+    createObjMaskFunc((blocks,1), (block_size,1,1), (objMask_gpu))
     growApplyObjMaskFunc = fatboy_mod.get_function("growApplyObjMask_float")
-    growApplyObjMaskFunc((blocks,1), (block_size,1,1), (cp.asarray(image), cp.asarray(objMask), np.int32(rows), np.int32(cols), np.int32(w), np.float32(rejectLevel)))
+    image_gpu = gpuInOut(image)
+    growApplyObjMaskFunc((blocks,1), (block_size,1,1), (image_gpu, objMask_gpu, np.int32(rows), np.int32(cols), np.int32(w), np.float32(rejectLevel)))
+    gpuSyncBack(image, image_gpu)
     return image
 #end apply2PassObjMask
 
@@ -1752,7 +1770,9 @@ def divideArraysFloatGPU(dividend, divisor, log=None):
     else:
         fatboy_mod = get_fatboy_mod()
     divArrays = fatboy_mod.get_function("divideArrays_float")
-    divArrays((blocks,1), (block_size,1,1), (cp.asarray(dividend), cp.asarray(divisor), np.int32(dividend.size)))
+    dividend_gpu = gpuInOut(dividend)
+    divArrays((blocks,1), (block_size,1,1), (dividend_gpu, cp.asarray(divisor), np.int32(dividend.size)))
+    gpuSyncBack(dividend, dividend_gpu)
     return dividend
 #end divideArraysFloatGPU
 
@@ -2737,7 +2757,9 @@ def generateQAData(data, xcoords, ycoords, sylo, syhi, horizontal=True):
         fatboy_mod = get_fatboy_mod()
     generateQADataFunc = fatboy_mod.get_function("generateQAData_float")
     output = np.empty(data.shape, data.dtype)
-    generateQADataFunc((blocks,1), (block_size,1,1), (cp.asarray(data), cp.asarray(xcoords), cp.asarray(ycoords), cp.asarray(np.float32(sylo)), cp.asarray(np.float32(syhi)), np.int32(xcoords.size), np.int32(xcoords.size*sylo.size*18), np.int32(sylo.size), np.int32(cols), np.int32(horizontal)))
+    data_gpu = gpuInOut(data)
+    generateQADataFunc((blocks,1), (block_size,1,1), (data_gpu, cp.asarray(xcoords), cp.asarray(ycoords), cp.asarray(np.float32(sylo)), cp.asarray(np.float32(syhi)), np.int32(xcoords.size), np.int32(xcoords.size*sylo.size*18), np.int32(sylo.size), np.int32(cols), np.int32(horizontal)))
+    gpuSyncBack(data, data_gpu)
     return data
 #end generateQAData
 
@@ -3477,7 +3499,9 @@ def lacosFirstSel(sigmap, med5, sigclip):
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("lacosFirstSel_float")
     firstsel_gpu = cp.empty_like(firstsel)
-    kernel((blocks,1), (block_size,1,1), (cp.asarray(sigmap), cp.asarray(med5), firstsel_gpu, np.float32(sigclip)))
+    sigmap_gpu = gpuInOut(sigmap)
+    kernel((blocks,1), (block_size,1,1), (sigmap_gpu, cp.asarray(med5), firstsel_gpu, np.float32(sigclip)))
+    gpuSyncBack(sigmap, sigmap_gpu)
     firstsel = firstsel_gpu.get()
     return (sigmap, firstsel)
 #end lacosFirstSel
@@ -3521,7 +3545,9 @@ def lacosSelect(sel, sigmap, lower1, sigclip, lower2, doCount=False, mask=None, 
         kernel = fatboy_mod.get_function("lacosSelectAndCount_float")
         inputmask_gpu = cp.empty_like(inputmask)
         npix_gpu = cp.asarray(npix)
-        kernel((blocks,1), (block_size,1,1), (cp.asarray(sel), cp.asarray(sigmap), np.float32(lower1), np.float32(sigclip), np.float32(lower2), cp.asarray(mask), inputmask_gpu, cp.asarray(oldoutput), npix_gpu))
+        mask_gpu = gpuInOut(mask)
+        kernel((blocks,1), (block_size,1,1), (cp.asarray(sel), cp.asarray(sigmap), np.float32(lower1), np.float32(sigclip), np.float32(lower2), mask_gpu, inputmask_gpu, cp.asarray(oldoutput), npix_gpu))
+        gpuSyncBack(mask, mask_gpu)
         inputmask = inputmask_gpu.get()
         npix = npix_gpu.get()
         return (inputmask, npix[0])
@@ -3543,7 +3569,9 @@ def lacosStarReject(med3, med7, noise, firstsel, sigmap, objlim):
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("lacosStarReject_float")
-    kernel((blocks,1), (block_size,1,1), (cp.asarray(med3), cp.asarray(med7), cp.asarray(noise), cp.asarray(firstsel), cp.asarray(sigmap), np.float32(objlim)))
+    firstsel_gpu = gpuInOut(firstsel)
+    kernel((blocks,1), (block_size,1,1), (cp.asarray(med3), cp.asarray(med7), cp.asarray(noise), firstsel_gpu, cp.asarray(sigmap), np.float32(objlim)))
+    gpuSyncBack(firstsel, firstsel_gpu)
     return firstsel
 #end lacosStarReject
 
@@ -4002,7 +4030,9 @@ def noisemaps_sqrtAndDivide_float(dividend, divisor):
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("noisemaps_sqrtAndDivide_float")
-    kernel((blocks,1), (block_size,1,1), (cp.asarray(dividend), cp.asarray(divisor), np.int32(dividend.size)))
+    dividend_gpu = gpuInOut(dividend)
+    kernel((blocks,1), (block_size,1,1), (dividend_gpu, cp.asarray(divisor), np.int32(dividend.size)))
+    gpuSyncBack(dividend, dividend_gpu)
     return dividend
 #end noisemaps_sqrtAndDivide_float
 
@@ -4025,7 +4055,15 @@ def normalizeFlat(masterFlat, medVal, lowThresh, lowReplace, hiThresh, hiReplace
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("normalizeFlat_float")
-    kernel((blocks,1), (block_size,1,1), (cp.asarray(flat), np.float32(medVal), np.float32(lowThresh), np.float32(lowReplace), np.float32(hiThresh), np.float32(hiReplace), cp.asarray(lowct), cp.asarray(hict), np.int32(doNM), cp.asarray(nm), np.int32(flat.size)))
+    flat_gpu = gpuInOut(flat)
+    lowct_gpu = gpuInOut(lowct)
+    hict_gpu = gpuInOut(hict)
+    nm_gpu = gpuInOut(nm)
+    kernel((blocks,1), (block_size,1,1), (flat_gpu, np.float32(medVal), np.float32(lowThresh), np.float32(lowReplace), np.float32(hiThresh), np.float32(hiReplace), lowct_gpu, hict_gpu, np.int32(doNM), nm_gpu, np.int32(flat.size)))
+    gpuSyncBack(flat, flat_gpu)
+    gpuSyncBack(lowct, lowct_gpu)
+    gpuSyncBack(hict, hict_gpu)
+    gpuSyncBack(nm, nm_gpu)
     if (lowct > 0):
         print("normalizeFlat> Replaced "+str(lowct)+" pixels below "+str(lowThresh))
         if (log is not None):
@@ -4075,7 +4113,15 @@ def normalizeMOSFlat(masterFlat, slitmask, nslits, lowThresh=0, lowReplace=0, hi
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("normalizeMOSFlat_float")
-    kernel((blocks,1), (block_size,1,1), (cp.asarray(flat), cp.asarray(np.int32(slitmask)), cp.asarray(medians), np.float32(lowThresh), np.float32(lowReplace), np.float32(hiThresh), np.float32(hiReplace), cp.asarray(lowct), cp.asarray(hict), np.int32(doNM), cp.asarray(nm), np.int32(flat.size)))
+    flat_gpu = gpuInOut(flat)
+    lowct_gpu = gpuInOut(lowct)
+    hict_gpu = gpuInOut(hict)
+    nm_gpu = gpuInOut(nm)
+    kernel((blocks,1), (block_size,1,1), (flat_gpu, cp.asarray(np.int32(slitmask)), cp.asarray(medians), np.float32(lowThresh), np.float32(lowReplace), np.float32(hiThresh), np.float32(hiReplace), lowct_gpu, hict_gpu, np.int32(doNM), nm_gpu, np.int32(flat.size)))
+    gpuSyncBack(flat, flat_gpu)
+    gpuSyncBack(lowct, lowct_gpu)
+    gpuSyncBack(hict, hict_gpu)
+    gpuSyncBack(nm, nm_gpu)
     if (lowct > 0):
         print("normalizeMOSFlat> Replaced "+str(lowct)+" pixels below "+str(lowThresh))
         if (log is not None):
@@ -4107,7 +4153,9 @@ def normalizeMOSSource(sourceFDU, slitmask, nslits, log=None):
     else:
         fatboy_mod = get_fatboy_mod()
     kernel = fatboy_mod.get_function("normalizeMOSSource_float")
-    kernel((blocks,1), (block_size,1,1), (cp.asarray(data), cp.asarray(np.int32(slitmask)), cp.asarray(medians), np.int32(data.size)))
+    data_gpu = gpuInOut(data)
+    kernel((blocks,1), (block_size,1,1), (data_gpu, cp.asarray(np.int32(slitmask)), cp.asarray(medians), np.int32(data.size)))
+    gpuSyncBack(data, data_gpu)
     sourceFDU.updateData(data)
 #end normalizeMOSSource
 
@@ -4539,13 +4587,17 @@ def subtractImages(image1, image2, gpm=None, scale=None):
         fatboy_mod = get_fatboy_mod()
     if (scale is not None):
         subArrays = fatboy_mod.get_function("subtractArrays_scaled_float")
-        subArrays((blocks,1), (block_size,1,1), (cp.asarray(image1), cp.asarray(image2), np.float32(scale)))
+        image1_gpu = gpuInOut(image1)
+        subArrays((blocks,1), (block_size,1,1), (image1_gpu, cp.asarray(image2), np.float32(scale)))
     elif (gpm is not None):
         subArrays = fatboy_mod.get_function("subtractArrays_gpm_float")
-        subArrays((blocks,1), (block_size,1,1), (cp.asarray(image1), cp.asarray(image2), cp.asarray(gpm)))
+        image1_gpu = gpuInOut(image1)
+        subArrays((blocks,1), (block_size,1,1), (image1_gpu, cp.asarray(image2), cp.asarray(gpm)))
     else:
         subArrays = fatboy_mod.get_function("subtractArrays_float")
-        subArrays((blocks,1), (block_size,1,1), (cp.asarray(image1), cp.asarray(image2)))
+        image1_gpu = gpuInOut(image1)
+        subArrays((blocks,1), (block_size,1,1), (image1_gpu, cp.asarray(image2)))
+    gpuSyncBack(image1, image1_gpu)
     print("Subtraction time: ",time.time()-t)
     return image1
 #end subtractImages
