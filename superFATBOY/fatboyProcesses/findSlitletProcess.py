@@ -121,9 +121,25 @@ class findSlitletProcess(fatboyProcess):
                 print("findSlitletProcess::autoDetectSlitlets> ERROR: Could not find any slitlets in master arclamp.  Falling back to the flat!")
                 self._log.writeLog(__name__, "Could not find any slitlets in master arclamp.  Falling back to the flat!", type=fatboyLog.ERROR)
                 slitlets = flatSlitlets
+                lampData = None
             else:
                 print("findSlitletProcess::autoDetectSlitlets> Found "+str(len(slitlets))+" slitlets in master arclamp.")
                 self._log.writeLog(__name__, "Found "+str(len(slitlets))+" slitlets in master arclamp.")
+                nslits_ref = int(self.getOption("slitlet_autodetect_nslits", fdu.getTag()))
+                if (nslits_ref > 0 and flatSlitlets is not None):
+                    #Compare counts of valid slitlets, since invalid ones (e.g. a mask ID) are dropped below
+                    n_arc = len(slitlets)-len(self.findInvalidSlitlets(fdu, flatData, slitlets[:,0], slitlets[:,1], lampData))
+                    #Flat slitlets are judged by flat criteria only -- if the arclamp is a poor fit
+                    #for this data, its row correlation can't be trusted to validate them either
+                    n_flat = len(flatSlitlets)-len(self.findInvalidSlitlets(fdu, flatData, flatSlitlets[:,0], flatSlitlets[:,1]))
+                    if (n_arc != nslits_ref and n_flat == nslits_ref):
+                        #Arclamp detection is a poor fit for some data (e.g. strongly curved/tilted slitlets)
+                        print("findSlitletProcess::autoDetectSlitlets> ERROR: Master arclamp gave "+str(n_arc)+" valid slitlets but slitlet_autodetect_nslits = "+str(nslits_ref)+", while the flat gave "+str(n_flat)+".  Falling back to the flat!")
+                        self._log.writeLog(__name__, "Master arclamp gave "+str(n_arc)+" valid slitlets but slitlet_autodetect_nslits = "+str(nslits_ref)+", while the flat gave "+str(n_flat)+".  Falling back to the flat!", type=fatboyLog.ERROR)
+                        slitlets = flatSlitlets
+                        flatSlitlets = None
+                        #Don't use the arclamp to validate the flat's slitlets below either
+                        lampData = None
                 if (flatSlitlets is not None):
                     for (flo, fhi) in flatSlitlets:
                         if (not ((slitlets[:,0] <= fhi)*(slitlets[:,1] >= flo)).any()):
@@ -627,6 +643,8 @@ class findSlitletProcess(fatboyProcess):
         self._optioninfo.setdefault('cut1d_max_threshold', 'Reject a trace datapoint if 1d cut max < this factor * quartile of cut.')
         self._options.setdefault('edge_detection_method', 'auto')
         self._optioninfo.setdefault('edge_detection_method', 'Method used at each step to find the slitlet edge position:\ncross_correlation = cross-correlate 1-d cut with a reference cut and fit a\nGaussian to the correlation peak.  Best for slitlets separated by a genuine step edge\n(flux drops to ~0 between them).  Regresses badly on weak local-minimum boundaries (see\nlocal_minimum below) -- typically finds 0 datapoints for that edge.\nlocal_minimum = directly find the local minimum flux value in the 1-d cut (with subpixel\nparabolic refinement) instead of cross-correlating.  Much better for closely-packed\nslitlets where the boundary is only a weak dip in flux rather than a full step down to 0,\nwhich cross_correlation fails on -- but regresses badly on genuine step edges (a step\'s\nminimum sits at the edge of the search window, not at an interior parabolic minimum), so\nit is NOT a safe drop-in replacement for cross_correlation across a whole dataset.\nauto (default) = try cross_correlation first for every edge (matches cross_correlation exactly for\nany edge it can trace); only for an edge where that finds literally 0 datapoints (the\nweak-dip failure mode above) does it retry that same edge with local_minimum instead of\ngiving up.  Recommended over local_minimum whenever a dataset mixes both edge types,\nwhich is the common case (see findSlitletProcess algorithm audit notes).')
+        self._options.setdefault('local_min_search_radius', '3')
+        self._optioninfo.setdefault('local_min_search_radius', 'For local_minimum edge tracing: once the trace has accepted a datapoint, only search for\nthe minimum within this many pixels of the predicted position, and reject the point if the\nminimum is at the edge of that window (no real dip, e.g. a step between two lit slitlets).\nStops the trace drifting onto a random point of a fainter neighboring slitlet.')
         self._options.setdefault('local_min_depth_threshold', '0.05')
         self._optioninfo.setdefault('local_min_depth_threshold', 'For edge_detection_method=local_minimum only: minimum dip depth required to accept a\ndatapoint, as a fraction of the 1-d cut\'s local median flux.  Rejects steps where no real\ndip is present (e.g. pure noise or a genuine data gap).')
         self._options.setdefault('edge_extend_to_chip', 'no')
@@ -771,6 +789,7 @@ class findSlitletProcess(fatboyProcess):
         maxResidualError = float(self.getOption("max_residual_error", fdu.getTag()))
         edge_detection_method = self.getOption("edge_detection_method", fdu.getTag()).lower()
         local_min_depth_threshold = float(self.getOption("local_min_depth_threshold", fdu.getTag()))
+        local_min_search_radius = int(self.getOption("local_min_search_radius", fdu.getTag()))
         fit_function = self.getOption("fit_function", fdu.getTag()).lower()
         spline_smoothing = float(self.getOption("spline_smoothing", fdu.getTag()))
         do_edge_extend = False
@@ -1002,6 +1021,8 @@ class findSlitletProcess(fatboyProcess):
                     maxcors = []
                     #Which datapoints were measured with local_minimum (maxcors not comparable across methods)
                     lmflags = []
+                    #local_minimum searches only near currY once a datapoint has been accepted since the last reset
+                    anchored = False
                     #Up to last 10 (x,y) pairs are kept and used in various rejection criteria
                     lastXs = []
                     lastYs = []
@@ -1018,7 +1039,9 @@ class findSlitletProcess(fatboyProcess):
                             currY = syval
                             lastYs = [syval]
                             lastXs = [xinit]
+                            anchored = False
                         elif (currSeg != lastSeg):
+                            anchored = False
                             if (len(xcoords) == 0):
                                 currY = syval + seg_shifts[currSeg]
                                 lastYs = [syval + seg_shifts[currSeg]]
@@ -1081,7 +1104,26 @@ class findSlitletProcess(fatboyProcess):
                             #centered on currY (the running prediction), same as cross_correlation
                             #mode's Gaussian fit guess below.
                             local_med = arraymedian(cut1d)
-                            dip_idx = int(np.argmin(cut1d))
+                            if (anchored):
+                                #Search only near the running prediction.  A minimum at the edge of
+                                #this small window means there is no dip here (e.g. a step between two
+                                #lit slitlets of different brightness), so reject rather than let the
+                                #trace drift onto a random point of the fainter plateau.
+                                icen = int(np.round(currY, 3))-ylo_slit
+                                i0 = max(1, icen-local_min_search_radius)
+                                i1 = min(len(cut1d)-1, icen+local_min_search_radius+1)
+                                if (i1-i0 < 3):
+                                    f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t9\n')
+                                    continue
+                                dip_idx = i0+int(np.argmin(cut1d[i0:i1]))
+                                if (dip_idx == i0 or dip_idx == i1-1):
+                                    f.write(str(slitidx)+'\t'+str(syval)+'\t'+str(xs[j])+'\t'+str(currY)+'\t9\n')
+                                    #No interior minimum near the prediction - reject
+                                    continue
+                            else:
+                                #Not yet anchored (currY may be the region file's value, which can be a
+                                #few pixels off the real dip) - search the whole cut
+                                dip_idx = int(np.argmin(cut1d))
                             dip_val = cut1d[dip_idx]
                             depth_ratio = (local_med-dip_val)/max(abs(local_med), 1.0)
                             if (depth_ratio < local_min_depth_threshold):
@@ -1155,6 +1197,7 @@ class findSlitletProcess(fatboyProcess):
                             meds.append(medVal)
                             maxcors.append(maxcor_val)
                             lmflags.append(use_local_min)
+                            anchored = True
                             xcoords.append(xs[j])
                             ycoords.append(lsq[0][1])
                             lastXs.append(xs[0])
@@ -1219,6 +1262,7 @@ class findSlitletProcess(fatboyProcess):
                                 meds.append(medVal)
                                 maxcors.append(maxcor_val)
                                 lmflags.append(use_local_min)
+                                anchored = True
                                 xcoords.append(xs[j])
                                 ycoords.append(lsq[0][1])
                                 lastXs.append(xs[j])
@@ -1232,6 +1276,7 @@ class findSlitletProcess(fatboyProcess):
                                 meds.append(medVal)
                                 maxcors.append(maxcor_val)
                                 lmflags.append(use_local_min)
+                                anchored = True
                                 xcoords.append(xs[j])
                                 ycoords.append(lsq[0][1])
                                 lastXs.append(xs[j])
@@ -1252,6 +1297,7 @@ class findSlitletProcess(fatboyProcess):
                                 meds.append(medVal)
                                 maxcors.append(maxcor_val)
                                 lmflags.append(use_local_min)
+                                anchored = True
                                 xcoords.append(xs[j])
                                 ycoords.append(lsq[0][1])
                                 lastXs.append(xs[j])

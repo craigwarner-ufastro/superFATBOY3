@@ -105,7 +105,7 @@ Ones listed in a region file are kept, but a `WARNING` is logged.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `slitlet_autodetect_source` | `flat` | `flat`, `arclamp`, or `both`. `both` takes slitlets and packed boundaries from the arclamp and refines outer edges with the flat; `arclamp` alone has slightly wide outer edges. Correlates over the whole dispersion range, so is best for slitlets that are not strongly tilted. |
+| `slitlet_autodetect_source` | `flat` | `flat`, `arclamp`, or `both`. `both` takes slitlets and packed boundaries from the arclamp and refines outer edges with the flat; `arclamp` alone has slightly wide outer edges. Correlates over the whole dispersion range, so is a poor fit for strongly curved data such as MIRADAS. If `slitlet_autodetect_nslits` is set and the arclamp gives the wrong count while the flat gives the right one, it falls back to the flat with an `ERROR` in the log. |
 | `slitlet_autodetect_arc_min_corr` | `0.9` | Minimum correlation between adjacent arclamp rows for them to be in the same slitlet |
 | `slitlet_validity_max_flat_roughness` | `0.045` | Flag a slitlet whose flat varies from row to row by more than this fraction of its flux (0 = off). Real slitlets on LUCI and MIRADAS score 0.001 to 0.024; the LUCI mask ID scores 0.09. |
 | `slitlet_validity_min_arc_corr` | `0.9` | With an arclamp in use, flag a slitlet whose arc rows correlate less than this on average (0 = off) |
@@ -135,6 +135,7 @@ next to each other and the boundary is only a shallow dip, it can find nothing f
 | `narrow_gaps_between_slitlets` | `no` | With `yes`, a point on an edge where both sides of the cut are lit (a packed boundary) is measured with the local-minimum finder instead of being rejected. Unlike `auto`, this switches point by point, so it also handles an edge that is a clean step along part of the slit and packed along the rest. |
 | `slitlet_autodetect_min_trough_depth` | `0.3` | When splitting packed slitlets during auto-detection: minimum depth of the trough between two slitlets, as a fraction of the fainter slitlet's height. Lower (for example 0.1) for very shallow boundaries. |
 | `local_min_depth_threshold` | `0.05` | For `local_minimum`: minimum dip depth to accept a point |
+| `local_min_search_radius` | `3` | For `local_minimum`: once the trace has a point, only look for the minimum within this many pixels of the predicted position, and reject the point if there is no dip there. This stops the trace wandering onto a fainter neighbouring slitlet where a packed boundary turns into a plain step. |
 | `fit_function` | `polynomial` | `polynomial` or `spline`. At the low fit orders normally used here the two are numerically identical; `spline` helps only when you raise the order. |
 | `spline_smoothing` | `-1` | Smoothing for `spline` (`-1` = scipy's default, `0` = interpolate exactly) |
 

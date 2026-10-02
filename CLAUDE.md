@@ -219,6 +219,16 @@ Driven by `caden_luci_fs_test.xml` (LUCI MOS, 25 region-file slitlets, several p
 - Fixed a crash from the 2026-09-11 hardening: the degraded-slitlet QA write did `del qaData`, then the normal slitmask QA write
   used it -> `UnboundLocalError` whenever any slitlet fell back and `write_calib_output=yes`.
 - Gotcha: launching several runs from the same directory at once can race on creating `temp-fatboy/` (FileExistsError) - stagger.
+- v2.3.39 follow-ups: (a) `local_minimum` searched the whole 21px cut, so where LUCI's 587 packed boundary turns into a
+  plain step between two lit slits (x<440) argmin landed on random points of the fainter plateau and the trace drifted
+  3-18px into the next slit. Once a point is accepted since the last reset ("anchored"), it now searches only
+  ±`local_min_search_radius` (3) px of currY and rejects an edge-of-window minimum (new stats code **9**); before anchoring
+  it still searches the whole cut, because the region-file y can be ~3px off the true dip (LUCI edge 970 -> 973.4). 587
+  coverage 64%->76%, no drift. (b) Arc-mode nslits fallback: if `slitlet_autodetect_nslits` is set and the arc's valid
+  count misses it while the flat's (judged by flat criteria only - MIRADAS arc rows don't correlate within a slit) matches,
+  use the flat and stop using the lamp for validation. All 3 MIRADAS configs with `both` now fall back and trace cleanly.
+- The installed `superFatboy3.py` (egg) does not pick up source changes - the user must `sudo python setup.py install`
+  after each commit before running XMLs themselves.
 
 ## Algorithm-audit methodology, distilled from findSlitletProcess (2026-09-28)
 

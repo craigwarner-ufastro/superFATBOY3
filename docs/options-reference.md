@@ -2,7 +2,7 @@
 
 *[Docs home](README.md)*
 
-**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.3.38.
+**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.3.39.
 Run `superFatboy3.py -list` yourself for the live list, or regenerate this file with
 `python3 docs/gen_options_reference.py`. For prose descriptions of what each process does, see the
 [process guide](processes/README.md).
@@ -369,6 +369,7 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `fit_order` | `2` | Order of polynomial to use to fit slitlet shape. Recommended value = 2 for trace_slitlets_individually, 3 for group mode |
 | `invert_before_correlating` | `no` | Invert flat field to turn gap trough into a peak for cross correlations |
 | `local_min_depth_threshold` | `0.05` | For edge_detection_method=local_minimum only: minimum dip depth required to accept a datapoint, as a fraction of the 1-d cut's local median flux.  Rejects steps where no real dip is present (e.g. pure noise or a genuine data gap). |
+| `local_min_search_radius` | `3` | For local_minimum edge tracing: once the trace has accepted a datapoint, only search for the minimum within this many pixels of the predicted position, and reject the point if the minimum is at the edge of that window (no real dip, e.g. a step between two lit slitlets). Stops the trace drifting onto a random point of a fainter neighboring slitlet. |
 | `max_residual_error` | `2.0` | Maximum sigma of residuals to fit to be rejected as an invalid fit, default 1.0 |
 | `min_coverage_fraction` | `30` | Minimum percentage of a slitlet to trace out to be valid for a fit, default 30% |
 | `n_segments` | `1` | Number of piecewise functions to fit.  Should be 2 for MIRADAS, 1 for most other cases. |
