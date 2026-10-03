@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<queries>
+<!-- LUCI (LBT) near-IR MOS spectroscopy.  Verified on 2011-04-21 H+K MOS data (24 slitlets,
+        A-B nodded science frames, dome flats, arclamps), GPU and CPU, superFATBOY v2.4.2.
+
+        Change the dataset dir to point to your data.  Each block selects files by prefix and
+        index (prefix.NNNN.fits, optionally in a subdir).
+
+        IMPORTANT: flats and arclamps must be taken through the SAME mask as the science object
+        (check the MASKID header keyword).  A standard star observed through a different mask
+        has no flat, arclamp or slitmask of its own - see the note on calibStarDivide below.
+-->
+  <dataset dir="/path/to/data/" datatype="spectrum">
+    <object type="auto" subdir="object" name="obj_name" prefix="luci">
+        <index start="162" stop="164"/>
+        <property name="specmode" value="mos"/>
+        <property name="dispersion" value="horizontal"/>
+    </object>
+
+<!-- Darks matching the science exposure time -->
+    <calib type="dark" subdir="darks" name="dark" prefix="luci">
+        <index start="238" stop="241"/>
+    </calib>
+
+<!-- Dome flats (lamp on) through the science mask -->
+    <calib type="flat" subdir="flat" name="flat_on" prefix="luci">
+        <index start="195" stop="199"/>
+        <property name="flat_type" value="lamp_on"/>
+        <property name="specmode" value="mos"/>
+        <property name="dispersion" value="horizontal"/>
+    </calib>
+
+<!-- Arclamps through the science mask.  Used by rectify (use_arclamps); wavelength calibration
+        uses the OH sky lines in the science frames themselves. -->
+    <calib type="arclamp" subdir="arc" name="lamp" prefix="luci">
+        <index start="186" stop="189"/>
+        <property name="arclamp_type" value="lamp_on"/>
+        <property name="specmode" value="mos"/>
+        <property name="dispersion" value="horizontal"/>
+    </calib>
+
+<!-- Telluric/flux standard.  Must be declared as <calib type="standard">, not as an object.
+        Not yet supported when it was taken through a different mask than the science (see
+        calibStarDivide below).
+    <calib type="standard" subdir="stds" name="std_name" prefix="luci">
+        <index start="123" stop="125"/>
+        <property name="specmode" value="longslit"/>
+        <property name="dispersion" value="horizontal"/>
+    </calib>
+-->
+  </dataset>
+</queries>
+
+<processes>
+  <process name="noisemap">
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="darkSubtract">
+    <option name="prompt_for_missing_dark" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+<!-- Clean sky = lower quartile of the dithered frames: used to find the OH lines -->
+  <process name="createCleanSkies">
+    <option name="write_calib_output" value="yes"/>
+    <option name="combine_method" value="quartile"/>
+  </process>
+
+  <process name="createMasterArclamps">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+<!-- Slitlets from a region file, traced as a group (traceSlitlets).  This gave the best LUCI
+        result: the slit edges come from the region file, so draw it on the science data (DS9
+        boxes, or .xml/.txt), one box per slitlet.  Leave out the mask ID strip at the top of the
+        mask - it is not a slitlet.
+
+        flexure_correction = shift measures how far the science frames moved relative to the flats
+        (1.3 px on the verified data, as the flats were taken at a different rotator angle) and
+        shifts the flat - and the slitmask, if it is not already on the data - to match.
+
+        Alternative without a region file: comment out region_file, set
+        trace_slitlets_individually = yes and uncomment the autodetect options below.  Auto-detected
+        edges sit at the flat's half maximum, so add padding (3) to keep the slit wings. -->
+  <process name="findSlitlets">
+    <calib name="region_file" value="/path/to/regions.xml"/>
+    <option name="trace_slitlets_individually" value="no"/>
+    <option name="fit_order" value="3"/>
+    <option name="flexure_correction" value="shift"/>
+<!--
+    <option name="slitlet_autodetect_source" value="both"/>
+    <option name="slitlet_autodetect_nslits" value="24"/>
+    <option name="padding" value="3"/>
+-->
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+
+  <process name="cosmicRaysSpec">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="cosmic_ray_algorithm" value="dcr"/>
+    <option name="cosmic_ray_method" value="replace"/>
+  </process>
+
+  <process name="flatDivideSpec">
+    <option name="flat_method" value="dome_on"/>
+    <option name="flat_selection" value="all"/>
+    <option name="prompt_for_missing_flat" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="badPixelMaskSpec">
+    <option name="clipping_high" value="4.0"/>
+    <option name="clipping_low" value="0.25"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+<!-- A-B nodded frames: subtract the neighbouring dither position (needs RA/Dec or offsets in the header) -->
+  <process name="skySubtractSpec">
+    <option name="sky_method" value="dither"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+<!-- One distortion solution for the whole chip from the object continua, plus the arclamp lines.
+        mos_max_slit_width: wider boxes are treated as alignment-star boxes and skipped. -->
+  <process name="rectify">
+    <option name="mos_mode" value="whole_chip"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="drihizzle_kernel" value="point_replace"/>
+    <option name="drihizzle_dropsize" value="1"/>
+    <option name="mos_max_slit_width" value="10"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+
+  <process name="doubleSubtract">
+    <option name="find_shift_constrain_boxsize" value="50"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="shiftAdd">
+    <option name="find_shift_constrain_boxsize" value="50"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+<!-- Wavelength calibration from the OH sky lines, each slitlet separately.  The range and the
+        scale guess (Angstroms per pixel, negative = wavelength decreases with x) are for the H+K
+        setup of the verified data: change them for your grating and filter. -->
+  <process name="wavelengthCalibrate">
+    <option name="calibrate_slitlets_individually" value="yes"/>
+    <option name="line_list" value="OHlines_hires_100.dat"/>
+    <option name="min_wavelength" value="13000"/>
+    <option name="max_wavelength" value="26000"/>
+    <option name="wavelength_scale_guess" value="-4.5"/>
+    <option name="use_arclamps" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+
+  <process name="extractSpectra">
+    <option name="extract_method" value="auto"/>
+    <option name="extract_weighting" value="linear"/>
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+<!-- Divides each extracted spectrum by the standard star.  Leave out unless the standard was
+        taken through the science mask or a longslit with its own flat and arclamp.
+  <process name="calibStarDivide">
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+-->
+</processes>
+
+<parameters>
+  <param name="outputdir" value="/path/to/output/"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="verbosity" value="normal"/>
+  <param name="rotpa_keyword" value="INSTRPA"/>
+  <param name="gain_keyword" value="ELECGAIN"/>
+  <param name="readnoise_keyword" value="ENOISE"/>
+  <param name="grism_keyword" value="GRATNAME"/>
+  <param name="filter_keyword" value="FILTER1"/>
+  <param name="object_keyword" value="OBJECT"/>
+  <param name="pixscale_keyword" value="PIXSCALE"/>
+  <param name="gpumode" value="yes"/>
+</parameters>
+</fatboy>

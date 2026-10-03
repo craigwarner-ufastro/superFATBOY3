@@ -139,6 +139,15 @@ next to each other and the boundary is only a shallow dip, it can find nothing f
 | `fit_function` | `polynomial` | `polynomial` or `spline`. At the low fit orders normally used here the two are numerically identical; `spline` helps only when you raise the order. |
 | `spline_smoothing` | `-1` | Smoothing for `spline` (`-1` = scipy's default, `0` = interpolate exactly) |
 
+**Flexure.** If the instrument flexed between the flats and the science frames, the slitmask and flat no longer line up with the data. On LUCI the science slits sit 1.1-1.3 px below the flat's, a rigid shift of both edges, because the flats and arcs were taken at the end of the night at a rotator angle 14 degrees from the science. A misaligned flat amplifies the slit-edge rows 3-4x in the flat-divided frame (the edge rows of the data get divided by the dim edge of the flat). `flexure_correction` measures and removes this per object:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `flexure_correction` | `none` | `none`, `shift` (one shift per object; `linear` is accepted as a synonym) or `gradient` (shift varying linearly along the cross-dispersion direction). The shift between the master flat and the object's frames is measured by cross-correlating the slitlet edges (sky-lit in the science frames) slit by slit at 9 columns, with outliers (edges distorted by a bright object) clipped. The object then gets its own slitmask, moved to its frames, and its own master flat with the slit illumination moved (smooth along the dispersion direction) and the pixel response left in place. A slitmask that already matches the object, for example one from a region file drawn on the science data, is not moved; only the flat is. The measurements are written to `findSlitlets/flexure_<object>.txt`. |
+| `flexure_max_shift` | `5` | Largest shift in pixels searched for |
+
+On LUCI, `shift` brought the edge-row noise in the flat-divided frame from 3.7x to 1.2x the in-slit noise, raised the S/N of the bright objects (85 to 98 for the brightest), and removed a spurious sky-residual pedestal that had inflated the fluxes of faint objects. `gradient` gave the same result to 1-2%.
+
 **Fibres.** For fibre-fed data such as MEGARA, `autodetect_peak_local_max`, `trace_peak_local_max` and `fiber_width` switch to a peak-finding approach.
 
 **Robustness.** If one slitlet cannot be traced (a fit failure or poor coverage), it is given a straight edge and the rest of the frame is kept; the whole image is only discarded if every slitlet

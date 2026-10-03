@@ -16,7 +16,7 @@ the matching section here. New options are listed with their default.
 | specBench (FLAMINGOS-1 MOS) | CPU + GPU | Full chain through calibStarDivide |
 | OSIRIS, KAST longslit | CPU + GPU | Full chain |
 | MIRADAS SOL / SOS / MOS | CPU + GPU | Full chain |
-| LUCI MOS (caden_luci_test) | GPU (+ CPU cross-check) | Full chain incl. calib star (v2.3.43); wavelength solutions match the pre-refactor run to 0.02-0.05 px; CPU and GPU extracted spectra identical |
+| LUCI MOS (caden_luci_test, verified v2.4.2) | CPU + GPU | Region file + traceSlitlets + `flexure_correction=shift`, through extraction: same 19 spectra in both modes, fluxes within 0.01%, 24 wavelength solutions identical (median RMS 0.425 A). Calib star excluded (different mask, no calibrations). New `LUCI_MOS_template.xml` |
 | specBench regression, v2.3.44 vs v2.3.42 | CPU | All 571 output files identical (NaN-aware), apart from the renamed per-object rectified slitmask |
 | Median fixes, v2.3.45 vs v2.3.44 | specBench CPU, oriBench GPU, LUCI GPU | oriBench: alignment shifts identical (drizzled pixels differ at 1e-7). specBench: 559/571 identical; 6 of 23 extracted spectra rescaled by 0.007-0.23% and 2 standard-star pixels changed - both from the single-value median that used to return 0. LUCI: GPU clean sky now the lower quartile and identical to CPU; wavelength solutions moved 0.09 A median (0.02 px), fit RMS 0.473 -> 0.452 A |
 | Gap-aware `padding`, v2.4.0 | MIRADAS SOS + MOS order 20 (findSlitlets), LUCI auto/region GPU | MIRADAS slitmasks byte-identical to v2.3.47 with `padding`=2. LUCI auto with `padding`=3: 16 continua traced (was 10), 17 spectra extracted (was 13) incl. the brightest objects, fluxes 0.95-1.0 of the traceSlitlets run (was 0.62-0.96); wavecal median sigma 0.454 -> 0.491 A |
@@ -36,11 +36,9 @@ the matching section here. New options are listed with their default.
 - **wavelengthCalibrate `match3BrightestLines`**: depends on the brightness ranking of the brightest
   lines; LUCI slit 9 fails when padding swaps lines 5-7 (heights within 3%, 1-d cuts correlate 0.999).
   The blind (scale, zero-point) grid search from the wavecal audit is the natural fallback.
-- **Flexure between flats and science**: LUCI science slits sit 1.15-1.31 px below the flats (both edges
-  move together, width unchanged, same in inter-line and bright-OH columns - a rigid shift, not bleeding;
-  the arcs match the flats to 0.07 px since both were taken at the end at the same rotator angle, 14 deg
-  from the science). A per-object slitmask shift measured from the science frame's sky-lit slit edges is
-  not implemented (`padding` covers isolated edges only).
+- **traceOrders mask bias**: a `traceOrders` slitmask sits ~1.0 px below the flat's half-max center on LUCI
+  (the `-1` on `ylo` plus truncation of the float edges). `flexure_correction` measures and removes it along
+  with the flexure; without it, it is uncorrected.
 - **removeCosmicRaysSpec / badPixelMaskSpec**: algorithm audits not started (LA Cosmic reviewed, below).
 
 ---
@@ -186,6 +184,12 @@ the matching section here. New options are listed with their default.
   neighbors), and applies to `traceSlitlets`/`tracePeakLocalMax` as well as `traceOrders`. Motivated by
   LUCI: science frames sit ~1.3 px below the flats, so tight auto-detected edges clipped the negative
   nodded image (10 of 16 continua traced, brightest objects not extracted). (2.4.0)
+- New `flexure_correction` (`none` default | `shift` | `gradient`) and `flexure_max_shift` (5): measure the
+  flat -> object shift from the slitlet edges (derivative cross-correlation, 9 columns, all of the object's
+  frames, clipped) and give the object its own slitmask (moved by flat shift - (mask - flat center offset), so
+  a region-file mask already on the data stays put) and master flat (illumination moved, pixel response kept).
+  `findSlitlets/flexure_<object>.txt` lists every measurement. LUCI: -1.28 px; edge-row noise in the
+  flat-divided frame 3.7x -> 1.2x the in-slit noise. (2.4.2)
 
 ### rectify
 - Runaway continuum fits guarded by `rectify_max_transform_factor` (2.0); untransformed slits logged

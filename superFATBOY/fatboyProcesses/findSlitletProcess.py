@@ -9,7 +9,8 @@ import numpy as np
 import math
 from scipy.optimize import leastsq
 from scipy.interpolate import UnivariateSpline
-from scipy.ndimage import uniform_filter1d
+from scipy.ndimage import uniform_filter1d, median_filter, map_coordinates
+from scipy.ndimage import shift as ndshift
 
 usePlot = True
 try:
@@ -439,6 +440,7 @@ class findSlitletProcess(fatboyProcess):
         if ('slitmask' in calibs):
             #Found exisiting slitmask for this data.  Return here
             #1/8/18, don't need slitlo and slithi too (DFP).  If there, great but never used after this step
+            self.correctFlexure(fdu, calibs, prevProc)
             return True
 
         if (not 'masterFlat' in calibs):
@@ -461,6 +463,7 @@ class findSlitletProcess(fatboyProcess):
             self._fdb.appendCalib(calibs['slitmask'])
             self._fdb.appendCalib(calibs['slitlo'])
             self._fdb.appendCalib(calibs['slithi'])
+            self.correctFlexure(fdu, calibs, prevProc)
         else:
             #Failed to obtain all 3 calibration frames
             #Issue error message and disable this FDU
@@ -651,6 +654,10 @@ class findSlitletProcess(fatboyProcess):
         self._optioninfo.setdefault('edge_extend_to_chip', 'If set to yes, and one edge of a slitlet is traced out, the other edge\nif it runs into the chip boundary will not be clipped.')
         self._options.setdefault('edge_threshold', 15)
         self._optioninfo.setdefault('edge_threshold', 'Do not attempt to trace out slitlets within this many pixels of edges')
+        self._options.setdefault('flexure_correction', 'none')
+        self._optioninfo.setdefault('flexure_correction', 'none | shift | gradient (linear = shift).  Correct for flexure between the\nflat and each object: measure the shift between the master flat and the object\'s\nframes from the slitlet edges (sky-lit), then give that object its own slitmask\nmoved to its frames and a master flat whose slit illumination is moved (pixel\nresponse stays in place).  shift = one shift per object; gradient = shift varying\nlinearly along the cross-dispersion direction.  A slitmask that is already aligned\nwith the object (e.g. from a region file drawn on the data) is not moved, only the flat.\nWrites findSlitlets/flexure_<object>.txt with every edge measurement.')
+        self._options.setdefault('flexure_max_shift', '5')
+        self._optioninfo.setdefault('flexure_max_shift', 'Largest flexure shift in pixels searched for by flexure_correction')
         self._options.setdefault('fiber_width', '5')
         self._optioninfo.setdefault('fiber_width', 'Width of fibers, used with peak local max')
         self._options.setdefault('fit_order', '2')
@@ -787,6 +794,221 @@ class findSlitletProcess(fatboyProcess):
         outhi[order] = newhi
         return (outlo, outhi)
     #end padSlitletEdges
+
+    #Sub-pixel shift of profile b relative to a (+ = b higher), from the cross-correlation of their derivatives
+    #(slit edges).  NaN if the peak is at the edge of +-maxShift.
+    def edgeShift(self, a, b, maxShift):
+        da = np.diff(a)
+        db = np.diff(b)
+        if (np.abs(da).max() == 0 or np.abs(db).max() == 0 or len(da) <= 2*maxShift+2):
+            return np.nan
+        da = da/np.abs(da).max()
+        db = db/np.abs(db).max()
+        m = maxShift+1
+        lags = np.arange(-maxShift, maxShift+1)
+        cc = np.array([np.sum(da[m:-m]*np.roll(db, l)[m:-m]) for l in lags])
+        i = int(np.argmax(cc))
+        if (i == 0 or i == len(lags)-1):
+            return np.nan
+        denom = cc[i-1]-2*cc[i]+cc[i+1]
+        if (denom == 0):
+            return np.nan
+        return -(lags[i]+0.5*(cc[i-1]-cc[i+1])/denom)
+    #end edgeShift
+
+    #Offsets (mask center - flat half-maximum center) of slitlets whose edges both drop to < 25% of the slit
+    #level within 8 pixels (isolated, so the half-max is well defined).  Data are cross-dispersion x dispersion.
+    def maskFlatCenterOffsets(self, mask, flat, cols, half):
+        ny = mask.shape[0]
+        out = []
+        for xc in cols:
+            p = np.median(flat[:,max(xc-half,0):xc+half+1], 1)
+            mcol = mask[:,xc]
+            for k in range(1, int(mask.max())+1):
+                y = np.where(mcol == k)[0]
+                if (y.size < 8 or y.min() < 20 or y.max() > ny-21):
+                    continue
+                lo = y.min()
+                hi = y.max()
+                plat = np.median(p[lo+4:hi-3])
+                bg = np.min(p[lo-12:hi+13])
+                if (plat-bg <= 0):
+                    continue
+                halfmax = bg+0.5*(plat-bg)
+                quarter = bg+0.25*(plat-bg)
+                a = (lo+hi)//2
+                while (p[a-1] >= halfmax and a > lo-10):
+                    a -= 1
+                b = (lo+hi)//2
+                while (p[b+1] >= halfmax and b < hi+10):
+                    b += 1
+                if (p[a-1] >= halfmax or p[b+1] >= halfmax):
+                    continue
+                if (min(p[a-8:a]) > quarter or min(p[b+1:b+9]) > quarter):
+                    continue
+                elo = a-1+(halfmax-p[a-1])/(p[a]-p[a-1])
+                ehi = b+(p[b]-halfmax)/(p[b]-p[b+1])
+                out.append((lo+hi)/2.-(elo+ehi)/2.)
+        return np.array(out)
+    #end maskFlatCenterOffsets
+
+    #Measure flexure between the master flat and an object's frames from their slitlet edges.  Data are
+    #cross-dispersion x dispersion.  Returns (coeffs, maskOffset, measurements, nkept) where the flat->object
+    #shift at row y is coeffs[0] + coeffs[1]*(y-ny/2)/1000 (coeffs[1] = 0 for mode shift) and maskOffset is
+    #(mask center - flat center).  coeffs is None if too few edges could be measured.
+    def measureFlexure(self, mask, flat, frames, mode, maxShift):
+        (ny, nx) = mask.shape
+        half = 24
+        pad = maxShift+3
+        cols = np.linspace(0.1*nx, 0.9*nx, 9).astype(int)
+        meas = []
+        for xc in cols:
+            pflat = np.median(flat[:,max(xc-half,0):xc+half+1], 1)
+            pframes = [np.median(f[:,max(xc-half,0):xc+half+1], 1) for f in frames]
+            mcol = mask[:,xc]
+            for k in range(1, int(mask.max())+1):
+                y = np.where(mcol == k)[0]
+                if (y.size < 5 or y.min()-pad < 0 or y.max()+pad >= ny):
+                    continue
+                lo = y.min()-pad
+                hi = y.max()+pad
+                for p in pframes:
+                    s = self.edgeShift(pflat[lo:hi+1], p[lo:hi+1], maxShift)
+                    if (np.isfinite(s)):
+                        meas.append((y.mean(), xc, k, s))
+        meas = np.array(meas)
+        if (len(meas) < 10):
+            return (None, 0., meas, 0)
+        #Iterative 3-sigma (MAD) clipping: edges distorted by a bright object in the slit are outliers
+        s = meas[:,3]
+        keep = np.ones(len(s), bool)
+        coeffs = np.array([np.median(s), 0.])
+        for j in range(5):
+            if (mode == "gradient"):
+                A = np.c_[np.ones(keep.sum()), (meas[keep,0]-ny/2.)/1000.]
+                coeffs = np.linalg.lstsq(A, s[keep], rcond=None)[0]
+            else:
+                coeffs = np.array([np.median(s[keep]), 0.])
+            resid = s-(coeffs[0]+coeffs[1]*(meas[:,0]-ny/2.)/1000.)
+            mad = 1.4826*np.median(np.abs(resid[keep]))
+            newkeep = np.abs(resid) < 3*max(mad, 0.05)
+            if (np.array_equal(newkeep, keep)):
+                break
+            keep = newkeep
+        offsets = self.maskFlatCenterOffsets(mask, flat, cols, half)
+        maskOffset = float(np.median(offsets)) if (len(offsets) > 0) else 0.
+        return (coeffs, maskOffset, meas, int(keep.sum()))
+    #end measureFlexure
+
+    #Per-object flexure correction (flexure_correction = shift | gradient): measure the shift between the
+    #master flat and this object's frames from the slitlet edges, then make object-tagged copies of the
+    #slitmask (moved to the object's frames) and of the master flat (its slit illumination moved, pixel
+    #response left in place).  Later processes pick up the tagged copies for this object only.
+    def correctFlexure(self, fdu, calibs, prevProc):
+        mode = self.getOption("flexure_correction", fdu.getTag()).lower()
+        if (mode == "linear"):
+            mode = "shift"
+        if (mode not in ["shift", "gradient"] or not 'slitmask' in calibs):
+            return
+        slitmask = calibs['slitmask']
+        if (slitmask.hasProperty("flexure_corrected")):
+            #Already corrected for this object
+            return
+        maxShift = int(self.getOption("flexure_max_shift", fdu.getTag()))
+        #Master flat: the one the slitmask was traced from, or the one flatDivideSpec would use
+        if ('masterFlat' in calibs):
+            masterFlat = calibs['masterFlat']
+        else:
+            fds_process = self._fdb.getProcessByName("flatDivideSpec")
+            if (fds_process is None or not isinstance(fds_process, fatboyProcess)):
+                print("findSlitletProcess::correctFlexure> WARNING: could not find process flatDivideSpec - no flexure correction for "+fdu.getFullId())
+                self._log.writeLog(__name__, "could not find process flatDivideSpec - no flexure correction for "+fdu.getFullId(), type=fatboyLog.WARNING)
+                return
+            fds_process.setDefaultOptions()
+            masterFlat = fds_process.getCalibs(fdu, prevProc).get('masterFlat')
+            if (masterFlat is None):
+                print("findSlitletProcess::correctFlexure> WARNING: no master flat found - no flexure correction for "+fdu.getFullId())
+                self._log.writeLog(__name__, "no master flat found - no flexure correction for "+fdu.getFullId(), type=fatboyLog.WARNING)
+                return
+        horizontal = (fdu.dispersion == fdu.DISPERSION_HORIZONTAL)
+        #Work in cross-dispersion x dispersion
+        def orient(a):
+            return a if horizontal else a.transpose()
+        mask = orient(np.asarray(slitmask.getData(force_cpu=True)))
+        flat = orient(np.asarray(masterFlat.getData(force_cpu=True), dtype=np.float64))
+        frames = []
+        for frame in self._fdb.getFDUs(ident=fdu._id, filter=fdu.filter, section=fdu.section, tag=fdu.getTag()):
+            if (frame.getShape() == fdu.getShape()):
+                frames.append(orient(np.asarray(frame.getData(force_cpu=True), dtype=np.float64)))
+        (coeffs, maskOffset, meas, nkept) = self.measureFlexure(mask, flat, frames, mode, maxShift)
+        if (coeffs is None):
+            print("findSlitletProcess::correctFlexure> WARNING: only "+str(len(meas))+" slitlet edges could be measured for "+fdu._id+" - no flexure correction.")
+            self._log.writeLog(__name__, "only "+str(len(meas))+" slitlet edges could be measured for "+fdu._id+" - no flexure correction.", type=fatboyLog.WARNING)
+            return
+        ny = mask.shape[0]
+        yrows = np.arange(ny, dtype=np.float64)
+        flatShift = coeffs[0]+coeffs[1]*(yrows-ny/2.)/1000.
+        #The mask may already sit off the flat (e.g. drawn from a region file on science data)
+        maskShift = flatShift-maskOffset
+        msg = "Flexure for "+fdu._id+" ("+str(len(frames))+" frames, "+str(nkept)+" of "+str(len(meas))+" edge measurements kept): flat -> object shift = "+formatNum(coeffs[0])
+        if (mode == "gradient"):
+            msg += " + "+formatNum(coeffs[1])+"*(y-"+str(ny//2)+")/1000"
+        msg += " px; mask - flat center offset = "+formatNum(maskOffset)+" px; slitmask moved by "+formatNum(maskShift.min())+" to "+formatNum(maskShift.max())+" px."
+        print("findSlitletProcess::correctFlexure> "+msg)
+        self._log.writeLog(__name__, msg)
+
+        #Shifted slitmask: row y takes the slitlet at row y - shift (nearest row)
+        rows = np.clip(np.rint(yrows-maskShift), 0, ny-1).astype(np.int64)
+        newMask = mask[rows,:]
+        #Shifted flat: slit illumination (smooth along the dispersion direction) moves; pixel response stays
+        illum = median_filter(flat, size=(1,31))
+        good = illum > 0.02*np.median(illum[illum > 0])
+        pixresp = np.ones(flat.shape)
+        pixresp[good] = flat[good]/illum[good]
+        if (mode == "gradient"):
+            (yy, xx) = np.mgrid[0:flat.shape[0], 0:flat.shape[1]].astype(np.float64)
+            illumShifted = map_coordinates(illum, [yy-flatShift.reshape(ny,1), xx], order=1, mode='nearest')
+            del yy, xx
+        else:
+            illumShifted = ndshift(illum, (coeffs[0], 0), order=1, mode="nearest")
+        newFlat = (illumShifted*pixresp).astype(np.float32)
+        if (not horizontal):
+            newMask = newMask.transpose().copy()
+            newFlat = newFlat.transpose().copy()
+
+        newSlitmask = self._fdb.addNewSlitmask(slitmask, newMask.astype(slitmask.getData(force_cpu=True).dtype), self._pname, tagname=slitmask._id+"_flexure_"+fdu._id, objectTag=fdu._id)
+        newSlitmask.setProperty("nslits", int(newMask.max()))
+        newSlitmask.setProperty("flexure_corrected", True)
+        if (slitmask.hasProperty("regions")):
+            (sylo, syhi, slitx, slitw) = slitmask.getProperty("regions")
+            yc = np.clip(((np.asarray(sylo)+np.asarray(syhi))/2.).astype(np.int64), 0, ny-1)
+            newSlitmask.setProperty("regions", (np.asarray(sylo)+maskShift[yc], np.asarray(syhi)+maskShift[yc], slitx, slitw))
+        calibs['slitmask'] = newSlitmask
+        #Object-tagged master flat, created under the flat's own process name so flatDivideSpec finds it
+        newMasterFlat = fatboySpecCalib(masterFlat.getCalibProcessName(), "master_flat", masterFlat, data=newFlat, tagname=masterFlat._id+"_flexure_"+fdu._id, log=self._log)
+        for key in ["specmode", "dispersion", "flat_method"]:
+            if (masterFlat.hasProperty(key)):
+                newMasterFlat.setProperty(key, masterFlat.getProperty(key))
+        newMasterFlat._objectTags = [fdu._id]
+        self._fdb.appendCalib(newMasterFlat)
+
+        if (self.getOption("write_calib_output", fdu.getTag()).lower() == "yes"):
+            outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
+            if (not os.access(outdir+"/findSlitlets", os.F_OK)):
+                os.mkdir(outdir+"/findSlitlets", 0o755)
+            smfile = outdir+"/findSlitlets/"+newSlitmask.getFullId()
+            if (os.access(smfile, os.F_OK)):
+                os.unlink(smfile)
+            newSlitmask.writeTo(smfile)
+            #Every edge measurement, for QA (flagged 0 if rejected as an outlier)
+            resid = meas[:,3]-(coeffs[0]+coeffs[1]*(meas[:,0]-ny/2.)/1000.)
+            mad = 1.4826*np.median(np.abs(resid))
+            f = open(outdir+"/findSlitlets/flexure_"+fdu._id+".txt", 'w')
+            f.write("#"+msg+"\n#y_center\tx\tslitlet\tshift\tkept\n")
+            for j in range(len(meas)):
+                f.write(formatNum(meas[j,0])+"\t"+str(int(meas[j,1]))+"\t"+str(int(meas[j,2]))+"\t"+formatNum(meas[j,3])+"\t"+str(int(abs(resid[j]) < 3*max(mad, 0.05)))+"\n")
+            f.close()
+    #end correctFlexure
 
     #CPU equivalent of fatboyLibs.createSlitmask: rows int(yloMask)..int(yhiMask) of each column
     #belong to that slitlet; a later slitlet overwrites an earlier one.

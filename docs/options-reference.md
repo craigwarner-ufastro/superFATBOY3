@@ -2,7 +2,7 @@
 
 *[Docs home](README.md)*
 
-**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.0.
+**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.1.
 Run `superFatboy3.py -list` yourself for the live list, or regenerate this file with
 `python3 docs/gen_options_reference.py`. For prose descriptions of what each process does, see the
 [process guide](processes/README.md).
@@ -369,6 +369,8 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `fiber_width` | `5` | Width of fibers, used with peak local max |
 | `fit_function` | `polynomial` | Function used to fit the traced (x,y) edge/shift datapoints to a smooth curve Y=f(X): polynomial (default) = single global leastsq polynomial fit of fit_order, as before. A higher fit_order fits real curvature better locally but its extrapolation past the fitted x-range grows increasingly unstable (Runge's phenomenon) -- see rectifyProcess's similar spline-vs-polynomial finding. spline = smoothing B-spline (scipy UnivariateSpline, degree=min(fit_order,5)) through the same datapoints.  Follows local curvature at least as well and extrapolates far more stably at the fitted range's edges/gaps, at the cost of no longer having simple polynomial coefficients to log.  Falls back to polynomial automatically if there are too few datapoints for the requested spline degree. |
 | `fit_order` | `2` | Order of polynomial to use to fit slitlet shape. Recommended value = 2 for trace_slitlets_individually, 3 for group mode |
+| `flexure_correction` | `none` | none \| shift \| gradient (linear = shift).  Correct for flexure between the flat and each object: measure the shift between the master flat and the object's frames from the slitlet edges (sky-lit), then give that object its own slitmask moved to its frames and a master flat whose slit illumination is moved (pixel response stays in place).  shift = one shift per object; gradient = shift varying linearly along the cross-dispersion direction.  A slitmask that is already aligned with the object (e.g. from a region file drawn on the data) is not moved, only the flat. Writes findSlitlets/flexure_<object>.txt with every edge measurement. |
+| `flexure_max_shift` | `5` | Largest flexure shift in pixels searched for by flexure_correction |
 | `invert_before_correlating` | `no` | Invert flat field to turn gap trough into a peak for cross correlations |
 | `local_min_depth_threshold` | `0.05` | For edge_detection_method=local_minimum only: minimum dip depth required to accept a datapoint, as a fraction of the 1-d cut's local median flux.  Rejects steps where no real dip is present (e.g. pure noise or a genuine data gap). |
 | `local_min_search_radius` | `3` | For local_minimum edge tracing: once the trace has accepted a datapoint, only search for the minimum within this many pixels of the predicted position, and reject the point if the minimum is at the edge of that window (no real dip, e.g. a step between two lit slitlets). Stops the trace drifting onto a random point of a fainter neighboring slitlet. |

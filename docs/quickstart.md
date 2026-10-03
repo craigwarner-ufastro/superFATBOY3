@@ -87,6 +87,7 @@ and what has been validated.
 | [`MIRADAS_SOL_template.xml`](../superFATBOY/data/templates/MIRADAS_SOL_template.xml) | MIRADAS, single-object long (SOL) | 12 slitlets |
 | [`MIRADAS_SOS_template.xml`](../superFATBOY/data/templates/MIRADAS_SOS_template.xml) | MIRADAS, single-object short (SOS) | 13 slitlets |
 | [`MIRADAS_MOS_template.xml`](../superFATBOY/data/templates/MIRADAS_MOS_template.xml) | MIRADAS, multi-object (MOS) | 12 slitlets, one per probe arm |
+| [`LUCI_MOS_template.xml`](../superFATBOY/data/templates/LUCI_MOS_template.xml) | LUCI (LBT), near-IR multi-object (MOS) | Slitlets from a region file drawn on the data, `flexure_correction = shift`; wavelength calibration from OH sky lines |
 
 ```bash
 cp superFATBOY/data/templates/FLAMINGOS1_imaging_template.xml ~/reductions/my_data.xml

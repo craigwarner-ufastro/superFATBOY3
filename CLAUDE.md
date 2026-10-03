@@ -221,6 +221,16 @@ can stop that but costs 10-20% flux. Rectification straightness and wavelength s
 four runs; `new` == `main` (findSlitlets byte-identical, spectra within 1-3%). Matching spectra between runs needs
 content correlation - slit labels shift. Wavecal uses the (non-flat-divided) clean sky, so flat options don't affect it.
 
+**Flexure correction (v2.4.2)** - `findSlitlets` option `flexure_correction` (`none`|`shift`|`gradient`, `linear`=`shift`):
+per object, `measureFlexure` cross-correlates d/dy of the master flat vs each of the object's frames slit by slit at 9
+columns (sky-lit edges), MAD-clips, and `maskFlatCenterOffsets` gives (mask - flat center) on isolated slits; the object
+gets an object-tagged slitmask moved by flat shift - mask offset (region-file masks drawn on the data stay put) and an
+object-tagged master flat (created under the flat's own process name so flatDivideSpec's getTaggedMasterCalib finds it)
+with illumination (31-px median along dispersion) shifted and pixel response kept. Measuring mask->science with a binary
+mask profile does NOT work (width mismatch, MAD 0.6-3 px) - use centers. traceOrders masks sit ~1 px below the flat
+(`-1` on ylo + truncation). LUCI is verified (region file + traceSlitlets + shift, GPU == CPU spectra to 0.01%) and has
+`LUCI_MOS_template.xml`. Rectified GPU vs CPU still differ (drizzle kernel) without changing the spectra.
+
 **Temp dir (v2.4.1)**: two runs from the same directory used to share (and delete) `temp-fatboy`; now locked per
 run (`setupTempdir`, `fatboy.lock`), the second run gets `temp-fatboy-<pid>`. Tested with two concurrent findSlitlets
 runs forced to page data out (`memory_image_limit`=5): identical outputs, both dirs cleaned. Parallel test runs from

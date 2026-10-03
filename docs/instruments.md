@@ -23,6 +23,7 @@ unhandled errors and sane, finite output. Each has a matching template XML file 
 | **MIRADAS** | SOL (single-object long) | [`MIRADAS_SOL_template.xml`](../superFATBOY/data/templates/MIRADAS_SOL_template.xml) | `miradasSpectrum` | 12 slitlets, through spectral extraction, combined slices and 3-d datacubes |
 | **MIRADAS** | SOS (single-object short) | [`MIRADAS_SOS_template.xml`](../superFATBOY/data/templates/MIRADAS_SOS_template.xml) | `miradasSpectrum` | 13 slitlets |
 | **MIRADAS** | MOS (multi-object) | [`MIRADAS_MOS_template.xml`](../superFATBOY/data/templates/MIRADAS_MOS_template.xml) | `miradasSpectrum` | 12 slitlets, one MIRADAS order |
+| **LUCI** (LBT) | Near-IR multi-object spectroscopy (MOS) | [`LUCI_MOS_template.xml`](../superFATBOY/data/templates/LUCI_MOS_template.xml) | `spectrum` | 24 slitlets (region file, group trace, flexure correction), A-B nodded H+K frames, through spectral extraction: 19 spectra, 24 wavelength solutions. The standard star (different mask, no calibrations) is not included |
 
 How strong is the evidence?
 
@@ -57,9 +58,9 @@ template (copy the closest validated one):
 | **GMOS** | `biasSubtract` (labelled GMOS-specific in the code) | [bias subtract](processes/imaging.md#biassubtract) |
 | **FourStar** | in-progress imaging datatype and mosaic process (uncommitted work in the source tree) | not documented |
 
-Parts of the spectroscopic machinery have also been tested on real **LUCI** (LBT) and **EMIR** spectroscopy data while
-auditing individual algorithms (slitlet finding, rectification, wavelength calibration), but there is no verified
-end-to-end configuration for either, so they are not in the table above.
+Parts of the spectroscopic machinery have also been tested on real **EMIR** spectroscopy data while auditing individual
+algorithms (slitlet finding, rectification, wavelength calibration), but there is no verified end-to-end configuration
+for it, so it is not in the table above.
 
 ## Adapting a template to a new instrument
 
