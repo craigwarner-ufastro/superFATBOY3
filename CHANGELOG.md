@@ -19,6 +19,7 @@ the matching section here. New options are listed with their default.
 | LUCI MOS (caden_luci_test) | GPU (+ CPU cross-check) | Full chain incl. calib star (v2.3.43); wavelength solutions match the pre-refactor run to 0.02-0.05 px; CPU and GPU extracted spectra identical |
 | specBench regression, v2.3.44 vs v2.3.42 | CPU | All 571 output files identical (NaN-aware), apart from the renamed per-object rectified slitmask |
 | Median fixes, v2.3.45 vs v2.3.44 | specBench CPU, oriBench GPU, LUCI GPU | oriBench: alignment shifts identical (drizzled pixels differ at 1e-7). specBench: 559/571 identical; 6 of 23 extracted spectra rescaled by 0.007-0.23% and 2 standard-star pixels changed - both from the single-value median that used to return 0. LUCI: GPU clean sky now the lower quartile and identical to CPU; wavelength solutions moved 0.09 A median (0.02 px), fit RMS 0.473 -> 0.452 A |
+| Gap-aware `padding`, v2.4.0 | MIRADAS SOS + MOS order 20 (findSlitlets), LUCI auto/region GPU | MIRADAS slitmasks byte-identical to v2.3.47 with `padding`=2. LUCI auto with `padding`=3: 16 continua traced (was 10), 17 spectra extracted (was 13) incl. the brightest objects, fluxes 0.95-1.0 of the traceSlitlets run (was 0.62-0.96); wavecal median sigma 0.454 -> 0.491 A |
 | MEGARA, FourStar, SINFONI, others | - | Not yet run through the refactored pipeline |
 
 ## Open issues
@@ -32,6 +33,14 @@ the matching section here. New options are listed with their default.
   `identity` (validation favors `nearest_neighbor_slits`); moment-centroid rescue not yet ported to
   skyline tracing; specBench science-frame continuum trace still loses 15-30% of points.
 - **miradasCollapseSpaxels**: exact-value peak finding is fragile to float reduction order.
+- **wavelengthCalibrate `match3BrightestLines`**: depends on the brightness ranking of the brightest
+  lines; LUCI slit 9 fails when padding swaps lines 5-7 (heights within 3%, 1-d cuts correlate 0.999).
+  The blind (scale, zero-point) grid search from the wavecal audit is the natural fallback.
+- **Flexure between flats and science**: LUCI science slits sit 1.1-1.5 px below the flats; a per-object
+  slitmask shift measured from the slit edges is not implemented (`padding` covers isolated edges only).
+- **Temp dir**: the `tempdir` param is read before the XML is parsed (always `temp-fatboy`),
+  fatboyDataUnit hard-codes `temp-fatboy`, and startup deletes an existing temp dir - two runs from one
+  directory collide.
 - **removeCosmicRaysSpec / badPixelMaskSpec**: algorithm audits not started (LA Cosmic reviewed, below).
 
 ---
@@ -166,6 +175,11 @@ the matching section here. New options are listed with their default.
 - New `local_min_search_radius` (3): anchored local-minimum search, so a packed boundary that turns
   into a step doesn't drift into the next slitlet. (2.3.39)
 - QA-file `UnboundLocalError` when a slitlet needed a fallback. (2.3.38)
+- `padding` now grows each slitlet only into the empty rows next to it, splitting a gap narrower than
+  2*padding between the two neighbors (before, it widened both edges blindly, overlapping packed
+  neighbors), and applies to `traceSlitlets`/`tracePeakLocalMax` as well as `traceOrders`. Motivated by
+  LUCI: science frames sit ~1.3 px below the flats, so tight auto-detected edges clipped the negative
+  nodded image (10 of 16 continua traced, brightest objects not extracted). (2.4.0)
 
 ### rectify
 - Runaway continuum fits guarded by `rectify_max_transform_factor` (2.0); untransformed slits logged
@@ -191,6 +205,8 @@ the matching section here. New options are listed with their default.
 - MOS standards: the calibration star is the brightest extracted spectrum (new
   `calib_star_spectrum`, 0 = brightest), and each spectrum uses its own slitlet's wavelength solution
   (via `SPEC_nn`). Pixel-division branch used undefined `b_clean`/`b_resamp` (also in main). (2.3.43)
+- Pixel-division fallback (no wavelength solution) crashed when the object and standard spectra differ
+  in length (LUCI A1689 standard, different mask); now skipped with a warning. (2.4.0)
 
 ### doubleSubtract
 - New `min_negative_flux_fraction` (0.1): skip double subtraction when the frame has no negative
@@ -202,6 +218,10 @@ the matching section here. New options are listed with their default.
 ### flatDivide / flatDivideSpec
 - GPU flat division was a no-op whenever the frame was on the host (result discarded). (2.3.40)
 - Writing a CuPy array into an astropy HDU. (Sept 15)
+- `flat_low_thresh`/`flat_low_replace`/`flat_hi_thresh`/`flat_hi_replace` are read as floats (were
+  `int()`, so 0.3 was impossible). CPU MOS path: the replacement assigned into a copy
+  (`data[slit][b] = x`) and never happened, and the high threshold tested `<` instead of `>` (all also
+  in main; the GPU kernel was right). Options now have descriptions. (2.4.0)
 
 ### skySubtract (imaging)
 - Restored the dropped `fatboyLibs` import. (Sept 16)

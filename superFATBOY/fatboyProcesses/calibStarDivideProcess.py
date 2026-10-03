@@ -284,15 +284,20 @@ class calibStarDivideProcess(fatboyProcess):
                 if (fdu.hasProperty("resampled")):
                     rssresamp[j, b_resamp[good_resamp]] = (fdu.getData(tag="resampled")[j][b_resamp][good_resamp]/ystar_resamp[good_resamp])
             else:
-                #Simply divide all values np.where calib star is nonzero
-                b = calibs['standard'].getData()[starRow,:] != 0
-                rssdata[j,b] = fdu.getData()[j,b]/calibs['standard'].getData()[starRow,b]
-                if (fdu.hasProperty("cleanFrame")):
-                    b_clean = calibs['standard'].getData(tag="cleanFrame")[starRow,:] != 0
-                    rssclean[j,b_clean] = fdu.getData(tag="cleanFrame")[j,b_clean]/calibs['standard'].getData(tag="cleanFrame")[starRow,b_clean]
-                if (fdu.hasProperty("resampled")):
-                    b_resamp = calibs['standard'].getData(tag="resampled")[starRow,:] != 0
-                    rssresamp[j,b_resamp] = fdu.getData(tag="resampled")[j,b_resamp]/calibs['standard'].getData(tag="resampled")[starRow,b_resamp]
+                #Simply divide all values np.where calib star is nonzero.  Pixel-by-pixel division only
+                #makes sense on the same grid, so skip any tag whose lengths differ.
+                for (tag, out) in ((None, rssdata), ("cleanFrame", rssclean if fdu.hasProperty("cleanFrame") else None), ("resampled", rssresamp if fdu.hasProperty("resampled") else None)):
+                    if (out is None):
+                        continue
+                    stdrow = calibs['standard'].getData(tag=tag)[starRow,:]
+                    objrow = fdu.getData(tag=tag)[j,:]
+                    if (stdrow.size != objrow.size):
+                        if (j == 0):
+                            print("calibStarDivideProcess::calibStarDivide> Warning: "+str(tag)+" spectra of "+fdu.getFullId()+" ("+str(objrow.size)+" px) and standard "+calibs['standard'].getFullId()+" ("+str(stdrow.size)+" px) differ in length and have no wavelength solution to resample with.  Not dividing them.")
+                            self._log.writeLog(__name__, str(tag)+" spectra of "+fdu.getFullId()+" ("+str(objrow.size)+" px) and standard "+calibs['standard'].getFullId()+" ("+str(stdrow.size)+" px) differ in length and have no wavelength solution to resample with.  Not dividing them.", type=fatboyLog.WARNING)
+                        continue
+                    b = stdrow != 0
+                    out[j,b] = objrow[b]/stdrow[b]
 
             if (doFitsTable):
                 columns.append(pyfits.Column(name='Spectrum_'+str(j+1), format='D', array=rssdata[j,:]))

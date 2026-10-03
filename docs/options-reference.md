@@ -2,7 +2,7 @@
 
 *[Docs home](README.md)*
 
-**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.3.43.
+**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.3.47.
 Run `superFatboy3.py -list` yourself for the live list, or regenerate this file with
 `python3 docs/gen_options_reference.py`. For prose descriptions of what each process does, see the
 [process guide](processes/README.md).
@@ -377,7 +377,7 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `n_segments` | `1` | Number of piecewise functions to fit.  Should be 2 for MIRADAS, 1 for most other cases. |
 | `narrow_gaps_between_slitlets` | `no` | Set to yes for closely packed slitlets whose boundaries are only a dip in flux rather than a drop to background.  cross_correlation edge tracing rejects any datapoint failing the cut1d_max_threshold (peak vs lower quartile) check, which assumes one side of every edge is dark background, so every datapoint along a packed boundary is rejected. With yes, such a datapoint is measured with local_minimum instead.  Unlike auto, which switches a whole edge only when it finds 0 datapoints, this switches point by point, so it also handles an edge that is a step along part of the slit and packed along the rest. |
 | `order_step_size` | `5` | Step size in pixels for tracing out orders, default = 5. |
-| `padding` | `0` | Number of pixels to pad slitlets by.  Default=0 |
+| `padding` | `0` | Number of pixels to pad slitlets by on each side, into the empty rows between slitlets.  A gap narrower than 2*padding is split between its two neighbors so slitlets never overlap.  Applies to all tracing methods.  Default=0 |
 | `region_file` | `None` | .reg, .xml, or .txt file describing slitlets |
 | `slitlet_attempt_autocorrect` | `no` | If slitlets found does not match slitlet_autodetect_nslits attempt to auto-correct before failing. |
 | `slitlet_autocorrect_gap_size` | `None` | Correct auto-detected slitlets to have uniform gaps between slitlets of this size. |
@@ -431,12 +431,12 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 |---|---|---|
 | `create_calib_only` | `no` |  |
 | `default_master_flat` | `None` |  |
-| `flat_hi_replace` | `1` |  |
-| `flat_hi_thresh` | `0` |  |
+| `flat_hi_replace` | `1` | Value for normalized flat pixels above flat_hi_thresh |
+| `flat_hi_thresh` | `0` | Pixels of the normalized flat above this value are replaced by flat_hi_replace.  0 = off |
 | `flat_lamp_off_files` | `off` | An ASCII text file listing on and off flats or a filename fragment or a FITS header keyword for identifying off flats |
 | `flat_lamp_off_header_value` | `OFF` | If flat_lamp_off_files is a FITS keyword, value for off flats |
-| `flat_low_replace` | `1` |  |
-| `flat_low_thresh` | `0` |  |
+| `flat_low_replace` | `1` | Value for normalized flat pixels below flat_low_thresh |
+| `flat_low_thresh` | `0` | Pixels of the normalized flat (per slitlet for MOS) below this value are replaced by flat_low_replace, e.g. 0.3 so dim slit-edge rows are not amplified by flat division.  0 = off |
 | `flat_method` | `dome_on` | dome_on \| dome_on-off |
 | `flat_selection` | `all` | all \| object_keyword |
 | `normalize_flat` | `yes` |  |

@@ -674,7 +674,7 @@ class findSlitletProcess(fatboyProcess):
         self._optioninfo.setdefault('order_step_size', 'Step size in pixels for tracing out orders, default = 5.')
 
         self._options.setdefault('padding','0')
-        self._optioninfo.setdefault('padding', 'Number of pixels to pad slitlets by.  Default=0')
+        self._optioninfo.setdefault('padding', 'Number of pixels to pad slitlets by on each side, into the empty\nrows between slitlets.  A gap narrower than 2*padding is split between\nits two neighbors so slitlets never overlap.  Applies to all tracing\nmethods.  Default=0')
         self._options.setdefault('region_file', None)
         self._optioninfo.setdefault('region_file', '.reg, .xml, or .txt file describing slitlets')
         self._options.setdefault('slitlet_attempt_autocorrect', 'no')
@@ -757,6 +757,71 @@ class findSlitletProcess(fatboyProcess):
         return polyFunction(lsq[0], xeval, order), polyFunction(lsq[0], xdata, order), lsq[0]
     #end fitTraceCurve
 
+    #Grow each slitlet by up to padding pixels into the empty rows next to it, column by column.
+    #A gap narrower than 2*padding is split between the two neighbors (the lower slitlet gets the
+    #extra row of an odd gap) so slitlets never overlap and packed slitlets are left with no zeros
+    #between them.  Rows are the integer rows createSlitmask uses: int(ylo) to int(yhi).
+    #Returns new (yloMask, yhiMask).
+    def padSlitletEdges(self, yloMask, yhiMask, padding, ysize):
+        ylo = np.floor(yloMask).astype(np.int64)
+        yhi = np.floor(yhiMask).astype(np.int64)
+        if (padding <= 0 or ylo.shape[0] == 0):
+            return (yloMask, yhiMask)
+        #Order slitlets bottom to top by their median center (slit numbering need not be sorted)
+        order = np.argsort(np.median(ylo+yhi, 1))
+        lo = ylo[order]
+        hi = yhi[order]
+        newlo = lo.copy()
+        newhi = hi.copy()
+        for k in range(len(order)-1):
+            gap = np.maximum(lo[k+1]-hi[k]-1, 0)
+            glo = np.minimum(padding, (gap+1)//2)
+            ghi = np.minimum(padding, gap-glo)
+            newhi[k] = hi[k]+glo
+            newlo[k+1] = lo[k+1]-ghi
+        newlo[0] = np.maximum(lo[0]-padding, 0)
+        newhi[-1] = np.minimum(hi[-1]+padding, ysize-1)
+        outlo = np.zeros(yloMask.shape)
+        outhi = np.zeros(yhiMask.shape)
+        outlo[order] = newlo
+        outhi[order] = newhi
+        return (outlo, outhi)
+    #end padSlitletEdges
+
+    #CPU equivalent of fatboyLibs.createSlitmask: rows int(yloMask)..int(yhiMask) of each column
+    #belong to that slitlet; a later slitlet overwrites an earlier one.
+    def slitmaskFromEdges(self, shape, yloMask, yhiMask, horizontal):
+        nslits = yloMask.shape[0]
+        slitmask = np.zeros(shape, dtype=np.int32)
+        if (horizontal):
+            yind = np.arange(shape[0], dtype=np.int32).reshape(shape[0], 1)
+            for j in range(nslits):
+                currMask = (yind >= yloMask[j,:].astype(np.int32))*(yind <= yhiMask[j,:].astype(np.int32))
+                slitmask[currMask] = (j+1)
+        else:
+            xind = np.arange(shape[1], dtype=np.int32).reshape(1, shape[1])
+            for j in range(nslits):
+                currMask = (xind >= yloMask[j,:].astype(np.int32).reshape(shape[0], 1))*(xind <= yhiMask[j,:].astype(np.int32).reshape(shape[0], 1))
+                slitmask[currMask] = (j+1)
+        return slitmask
+    #end slitmaskFromEdges
+
+    #Apply the padding option to a traced slitmask: pad the edges and rebuild the slitmask from them.
+    def applySlitletPadding(self, fdu, slitmask, yloMask, yhiMask, ysize):
+        padding = int(self.getOption("padding", fdu.getTag()))
+        if (padding <= 0):
+            return (slitmask, yloMask, yhiMask)
+        (yloMask, yhiMask) = self.padSlitletEdges(yloMask, yhiMask, padding, ysize)
+        horizontal = (fdu.dispersion == fdu.DISPERSION_HORIZONTAL)
+        if (self._fdb.getGPUMode()):
+            slitmask = createSlitmask(slitmask.shape, yhiMask, yloMask, yloMask.shape[0], horizontal = horizontal)
+        else:
+            slitmask = self.slitmaskFromEdges(slitmask.shape, yloMask, yhiMask, horizontal)
+        print("findSlitletProcess> Padded slitlets by up to "+str(padding)+" pixels into the gaps between them for "+fdu.getFullId())
+        self._log.writeLog(__name__, "Padded slitlets by up to "+str(padding)+" pixels into the gaps between them for "+fdu.getFullId())
+        return (slitmask, yloMask, yhiMask)
+    #end applySlitletPadding
+
     ## Trace out individual echelle orders
     def traceOrders(self, fdu, calibs):
         ###*** For purposes of traceOrders algorithm, X = dispersion direction and Y = cross-dispersion direction ***###
@@ -767,7 +832,6 @@ class findSlitletProcess(fatboyProcess):
         boxsize = int(self.getOption("slitlet_trace_boxsize", fdu.getTag()))
         halfbox = boxsize//2
         order = int(self.getOption("fit_order", fdu.getTag()))
-        padding = int(self.getOption("padding", fdu.getTag()))
         #Get region file for this FDU
         if (fdu.hasProperty("region_file")):
             regFile = fdu.getProperty("region_file")
@@ -1482,8 +1546,8 @@ class findSlitletProcess(fatboyProcess):
             if (slit_degraded):
                 n_slit_failures += 1
             #Update slitmask
-            ylo = sylo[slitidx]-z1[0][int(slitx[slitidx])]-1-padding
-            yhi = syhi[slitidx]-z1[1][int(slitx[slitidx])]+padding
+            ylo = sylo[slitidx]-z1[0][int(slitx[slitidx])]-1
+            yhi = syhi[slitidx]-z1[1][int(slitx[slitidx])]
             if (do_edge_extend):
                 if (ylo <= edge_thresh):
                     ylo = 0
@@ -1535,6 +1599,8 @@ class findSlitletProcess(fatboyProcess):
         if (self._fdb.getGPUMode()):
             #Use GPU
             slitmask = createSlitmask(flatData.shape, yhiMask, yloMask, nslits, horizontal = (fdu.dispersion == fdu.DISPERSION_HORIZONTAL))
+        #Pad slitlets into the gaps between them if requested
+        (slitmask, yloMask, yhiMask) = self.applySlitletPadding(fdu, slitmask, yloMask, yhiMask, ysize)
 
         if (slitmask.max() < 256):
             #Only convert to UInt8 if less than 256 slits
@@ -1812,6 +1878,8 @@ class findSlitletProcess(fatboyProcess):
                     currMask = (xind >= (yloMask[j,:]).astype(np.int32))*(xind <= (yhiMask[j,:]).astype(np.int32))
                     b = np.where(currMask)
                     slitmask[b] = (j+1)
+        #Pad slitlets into the gaps between them if requested
+        (slitmask, yloMask, yhiMask) = self.applySlitletPadding(fdu, slitmask, yloMask, yhiMask, ysize)
         if (slitmask.max() < 256):
             #Only convert to UInt8 if less than 256 slits
             slitmask = slitmask.astype(np.uint8)
@@ -2291,6 +2359,8 @@ class findSlitletProcess(fatboyProcess):
                     currMask = (xind >= (ylo+z1).astype(np.int32))*(xind <= (yhi+z1).astype(np.int32))
                     b = np.where(currMask)
                     slitmask[b] = (j+1)
+        #Pad slitlets into the gaps between them if requested
+        (slitmask, yloMask, yhiMask) = self.applySlitletPadding(fdu, slitmask, yloMask, yhiMask, ysize)
         if (slitmask.max() < 256):
             #Only convert to UInt8 if less than 256 slits
             slitmask = slitmask.astype(np.uint8)

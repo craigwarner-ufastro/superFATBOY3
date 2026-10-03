@@ -118,7 +118,7 @@ Ones listed in a region file are kept, but a `WARNING` is logged.
 | `fit_order` | `2` | Polynomial order for each edge. 2 for individual tracing is typical, 3 for group mode; MIRADAS uses 3 to 4. |
 | `trace_slitlets_individually` | `yes` | One fit per slitlet (`yes`) or one shared fit (`no`) |
 | `n_segments` | `1` | Fit piecewise functions; 2 for MIRADAS, whose detector is two chips |
-| `padding` | `0` | Widen each slitlet by this many pixels (MIRADAS: 2) |
+| `padding` | `0` | Widen each slitlet by up to this many pixels on each side, into the empty rows between slitlets (MIRADAS: 2). A gap narrower than 2×padding is split between its two neighbors, so slitlets never overlap and packed slitlets are left with no zeros between them. Applies to every tracing method. Useful when the science frames are shifted from the flats (flexure) or a half-maximum edge clips the slit's wings: on LUCI the science slits sit ~1.3 px below the flat's, so unpadded auto-detected edges cut the negative image of a nodded object off the bottom of the slit. |
 | `boundary` | `10` | Don't trace within this many pixels of a segment's edge (MIRADAS: 100) |
 | `min_coverage_fraction` | `30` | A traced edge must cover at least this percentage of the slitlet to be used |
 | `max_residual_error` | `2.0` | Reject a fit whose residual scatter is bigger than this |
@@ -192,7 +192,7 @@ reaches the line-finding steps.
 | `flat_method` | `dome_on` | `dome_on`, or `dome_on-off` with `flat_type` properties on the flats |
 | `normalize_flat` | `yes` | Normalize within each slitlet |
 | `flat_selection` | `all` | `all` flats for the filter/grating, or `object_keyword` to use only flats with a matching object name |
-| `flat_low_thresh`, `flat_low_replace`, `flat_hi_thresh`, `flat_hi_replace` | `0`, `1`, `0`, `1` | After normalizing, replace pixels below or above the threshold with the replacement value (0 = off) |
+| `flat_low_thresh`, `flat_low_replace`, `flat_hi_thresh`, `flat_hi_replace` | `0`, `1`, `0`, `1` | After normalizing, replace pixels below or above the threshold with the replacement value (0 = off). Values may be fractional (e.g. `flat_low_thresh` = 0.3 stops dim slit-edge rows, where the normalized flat is ~0.1, from being amplified ~10x). On LUCI with `padding` = 3 this raised S/N but lowered extracted fluxes 10-20%, since the wing rows are then not flat-corrected; off by default. |
 | `prompt_for_missing_flat` | `yes` | If there is no matching flat, ask for a file. **Set to `no` for unattended runs**, or comment the process out entirely if you have no flats. |
 | `default_master_flat` | `None` | Use this master flat |
 

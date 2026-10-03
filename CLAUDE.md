@@ -205,6 +205,22 @@ for kernel `D` state before assuming a bug).
   prints), then rerun `python3 docs/gen_options_reference.py` and describe it in the matching
   `docs/processes/*.md` page. Algorithmic changes also get a note in that page.
 
+## LUCI four-run comparison, gap-aware padding (2026-10-03, v2.4.0)
+
+Compared auto (autodetect + traceOrders), region (region file + traceOrders), test (`trace_slitlets_individually=no`,
+traceSlitlets) and main on LUCI. Everything traced back to the slitmasks: auto traced 10 of 16 continua and
+extracted 13 spectra (missing the brightest) because **LUCI science frames sit 1.1-1.5 px below the flats**
+(flexure, measured by cross-correlating d/dy of flat vs science at 5 columns) and auto's half-max edges then clip
+the lower wing where the negative nodded image sits; the rectify continuum finder and extractSpectra both reject a
+cut that starts at its peak. Proved by swapping slitmasks between runs offline (`contswap.py` pattern: replay
+rectify's per-slit finder on each run's own clean frame - matched the logs slit for slit). Fix: `padding` is now
+gap-aware (`padSlitletEdges`: grow into empty rows, split gaps < 2*padding at the midpoint, never overlap) and applies
+in traceOrders/traceSlitlets/tracePeakLocalMax; `slitmaskFromEdges` is the CPU twin of `createSlitmask`. Padded rows
+of a flat-divided frame are amplified (normalized flat ~0.1): `flat_low_thresh` (now float, CPU replacement fixed)
+can stop that but costs 10-20% flux. Rectification straightness and wavelength solutions were equivalent across all
+four runs; `new` == `main` (findSlitlets byte-identical, spectra within 1-3%). Matching spectra between runs needs
+content correlation - slit labels shift. Wavecal uses the (non-flat-divided) clean sky, so flat options don't affect it.
+
 ## Calib star, LA Cosmic, 3-d drizzle, undefined names (2026-10-02, v2.3.43-44)
 
 - **Calib star (LUCI A1689)** needed `<calib type="standard">` in the XML (it was an `<object>`), plus:

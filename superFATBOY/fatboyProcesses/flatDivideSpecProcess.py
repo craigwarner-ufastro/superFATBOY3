@@ -568,10 +568,10 @@ class flatDivideSpecProcess(fatboyProcess):
         print("flatDivideSpecProcess::normalizeFlat> Normalizing master flat "+masterFlat._id)
         self._log.writeLog(__name__, "Normalizing master flat "+masterFlat._id)
         #Get options
-        lowThresh = int(self.getOption("flat_low_thresh", fdu.getTag()))
-        lowReplace = int(self.getOption("flat_low_replace", fdu.getTag()))
-        hiThresh = int(self.getOption("flat_hi_thresh", fdu.getTag()))
-        hiReplace = int(self.getOption("flat_hi_replace", fdu.getTag()))
+        lowThresh = float(self.getOption("flat_low_thresh", fdu.getTag()))
+        lowReplace = float(self.getOption("flat_low_replace", fdu.getTag()))
+        hiThresh = float(self.getOption("flat_hi_thresh", fdu.getTag()))
+        hiReplace = float(self.getOption("flat_hi_replace", fdu.getTag()))
 
         if (fdu._specmode == fdu.FDU_TYPE_LONGSLIT):
             medVal = masterFlat.getMedian()
@@ -651,14 +651,14 @@ class flatDivideSpecProcess(fatboyProcess):
                     slit = slitmask.getData() == (j+1)
                     medVal = arraymedian(data[slit], nonzero=True, kernel=kernel)
                     data[slit] /= medVal
-                    #Replace low/hig pixels
+                    #Replace low/high pixels (index the full array: data[slit][b] = x writes to a copy)
                     if (lowThresh != 0):
-                        b = (data[slit] < lowThresh)
-                        data[slit][b] = lowReplace
+                        b = slit & (data < lowThresh)
+                        data[b] = lowReplace
                         nlo += b.sum()
                     if (hiThresh != 0):
-                        b = (data[slit] < hiThresh)
-                        data[slit][b] = hiReplace
+                        b = slit & (data > hiThresh)
+                        data[b] = hiReplace
                         nhi += b.sum()
                     key = 'NORMAL'
                     if (j+1 < 10):
@@ -673,7 +673,7 @@ class flatDivideSpecProcess(fatboyProcess):
                     self._log.writeLog(__name__, "Replaced "+str(nlo)+" pixels below "+str(lowThresh))
                 if (hiThresh != 0):
                     print("flatDivideSpecProcess::normalizeFlat> Replaced "+str(nhi)+" pixels above "+str(hiThresh))
-                    self._log.writeLog(__name__, "Replaced "+str(nhi)+" pixels below "+str(hiThresh))
+                    self._log.writeLog(__name__, "Replaced "+str(nhi)+" pixels above "+str(hiThresh))
                 #update FDU and noisemap
                 masterFlat.updateData(data)
                 if (masterFlat.hasProperty("noisemap")):
@@ -709,9 +709,13 @@ class flatDivideSpecProcess(fatboyProcess):
         self._options.setdefault('flat_lamp_off_header_value', 'OFF')
         self._optioninfo.setdefault('flat_lamp_off_header_value', 'If flat_lamp_off_files is a FITS keyword, value for off flats')
         self._options.setdefault('flat_low_thresh', '0')
+        self._optioninfo.setdefault('flat_low_thresh', 'Pixels of the normalized flat (per slitlet for MOS) below this\nvalue are replaced by flat_low_replace, e.g. 0.3 so dim slit-edge\nrows are not amplified by flat division.  0 = off')
         self._options.setdefault('flat_low_replace', '1')
+        self._optioninfo.setdefault('flat_low_replace', 'Value for normalized flat pixels below flat_low_thresh')
         self._options.setdefault('flat_hi_thresh', '0')
+        self._optioninfo.setdefault('flat_hi_thresh', 'Pixels of the normalized flat above this value are replaced by\nflat_hi_replace.  0 = off')
         self._options.setdefault('flat_hi_replace', '1')
+        self._optioninfo.setdefault('flat_hi_replace', 'Value for normalized flat pixels above flat_hi_thresh')
         self._options.setdefault('flat_selection', 'all')
         self._optioninfo.setdefault('flat_selection', 'all | object_keyword')
         self._options.setdefault('normalize_flat', 'yes')
