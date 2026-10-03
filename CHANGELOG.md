@@ -104,6 +104,10 @@ the matching section here. New options are listed with their default.
 - CUDA illegal-address crash: a `float32` cast on the wrong operand packed a float64 into a float
   kernel argument. (1a2a1dc)
 - uniformKernel scatter bounds; padding threads no longer write past the array end. (421323f)
+- `kernel='uniform'` (slitmasks) returns int32 again, as in main and the CPU drihizzle. The rewrite
+  converted the result back to float32, so rectified slitmasks (`rct_slitmask_*.fits`) were written
+  as float and reruns read them back as float32 (the `nslits` crash). Values were already exact
+  integers (atomicMax), so only the dtype changes. (2.3.47)
 - Final weighting for `weight=exptime, outunits=counts` restored to main's (raw sum). The rewrite
   divided by the exposure map, which rescaled every rectified frame and made rectify's point_replace
   produce garbage pixels at slit edges. (2.3.41)

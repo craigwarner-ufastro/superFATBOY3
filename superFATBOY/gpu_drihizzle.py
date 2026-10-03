@@ -1521,25 +1521,18 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 lanczosKernel = mod.get_function("lanczosKernel")
                 lanczosKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), lanclut_g, lanccen.astype(np.int32)))
         elif kernel == 'uniform':
+            #Same as main and CPU drihizzle: uniform kernel (slitmasks) stays int32 through to the output
             data_g = data_g.astype(np.int32)
-            # newdata is already np.float32, uniformKernel expects int* newdata?
-            # Original code said: data = data.astype(np.int32); newdata = newdata.astype(np.int32)
-            # So I should probably use a temporary np.int32 newdata or change newdata type.
-            # But drihizzle usually works with floats.
-            # Let's check uniformKernel definition: __global__ void uniformKernel(int *newdata, int *data, ...)
-            # Yes, it takes int*.
-            newdata_i = newdata.astype(np.int32)
-            nxsize = newdata.shape[1]
+            newdata = newdata.astype(np.int32)
             nysize = newdata.shape[0]
             uniformKernel = mod.get_function("uniformKernel")
-            uniformKernel((blocks,), (block_size,), (newdata_i, data_g, xout_g, yout_g, inmask_g, np.int32(xsize), np.int32(nysize), np.int32(data.size)))
-            newdata = newdata_i.astype(np.float32)
+            uniformKernel((blocks,), (block_size,), (newdata, data_g, xout_g, yout_g, inmask_g, np.int32(xsize), np.int32(nysize), np.int32(data.size)))
         tt = time.time()
 
         # If requested, update FDUs here
         if updateFDUs and (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG):
             # Make copies on GPU
-            drihizzled_data_g = newdata.copy()
+            drihizzled_data_g = newdata.astype(np.float32)
             expmap_data_g = expmap.copy()
             divFloatArrays = mod.get_function("divFloatArrays")
             # Apply weighting
@@ -1584,7 +1577,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 shortfn = frames[j]._id + "_" + dataTag + frames[j]._index + ".fits"
                 temp = pyfits.open(frames[j].getFilename())
 
-            indiv_data_g = newdata.copy()
+            indiv_data_g = newdata.astype(np.float32)
             indiv_exp_g = expmap.copy()
             divFloatArrays = mod.get_function("divFloatArrays")
             # Apply weighting
