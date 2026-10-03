@@ -404,6 +404,9 @@ of known wavelengths and relative intensities. The heart of the algorithm:
 | `min_intensity_percent` | `0.5` | Ignore lines fainter than this percent of the brightest |
 | `use_initial_guess_on_fail` | `no` | If a solution cannot be found, fall back to the initial guess rather than skipping the slitlet |
 | `slitlets_to_debug`, `slitlets_to_write_plots` | `None` | Restrict diagnostics to these slitlets, for example `3,5,7` |
+| `wavecal_fallback` | `neighbor,blind` | When the 3 brightest lines can't be matched with the configured guess, retry with these, in order (or `none`): **neighbor** = the solution of an already calibrated slitlet, shifted by cross-correlating the two 1-d cuts (MOS); **blind** = cross-correlate the cut with the line list over a range of scales and every zero point (central half of the cut first, where a linear guess holds even for strongly nonlinear dispersion), then check how many bright peaks land on line-list lines. A solution reached this way is kept only if it grades satisfactory or better with at least max(2(order+1), 8) lines; otherwise the slitlet is reported as failed rather than given a wrong solution. |
+| `wavecal_blind_scale_range` | `0.5,2` | Scales searched by the blind fallback, as factors of `wavelength_scale_guess` |
+| `wavecal_quality_thresholds` | `0.1,0.2,0.3,0.4` | RMS of each fit in **pixels** separating excellent / good / satisfactory / marginal / poor |
 | `write_plots` | `no` | Save QA plots as PNG |
 
 **Per-order guesses.** `wavelength_calibration_file` points to an XML file that can give each slitlet and segment its own range and guess:
@@ -418,8 +421,12 @@ of known wavelengths and relative intensities. The heart of the algorithm:
 
 Any option can be given as an attribute of `<dataset>` (applies to all) or of `<order>` (only that order). The MIRADAS files in `superFATBOY/data/config/` are examples.
 
+**Quality report.** Every slitlet/segment prints its RMS in wavelength units and in pixels (each residual divided by the local dispersion), a grade (excellent < 0.1 px < good < 0.2 px < satisfactory < 0.3 px < marginal < 0.4 px < poor, see `wavecal_quality_thresholds`), the number of lines used and the fraction of the cut they span (a warning below 50%: the solution is extrapolated). A summary line counts the grades and failures for the frame. The same numbers are in `wavelengthCalibrated/qa_<frame>.dat` (columns RMS, RMS px, quality, coverage %, and a row with the reason for every failed slitlet) and in the header: `WCRMS`, `WCRMSPX`, `WCQUAL`, `WCNLINES` for a single solution, `WCRMSxx`, `WCRPXxx`, `WCQULxx`, `WCNLNxx` per slitlet.
+
+**Failing cleanly.** An unexpected error in one slitlet or segment is logged (with a traceback in the log) and that slitlet skipped; the rest of the frame is calibrated as usual.
+
 **When it reports `Could not match 3 brightest lines ... Skipping order!`** that slitlet had too few usable lines (faint or lineless), and the algorithm gave up on it gracefully; the rest are unaffected. If
-*every* slitlet or order fails, the most likely cause is wrong `wavelength_scale_guess` or `min_wavelength` / `max_wavelength` (a bad initial scale, not a bug in the matching). Check the scale against a known line pair, or widen the range.
+*every* slitlet or order fails, check `wavelength_scale_guess` and `min_wavelength` / `max_wavelength`, and the line list itself: the bright lines in the data must be in the list (the Xe list in `xml/xenon_optical.dat`, for example, has no lines between 4481 and 4844 Å, where the strongest blue Xe I lines are).
 
 Output: `wavelengthCalibrated/wc_*.fits`, with the solution coefficients in the FITS header.
 

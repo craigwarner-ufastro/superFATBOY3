@@ -40,9 +40,10 @@ the matching section here. New options are listed with their default.
   `calcTransOpt` in float32 on the GPU and numpy float64 on the CPU, so those runs can still differ at the
   rounding level. Transforms given as arrays (MOS) are bit-identical. The 3-d GPU drizzle (SINFONI) still
   has the host-buffer problem noted under gpu_drihizzle.
-- **wavelengthCalibrate `match3BrightestLines`**: depends on the brightness ranking of the brightest
-  lines; LUCI slit 9 fails when padding swaps lines 5-7 (heights within 3%, 1-d cuts correlate 0.999).
-  The blind (scale, zero-point) grid search from the wavecal audit is the natural fallback.
+- **wavelengthCalibrate**: the 3-line match depends on the brightness ranking of the line list's lines (LUCI slit 9
+  with padding); fallbacks added in 2.4.4. avrajit-osiris still fails: `xenon_optical.dat` has no lines between 4481
+  and 4844 A, where the arc's brightest (Xe I) lines are - a line-list problem (the earlier "wrong XML parameters"
+  conclusion was a chance blind match; the arcs are R2500U, matching the configured 3440-4650 A).
 - **traceOrders mask bias**: a `traceOrders` slitmask sits ~1.0 px below the flat's half-max center on LUCI
   (the `-1` on `ylo` plus truncation of the float edges). `flexure_correction` measures and removes it along
   with the flexure; without it, it is uncorrected.
@@ -256,6 +257,19 @@ the matching section here. New options are listed with their default.
   (2.3.43)
 
 ### wavelengthCalibrate
+- QA for every slitlet/segment: RMS in wavelength units and pixels, a grade (new `wavecal_quality_thresholds`,
+  default 0.1/0.2/0.3/0.4 px), lines used and the fraction of the cut they span; a summary per frame; new
+  columns in `qa_*.dat` with a row for every failed slitlet; header keywords `WCRMS`/`WCRMSPX`/`WCQUAL`/
+  `WCNLINES` (per slitlet `WCRMSxx`/`WCRPXxx`/`WCQULxx`/`WCNLNxx`). (2.4.4)
+- Fails cleanly: an unexpected error in one slitlet/segment is logged with its traceback and that slitlet skipped,
+  keeping the per-slitlet lists and header aligned. The first Gaussian fit's fallback width used an undefined (or
+  the previous slitlet's) `lsq`. (2.4.4)
+- New `wavecal_fallback` (`neighbor,blind`) and `wavecal_blind_scale_range` (`0.5,2`): when the 3 brightest lines
+  can't be matched, retry with a calibrated neighboring slitlet's solution (cross-correlation shift) and then a
+  blind cross-correlation over scales and zero points (central half first, since a linear guess fails across a
+  strongly nonlinear LUCI cut); a fallback solution is kept only if it grades satisfactory or better with enough
+  lines. Slitlets that matched before are unaffected (log-identical on LUCI, KAST, OSIRIS, MIRADAS). Template
+  building and template-line finding factored into `buildDummySpectrum()` / `findTemplateLines()`. (2.4.4)
 - Negative-index slice wraparound near the array edges (8 sites, pre-existing). (Sept 15)
 
 ### extractSpectra

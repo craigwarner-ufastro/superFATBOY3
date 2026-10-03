@@ -161,10 +161,10 @@ as of v2.3.34:
   was blocking MIRADAS GPU mode entirely and is unrelated to the peak-finder brittleness itself.
 - **`wavelengthCalibrateProcess`** — audited across 5 real datasets; **no systemic algorithm
   problem found** (MIRADAS SOL/specBench/LUCI all 100% clean). The one real failure
-  (`avrajit-osiris.xml`) turned out to be wrong wavelength-scale/range parameters in that XML
-  config, not an algorithm or line-list bug — confirmed via a blind (scale, zero-point) grid search
-  against the full line catalog. That blind-grid-search approach is validated as a real fallback
-  for future bad-initial-guess cases but not wired into `match3BrightestLines()` as production code.
+  (`avrajit-osiris.xml`) is a **line-list gap** (`xenon_optical.dat` lacks the 4481-4844 A Xe I lines);
+  an earlier conclusion that its XML parameters were wrong was a chance blind match and is retracted
+  (see the v2.4.4 section). v2.4.4 added QA grades, fail-clean per segment, and gated
+  neighbor/blind fallbacks for a failed 3-line match.
   One real pre-existing bug fixed (negative-index slice wraparound near array edges, all 8 sites).
   Two standalone tool prototypes exist (`tools_linelist_builder_draft.py`,
   `tools_linelist_intensity_check_draft.py`), not integrated.
@@ -204,6 +204,26 @@ for kernel `D` state before assuming a bug).
 - **Every new option gets an `_optioninfo` entry** next to its `_options.setdefault` (that's what `-list`
   prints), then rerun `python3 docs/gen_options_reference.py` and describe it in the matching
   `docs/processes/*.md` page. Algorithmic changes also get a note in that page.
+
+## wavelengthCalibrate audit round 2 (2026-10-03, v2.4.4)
+
+- **QA**: every fit prints RMS in wavelength units and px (residual / local dispersion from the polynomial
+  derivative), a grade (`wavecal_quality_thresholds`), lines used, coverage of the cut; per-frame summary line;
+  `qa_*.dat` columns + failure rows; header `WCRMS/WCRMSPX/WCQUAL/WCNLINES` (MOS `WCRMSxx/WCRPXxx/WCQULxx/WCNLNxx`).
+- **Fail clean**: the per-segment body of `wavelengthCalibrate` is inside try/except (log + traceback, skip that
+  segment, keep fitParams/min/maxLambdaList aligned). Most of the 2000-line diff is that re-indent.
+- **Fallbacks** (`wavecal_fallback=neighbor,blind`) run only after the original match fails, so slitlets that
+  matched before are untouched: WC-log-identical (apart from the QA lines) on LUCI, KAST, OSIRIS, MIRADAS SOS/SOL.
+  Blind = FFT xcorr of the cut vs a template with intensities^0.25 over 600 log-spaced scales, verified by how
+  many of the 15 brightest peaks land on lines; central half of the cut first (a linear guess fails across
+  LUCI's nonlinear cut). Gate: a fallback solution must grade satisfactory+ with >= max(2(order+1),8) lines -
+  without the gate, aliases slip through.
+- **avrajit-osiris**: arcs are R2500U, XML is right (earlier "XML wrong" was a chance match). `xenon_optical.dat`
+  lacks the 4481-4844 A Xe I lines -> line-list problem; now fails cleanly.
+- **MIRADAS grades** cluster 0.2-0.5 px with ~50 lines over 90% of the cut; order 2 seg 1 (3.35 px) is a wrong
+  primary match (c2 4x the neighbouring orders') that the old code also produced - the grade now flags it.
+- WC-only rerun technique: `cp -al` a finished output dir, delete `wavelengthCalibrated/` and later dirs, rerun
+  with `overwrite_files=no`, diff the WC log lines (scratchpad `wccmp.py` pattern).
 
 ## LUCI four-run comparison, gap-aware padding (2026-10-03, v2.4.0)
 
