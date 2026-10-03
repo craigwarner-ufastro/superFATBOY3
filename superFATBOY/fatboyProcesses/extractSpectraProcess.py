@@ -735,7 +735,7 @@ class extractSpectraProcess(fatboyProcess):
             #Use new fdu.getSlitmask method
             slitmask = fdu.getSlitmask(pname=None, properties=properties)
             if (not fdu.hasProperty("nslits")):
-                fdu.setProperty("nslits", slitmask.getData().max())
+                fdu.setProperty("nslits", int(slitmask.getData().max()))
             nslits = fdu.getProperty("nslits")
             if (fdu.hasProperty("regions")):
                 (ylos, yhis, slitx, slitw) = fdu.getProperty("regions")

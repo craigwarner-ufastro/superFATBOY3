@@ -237,7 +237,7 @@ class slitletAlignProcess(fatboyProcess):
         #And not "slitmask" property of each FDU which has been shifted and added and has different shape
         slitmask = calibs['slitmask']
         if (not slitmask.hasProperty("nslits")):
-            slitmask.setProperty("nslits", slitmask.getData().max())
+            slitmask.setProperty("nslits", int(slitmask.getData().max()))
         nslits = slitmask.getProperty("nslits")
         if (slitmask.hasProperty("regions")):
             (sylo, syhi, slitx, slitw) = slitmask.getProperty("regions")

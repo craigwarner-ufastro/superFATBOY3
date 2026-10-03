@@ -838,6 +838,9 @@ class fatboyDataUnit:
 
     ## set a property
     def setProperty(self, key, value):
+        #nslits is often computed as slitmask.max(); a slitmask reloaded from disk can be float32
+        if key == "nslits" and value is not None:
+            value = int(value)
         self._properties[key] = value
     #end setProperty
 

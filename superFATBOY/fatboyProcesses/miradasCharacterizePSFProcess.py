@@ -294,10 +294,10 @@ class miradasCharacterizePSFProcess(fatboyProcess):
             nslits = fdu.getProperty("nslits")
         else:
             if (fdu.hasProperty('slitmask')):
-                nslits = fdu.getData(tag="slitmask").max()
+                nslits = int(fdu.getData(tag="slitmask").max())
                 fdu.setProperty("nslits", nslits)
             elif ('slitmask' in calibs):
-                nslits = calibs['slitmask'].getData().max()
+                nslits = int(calibs['slitmask'].getData().max())
                 fdu.setProperty("nslits", nslits)
 
         if (doAllSlitlets):

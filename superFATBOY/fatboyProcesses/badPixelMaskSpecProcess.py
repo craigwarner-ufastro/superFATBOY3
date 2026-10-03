@@ -1030,7 +1030,7 @@ class BadPixelMaskSpecProcess(fatboyProcess):
                     return calibs
                 calibs['slitmask'] = fs_calibs['slitmask']
             if (not calibs['slitmask'].hasProperty("nslits")):
-                calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData().max())
+                calibs['slitmask'].setProperty("nslits", int(calibs['slitmask'].getData().max()))
             calibs['nslits'] = calibs['slitmask'].getProperty("nslits")
 
         bpmfilename = self.getCalib("badPixelMask", fdu.getTag())

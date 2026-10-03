@@ -56,6 +56,10 @@ the matching section here. New options are listed with their default.
   as intended (the check tested an undefined name, so such files were disabled as "misformatted").
   (2.3.43)
 - Header-keyword file grouping crashed (`OS.F_OK`). (2.3.43)
+- `setProperty("nslits", ...)` now stores an `int`. On a rerun with an existing output dir the slitmask
+  is reloaded from disk as float32, so `nslits = slitmask.max()` was `np.float32` and
+  `range(nslits)` crashed (wavelengthCalibrate). All ~25 `nslits = ...max()` sites in processes,
+  `wavecal.py` and `fatboySpectrum.py` are also wrapped in `int()`. (2.3.46)
 - `renormalize()` converts the bad pixel mask to match GPU mode. (Sept 16)
 - osirisSpectrum / circeImage `getData()` accept `force_cpu`. (83f5b4f)
 - Imaging frames without RA/Dec (`ra_keyword`/`dec_keyword`: RAOFFSET/RA/TELRA, DECOFFSE/DEC/TELDEC)

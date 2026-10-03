@@ -1625,7 +1625,7 @@ class rectifyProcess(fatboyProcess):
             ysize = fdu.getShape()[1]
 
         if (not calibs['slitmask'].hasProperty("nslits")):
-            calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData(force_cpu=True).max())
+            calibs['slitmask'].setProperty("nslits", int(calibs['slitmask'].getData(force_cpu=True).max()))
         nslits = calibs['slitmask'].getProperty("nslits")
         if (calibs['slitmask'].hasProperty("regions")):
             (sylo, syhi, slitx, slitw) = calibs['slitmask'].getProperty("regions")
@@ -2323,7 +2323,7 @@ class rectifyProcess(fatboyProcess):
             ysize = fdu.getShape()[1]
 
         if (not calibs['slitmask'].hasProperty("nslits")):
-            calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData(force_cpu=True).max())
+            calibs['slitmask'].setProperty("nslits", int(calibs['slitmask'].getData(force_cpu=True).max()))
         nslits = calibs['slitmask'].getProperty("nslits")
         if (calibs['slitmask'].hasProperty("regions")):
             (sylo, syhi, slitx, slitw) = calibs['slitmask'].getProperty("regions")
@@ -2880,7 +2880,7 @@ class rectifyProcess(fatboyProcess):
                 if (rctSlitmask is not None):
                     calibs['slitmask'] = rctSlitmask
                     #Update nslits property
-                    nslits = calibs['slitmask'].getData(force_cpu=True).max()
+                    nslits = int(calibs['slitmask'].getData(force_cpu=True).max())
                     calibs['slitmask'].setProperty("nslits", nslits)
                     #Update regions
                     if (calibs['slitmask'].hasProperty("regions")):
@@ -3525,7 +3525,7 @@ class rectifyProcess(fatboyProcess):
             #Now update slitmask to remove guide star boxes
 
             if (not slitmask.hasProperty("nslits")):
-                slitmask.setProperty("nslits", slitmask.getData(force_cpu=True).max())
+                slitmask.setProperty("nslits", int(slitmask.getData(force_cpu=True).max()))
             nslits = slitmask.getProperty("nslits")
             if (slitmask.hasProperty("regions")):
                 (sylo, syhi, slitx, slitw) = slitmask.getProperty("regions")
@@ -3912,7 +3912,7 @@ class rectifyProcess(fatboyProcess):
         xstride = xsize//n_segments
 
         if (not calibs['slitmask'].hasProperty("nslits")):
-            calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData(force_cpu=True).max())
+            calibs['slitmask'].setProperty("nslits", int(calibs['slitmask'].getData(force_cpu=True).max()))
         nslits = calibs['slitmask'].getProperty("nslits")
         if (calibs['slitmask'].hasProperty("regions")):
             (sylo, syhi, slitx, slitw) = calibs['slitmask'].getProperty("regions")
@@ -4768,7 +4768,7 @@ class rectifyProcess(fatboyProcess):
         skyData = skyFDU.getData(force_cpu=True).copy()
 
         if (not calibs['slitmask'].hasProperty("nslits")):
-            calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData(force_cpu=True).max())
+            calibs['slitmask'].setProperty("nslits", int(calibs['slitmask'].getData(force_cpu=True).max()))
         nslits = calibs['slitmask'].getProperty("nslits")
         if (calibs['slitmask'].hasProperty("regions")):
             (sylo, syhi, slitx, slitw) = calibs['slitmask'].getProperty("regions")

@@ -75,7 +75,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
             if (doIndividualSlitlets):
                 #Find nslits and regions
                 if (not fdu.hasProperty("nslits")):
-                    fdu.setProperty("nslits", slitmask.getData(force_cpu=True).max())
+                    fdu.setProperty("nslits", int(slitmask.getData(force_cpu=True).max()))
                 nslits = fdu.getProperty("nslits")
                 if (fdu.hasProperty("regions")):
                     (ylos_data, yhis_data, slitx_data, slitw_data) = fdu.getProperty("regions")
@@ -1457,7 +1457,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
             slitmask = calibs['slitmask']
             if (doIndividualSlitlets):
                 if (not slitmask.hasProperty("nslits")):
-                    slitmask.setProperty("nslits", slitmask.getData(force_cpu=True).max())
+                    slitmask.setProperty("nslits", int(slitmask.getData(force_cpu=True).max()))
                 nslits = slitmask.getProperty("nslits")
                 if (slitmask.hasProperty("regions")):
                     (ylos, yhis, slitx, slitw) = slitmask.getProperty("regions")

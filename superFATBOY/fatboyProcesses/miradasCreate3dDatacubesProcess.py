@@ -38,7 +38,7 @@ class miradasCreate3dDatacubesProcess(fatboyProcess):
         if (fdu.hasProperty("nslits")):
             nslits = fdu.getProperty("nslits")
         else:
-            nslits = calibs['slitmask'].getData().max()
+            nslits = int(calibs['slitmask'].getData().max())
             fdu.setProperty("nslits", nslits)
 
         if (doAllSlitlets):

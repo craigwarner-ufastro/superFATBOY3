@@ -312,7 +312,7 @@ class fatboySpectrum(fatboyDataUnit):
         if (slitmask is None):
             return fatboyDataUnit.renormalize(self, bpm=bpm)
         #Slitmask is not None here
-        nslits = slitmask.getData().max()
+        nslits = int(slitmask.getData().max())
         if (bpm is None):
             if (self._gpumode):
                 #normalizeMOSFlat will update data and noisemap in FDU

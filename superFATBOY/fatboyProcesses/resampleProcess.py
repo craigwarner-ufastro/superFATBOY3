@@ -88,7 +88,7 @@ class resampleProcess(fatboyProcess):
                 doSlitmask = False
             # Find nslits and regions
             if (not fdu.hasProperty("nslits")):
-                fdu.setProperty("nslits", slitmask.getData(force_cpu=True).max())
+                fdu.setProperty("nslits", int(slitmask.getData(force_cpu=True).max()))
             nslits = fdu.getProperty("nslits")
             if (fdu.hasProperty("regions")):
                 (ylos_data, yhis_data, slitx_data, slitw_data) = fdu.getProperty("regions")

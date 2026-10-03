@@ -91,7 +91,7 @@ class megaraIdentifyFibersProcess(fatboyProcess):
             xsize = fdu.getShape()[0]
             ysize = fdu.getShape()[1]
         if (not calibs['slitmask'].hasProperty("nslits")):
-            calibs['slitmask'].setProperty("nslits", calibs['slitmask'].getData().max())
+            calibs['slitmask'].setProperty("nslits", int(calibs['slitmask'].getData().max()))
         nslits = calibs['slitmask'].getProperty("nslits")
         #Use helper method to all ylo, yhi for each slit in each frame
         (ylos, yhis, slitx, slitw) = findRegions(calibs['slitmask'].getData(), nslits, calibs['slitmask'], gpu=self._fdb.getGPUMode(), log=self._log)

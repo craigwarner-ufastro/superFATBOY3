@@ -295,7 +295,7 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
             crMask = np.ones(data.shape, dtype=np.int16)
             if (inpaint):
                 cleanData = np.zeros(data.shape, dtype=np.float32)
-            nslits = slitmask.getData(force_cpu=True).max()
+            nslits = int(slitmask.getData(force_cpu=True).max())
             npix = 0
             # Loop over slitlets
             for j in range(nslits):

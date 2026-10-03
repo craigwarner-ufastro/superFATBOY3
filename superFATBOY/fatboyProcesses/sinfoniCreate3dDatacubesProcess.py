@@ -41,7 +41,7 @@ class sinfoniCreate3dDatacubesProcess(fatboyProcess):
         if (slitmask.hasProperty("nslits")):
             nslits = slitmask.getProperty("nslits")
         else:
-            nslits = slitmask.getData().max()
+            nslits = int(slitmask.getData().max())
             slitmask.setProperty("nslits", nslits)
         if (slitmask.hasProperty("regions")):
             (ylos, yhis, slitx, slitw) = slitmask.getProperty("regions")
@@ -175,7 +175,7 @@ class sinfoniCreate3dDatacubesProcess(fatboyProcess):
         if (slitmask.hasProperty("nslits")):
             nslits = slitmask.getProperty("nslits")
         else:
-            nslits = slitmask.getData().max()
+            nslits = int(slitmask.getData().max())
             slitmask.setProperty("nslits", nslits)
         if (slitmask.hasProperty("regions")):
             (ylos, yhis, slitx, slitw) = slitmask.getProperty("regions")

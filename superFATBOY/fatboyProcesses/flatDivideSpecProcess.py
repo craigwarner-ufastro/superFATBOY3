@@ -628,7 +628,7 @@ class flatDivideSpecProcess(fatboyProcess):
                     return
                 slitmask = calibs['slitmask']
             if (not slitmask.hasProperty("nslits")):
-                slitmask.setProperty("nslits", slitmask.getData().max())
+                slitmask.setProperty("nslits", int(slitmask.getData().max()))
             nslits = int(slitmask.getProperty("nslits"))
             if (self._fdb.getGPUMode()):
                 #Divide and replace low/high pixels on GPU

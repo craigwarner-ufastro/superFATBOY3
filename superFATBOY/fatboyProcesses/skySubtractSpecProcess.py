@@ -41,7 +41,7 @@ class skySubtractSpecProcess(fatboyProcess):
                 #FDU will be disabled in execute
                 return None
             if (not slitmask.hasProperty("nslits")):
-                slitmask.setProperty("nslits", slitmask.getData(force_cpu=True).max())
+                slitmask.setProperty("nslits", int(slitmask.getData(force_cpu=True).max()))
             nslits = slitmask.getProperty("nslits")
             if (slitmask.hasProperty("regions")):
                 (ylos, yhis, slitx, slitw) = slitmask.getProperty("regions")
@@ -127,7 +127,7 @@ class skySubtractSpecProcess(fatboyProcess):
                 #FDU will be disabled in execute
                 return None
             if (not slitmask.hasProperty("nslits")):
-                slitmask.setProperty("nslits", slitmask.getData(force_cpu=True).max())
+                slitmask.setProperty("nslits", int(slitmask.getData(force_cpu=True).max()))
             nslits = slitmask.getProperty("nslits")
             if (slitmask.hasProperty("regions")):
                 (ylos, yhis, slitx, slitw) = slitmask.getProperty("regions")
@@ -1235,7 +1235,7 @@ class skySubtractSpecProcess(fatboyProcess):
                 #FDU will be disabled in execute
                 return None
             if (not slitmask.hasProperty("nslits")):
-                slitmask.setProperty("nslits", slitmask.getData(force_cpu=True).max())
+                slitmask.setProperty("nslits", int(slitmask.getData(force_cpu=True).max()))
             nslits = slitmask.getProperty("nslits")
             if (slitmask.hasProperty("regions")):
                 (ylos, yhis, slitx, slitw) = slitmask.getProperty("regions")

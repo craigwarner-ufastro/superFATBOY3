@@ -1737,7 +1737,7 @@ def extract2DFromImageWithSlitmask(image, slitmask, slitlet=1, segment=1, n_segm
     else:
         yhis = [fdu.getShape()[1]]
     if (not slitmask.hasProperty("nslits")):
-        slitmask.setProperty("nslits", slitmask.getData().max())
+        slitmask.setProperty("nslits", int(slitmask.getData().max()))
     nslits = slitmask.getProperty("nslits")
     #Use helper method to all ylo, yhi for each slit in each frame
     (ylos, yhis, slitx, slitw) = findRegions(slitmask.getData(), nslits, fdu, gpu=False)
