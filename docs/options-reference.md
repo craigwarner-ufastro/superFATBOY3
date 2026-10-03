@@ -2,7 +2,7 @@
 
 *[Docs home](README.md)*
 
-**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.4.
+**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.6.
 Run `superFatboy3.py -list` yourself for the live list, or regenerate this file with
 `python3 docs/gen_options_reference.py`. For prose descriptions of what each process does, see the
 [process guide](processes/README.md).
@@ -914,7 +914,7 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `create_calib_only` | `no` |  |
 | `debug_mode` | `no` | Show plots of each slitlet and print out debugging information. |
 | `fit_order` | `3` | Order of polynomial to use to fit wavelength solution. Recommended value = 3. |
-| `line_list` | `None` |  |
+| `line_list` | `None` | ASCII file containing line wavelengths and relative intensities. Optional 3rd column contains flag of -1 for blended lines that should not be used in final fit. |
 | `max_bright_line_separation` | `None` | Maximum separation in pixels for any two bright lines to be used in matching up 3 brightest. Used when data is nonlinear. |
 | `max_shift_tolerance` | `None` | Maximum tolerance in pixels for the shift between the initial guess as to a lines position and the peak of the cross-correlation between data and dummy spectrum. Cross-correlation window is 50 pixels wide for reference. Suggested value 15 to 20 if extraneous lines in line list |
 | `max_wavelength` | `18500` | Maximum wavelength of data coverage, for use in constructing "dummy" spectrum. |
@@ -931,13 +931,15 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `slitlets_to_write_plots` | `None` | Set to a list - 3,5,7 - to plot only certain slitlets |
 | `use_arclamps` | `no` | no = use master "clean sky", yes = use master arclamp |
 | `use_initial_guess_on_fail` | `no` | Use the initial guess to the wavelength solution if a solution cannot be found. |
-| `wavecal_blind_scale_range` | `0.5,2` | Range of scales searched by the blind fallback, as factors of wavelength_scale_guess |
-| `wavecal_fallback` | `neighbor,blind` | If the 3 brightest lines cannot be matched with wavelength_scale_guess and min/max_wavelength, retry with these guesses, in order (comma-separated, or none): neighbor = the solution of an already calibrated slitlet, shifted by cross-correlating the two 1-d cuts; blind = a search over scales (wavecal_blind_scale_range times the guess) and all zero points, counting how many bright peaks land on line-list lines |
+| `wavecal_blind_scale_range` | `0.5,2` | Range of scales searched by the pattern and blind fallbacks, as factors of wavelength_scale_guess |
+| `wavecal_fallback` | `learned,neighbor,trend,pattern,blind` | If the 3 brightest lines cannot be matched with wavelength_scale_guess and min/max_wavelength (or the solution is graded wavecal_retry_grade or worse), try these guesses, in order (comma-separated, or none).  Each uses line intensities measured in the calibrated slitlets when there are any.  learned = the configured guess with those measured intensities; neighbor = the solution of a calibrated slitlet covering the same range, shifted by cross-correlating the 1-d cuts; trend = predicted from the calibrated slitlets on either side (orders, e.g. MIRADAS); pattern = matching the spacing ratios of neighboring bright lines (no intensities); blind = cross-correlation over scales and zero points.  A solution from a fallback is kept only if graded satisfactory or better with enough lines. |
 | `wavecal_quality_thresholds` | `0.1,0.2,0.3,0.4` | RMS of each wavelength fit in PIXELS separating excellent, good, satisfactory, marginal and poor (printed per slitlet, in the qa_*.dat file and the WCQUAL header keyword) |
+| `wavecal_retry_grade` | `poor` | Once all slitlets have been tried, try the wavecal_fallback guesses again for slitlets that failed or were graded this or worse (excellent, good, satisfactory, marginal, poor, or none = only failures); a new solution replaces the old one only if it is clearly better. |
 | `wavelength_calibration_file` | `None` | An XML file with wavelength calibration info for the image as a whole or for each order individually. Any options can be passed as attributes of <dataset> tag And <order> subtag, which also has optional attribute "slitlet", which refers to index in slitmask |
+| `wavelength_fit_function` | `polynomial` | Function fit to the lines: polynomial, legendre or chebyshev (of order fit_order).  The same functions of pixel, so PORDER/PCOEFF still hold the equivalent polynomial; legendre/chebyshev also write WCFUNC and their own coefficients NCOEFF_i (MOS: WCFUNxx, NCFi_Sxx), pixels 0..WCXMAX mapped to [-1,1]. |
 | `wavelength_line_1` | `None` | The wavelength (in output units) of a particular line, for use in constructing "dummy" spectrum. |
 | `wavelength_line_2` | `None` | The wavelength (in output units) of a particular line, for use in constructing "dummy" spectrum. |
-| `wavelength_line_separation` | `None` |  |
+| `wavelength_line_separation` | `None` | The separation in pixels between line_1 and line_2, for use in constructing "dummy" spectrum. |
 | `wavelength_scale_guess` | `None` | Initial guess of linear wavelength scale, for use in constructing "dummy" spectrum. Can also be space delmited list of polynomail coefficients, starting with linear term. |
 | `write_calib_output` | `no` |  |
 | `write_noisemaps` | `no` |  |

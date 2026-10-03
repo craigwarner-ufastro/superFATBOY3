@@ -404,8 +404,10 @@ of known wavelengths and relative intensities. The heart of the algorithm:
 | `min_intensity_percent` | `0.5` | Ignore lines fainter than this percent of the brightest |
 | `use_initial_guess_on_fail` | `no` | If a solution cannot be found, fall back to the initial guess rather than skipping the slitlet |
 | `slitlets_to_debug`, `slitlets_to_write_plots` | `None` | Restrict diagnostics to these slitlets, for example `3,5,7` |
-| `wavecal_fallback` | `neighbor,blind` | When the 3 brightest lines can't be matched with the configured guess, retry with these, in order (or `none`): **neighbor** = the solution of an already calibrated slitlet, shifted by cross-correlating the two 1-d cuts (MOS); **blind** = cross-correlate the cut with the line list over a range of scales and every zero point (central half of the cut first, where a linear guess holds even for strongly nonlinear dispersion), then check how many bright peaks land on line-list lines. A solution reached this way is kept only if it grades satisfactory or better with at least max(2(order+1), 8) lines; otherwise the slitlet is reported as failed rather than given a wrong solution. |
-| `wavecal_blind_scale_range` | `0.5,2` | Scales searched by the blind fallback, as factors of `wavelength_scale_guess` |
+| `wavecal_fallback` | `learned,neighbor,trend,pattern,blind` | Other starting guesses, tried in this order when the 3 brightest lines can't be matched with the configured guess, or (second pass) when the solution is graded `wavecal_retry_grade` or worse; `none` turns them off. See **Fallbacks and the second pass** below. |
+| `wavecal_retry_grade` | `poor` | Once every slitlet has been tried, slitlets that failed or were graded this or worse are tried again with all the fallbacks (`none`: only failed ones) |
+| `wavecal_blind_scale_range` | `0.5,2` | Scales searched by the pattern and blind fallbacks, as factors of `wavelength_scale_guess` |
+| `wavelength_fit_function` | `polynomial` | `polynomial`, `legendre` or `chebyshev`, of order `fit_order` (see **Fit functions** below) |
 | `wavecal_quality_thresholds` | `0.1,0.2,0.3,0.4` | RMS of each fit in **pixels** separating excellent / good / satisfactory / marginal / poor |
 | `write_plots` | `no` | Save QA plots as PNG |
 
@@ -423,10 +425,55 @@ Any option can be given as an attribute of `<dataset>` (applies to all) or of `<
 
 **Quality report.** Every slitlet/segment prints its RMS in wavelength units and in pixels (each residual divided by the local dispersion), a grade (excellent < 0.1 px < good < 0.2 px < satisfactory < 0.3 px < marginal < 0.4 px < poor, see `wavecal_quality_thresholds`), the number of lines used and the fraction of the cut they span (a warning below 50%: the solution is extrapolated). A summary line counts the grades and failures for the frame. The same numbers are in `wavelengthCalibrated/qa_<frame>.dat` (columns RMS, RMS px, quality, coverage %, and a row with the reason for every failed slitlet) and in the header: `WCRMS`, `WCRMSPX`, `WCQUAL`, `WCNLINES` for a single solution, `WCRMSxx`, `WCRPXxx`, `WCQULxx`, `WCNLNxx` per slitlet.
 
+**Fallbacks and the second pass.** Matching the 3 brightest lines depends on the configured guess and on the line
+list's relative intensities, which are often wrong for a given lamp and instrument. When it fails, these guesses are
+tried in the order of `wavecal_fallback`, each building a new template and redoing the match and the fit:
+
+- **learned**: the configured guess, with line intensities **measured in the slitlets already calibrated** (each
+  calibrated cut's peak at every line-list wavelength, put on the list's scale and median-combined) instead of the
+  list's.
+- **neighbor**: the solution of a calibrated slitlet, shifted by cross-correlating the two 1-d cuts. Only slitlets whose
+  wavelength range overlaps this slitlet's configured range are used, so for MIRADAS (every slitlet a different order,
+  with different lines) a neighboring order is never used as if it covered the same lines.
+- **trend**: the solution predicted from the calibrated slitlets on either side (the wavelength at 9 points along the
+  cut fit against slitlet number, using the 6 nearest). This is the one for orders: MIRADAS wavelengths change smoothly
+  from order to order. It needs 3 calibrated slitlets.
+- **pattern**: no intensities at all: the ratios of the spacings of groups of 3 neighboring bright peaks don't depend on
+  the scale, so they are compared with the line list's to vote for a scale and wavelength. Good for sparse and
+  moderately dense lists (KAST, OSIRIS, Xe, OH sky); with very dense lists (LUCI NeArXe arcs, MIRADAS UArNe) the votes
+  are swamped by chance and it finds nothing (it does not find something wrong).
+- **blind**: cross-correlation with the line list over the range of scales and all zero points.
+
+Pattern and blind candidates are judged by how many peaks land on line-list lines compared with what chance would give
+for that list's density, so a dense list is not mistaken for a match. A solution from any fallback is kept only if it is
+graded satisfactory or better with at least max(2(order+1), 8) lines: a wrong guess can still match 3 lines in a dense
+list, and is then rejected rather than used.
+
+Once every slitlet has been tried, a **second pass** gives the slitlets that failed, or were graded `wavecal_retry_grade`
+(default poor) or worse, every fallback again, now with guesses from all calibrated slitlets on both sides. A new
+solution replaces the old one only if it is clearly better (RMS under 80% with at least 90% as many lines, or 1.5 times
+the lines with no worse RMS). The log says which slitlets were replaced and with which guess. On the test data: MIRADAS SOS order 2 (a
+wrong first match, 3.3 px) and order 1 are replaced by trend solutions that continue the order-to-order progression
+(0.08 and 0.14 px); LUCI arclamp slitlet 10 (wrong by 100 A at the blue end) by a solution with measured intensities
+that agrees with the OH solution; data that calibrated well before are unchanged.
+
+**Measured line intensities.** The intensities measured in the calibrated slitlets are also written to
+`wavelengthCalibrated/measured_lines_<frame>.dat`, in the line-list format (wavelength, measured intensity, flag,
+#list intensity, number of slitlets). Lines that are in range but not seen come out near 0. Use them to build a line list
+that matches your lamp or sky and instrument, with `makeLineList.py -m` (see [Line lists](../instruments.md#making-a-line-list-makelinelistpy)).
+
+**Fit functions.** `wavelength_fit_function = legendre` or `chebyshev` fits that series instead of a power series. Of
+the same order they are the same functions of pixel, so the solution is the same (checked to 1e-11 A, and the existing
+fit converges to the same answer up to order 9); what they add is a well-conditioned set of coefficients. The header
+still holds the equivalent power series in `PORDER`/`PCOEFF_i` (`PCFi_Sxx` per slitlet), so everything that reads those
+is unchanged, plus `WCFUNC` (the function), `WCXMAX` and `NCOEFF_i`, the native coefficients with pixels 0 to `WCXMAX`
+mapped to [-1, 1] (per slitlet `WCFUNxx`, `WCXMXxx`, `NCFi_Sxx`; per segment with `HIERARCH`). In Python:
+`numpy.polynomial.Legendre(coeffs, domain=[0, WCXMAX])(pixel)`.
+
 **Failing cleanly.** An unexpected error in one slitlet or segment is logged (with a traceback in the log) and that slitlet skipped; the rest of the frame is calibrated as usual.
 
 **When it reports `Could not match 3 brightest lines ... Skipping order!`** that slitlet had too few usable lines (faint or lineless), and the algorithm gave up on it gracefully; the rest are unaffected. If
-*every* slitlet or order fails, check `wavelength_scale_guess` and `min_wavelength` / `max_wavelength`, and the line list itself: the bright lines in the data must be in the list (the Xe list in `xml/xenon_optical.dat`, for example, has no lines between 4481 and 4844 Å, where the strongest blue Xe I lines are).
+*every* slitlet or order fails, check `wavelength_scale_guess` and `min_wavelength` / `max_wavelength`, and the line list itself: the bright lines in the data must be in the list. (The NIST Handbook xenon list, for example, has no Xe I lines between 4481 and 4734 Å, where a xenon arc's brightest blue lines are; `Xenon_optical_air.dat` adds them.)
 
 Output: `wavelengthCalibrated/wc_*.fits`, with the solution coefficients in the FITS header.
 

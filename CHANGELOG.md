@@ -266,6 +266,21 @@ the matching section here. New options are listed with their default.
   (2.3.43)
 
 ### wavelengthCalibrate
+- Starting guesses beyond the configured one (`wavecal_fallback`, now `learned,neighbor,trend,pattern,blind`), each
+  redoing the template, the 3-line match and the fit (`tryWavelengthGuess`): **learned** = line intensities measured in
+  the calibrated slitlets; **neighbor** = a calibrated slitlet's polynomial shifted by cross-correlation, only if its
+  range overlaps this slitlet's (MIRADAS orders hold different lines); **trend** = predicted from the slitlets on either
+  side (orders); **pattern** = spacing ratios of bright-peak triplets, no intensities; **blind** as before. Pattern/blind
+  candidates are scored against chance for the list's density (`lineMatchSignificance`). The best acceptable solution of
+  the first method that gives one is kept. (2.4.6)
+- Second pass (`wavecal_retry_grade`, default poor): once all slitlets are done, failed or poor ones try every fallback
+  again with all calibrated slitlets available; a solution replaces the first one only if clearly better. (2.4.6)
+- `measured_lines_<frame>.dat`: line intensities measured in the calibrated slitlets, in line-list format. (2.4.6)
+- `wavelength_fit_function` = polynomial|legendre|chebyshev; PCOEFF keeps the equivalent power series, plus `WCFUNC`,
+  `WCXMAX`, `NCOEFF_i` (`WCFUNxx`, `WCXMXxx`, `NCFi_Sxx`). Same solutions (same function space). (2.4.6)
+- The 3-line match + growth + fit is now `solveFromMatch()` and the bright-line search `findDataLines()` (verbatim; logs
+  identical). Failed wc-file orders (no line list / scale guess) now keep the per-slitlet lists aligned. `line_list` and
+  `wavelength_line_separation` had no/misnamed `-list` help. (2.4.6)
 - QA for every slitlet/segment: RMS in wavelength units and pixels, a grade (new `wavecal_quality_thresholds`,
   default 0.1/0.2/0.3/0.4 px), lines used and the fraction of the cut they span; a summary per frame; new
   columns in `qa_*.dat` with a row for every failed slitlet; header keywords `WCRMS`/`WCRMSPX`/`WCQUAL`/

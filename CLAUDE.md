@@ -205,7 +205,25 @@ for kernel `D` state before assuming a bug).
   prints), then rerun `python3 docs/gen_options_reference.py` and describe it in the matching
   `docs/processes/*.md` page. Algorithmic changes also get a note in that page.
 
-## wavelengthCalibrate audit round 2 (2026-10-03, v2.4.4)
+## wavelengthCalibrate round 3: fallbacks, second pass, line lists (2026-10-03, v2.4.5-2.4.6)
+
+- **Offline bench** (scratchpad `wcbench.py` pattern): every finished run's `spec_*.dat` (lambda, 1-d cut) + `resid_*.dat`
+  (lines used) is a truth set; build the process with `W('wavelengthCalibrate')` + `setDefaultOptions()` + `parseXML`
+  of the XML's process node (run from `xml/` so wc files resolve), then call `tryWavelengthGuess` per guess method.
+  Compare solutions only over the span of the truth's lines - outside it both extrapolate (OSIRIS "16 px wrong" was
+  that). 10 datasets, ~180 cuts: no fallback accepted a wrong solution (gate: satisfactory+ and >= max(2(order+1),8) lines).
+- What worked / didn't: neighbor must pass the neighbor's **polynomial** shifted (a linear guess is 28 px off mid-cut on
+  LUCI: 10/24 -> 20/24). Pattern match: triplets + 1.5 px + unweighted votes + linear verification scored at 1.5 and
+  4 px against chance is the best variant; a fitted-quadratic verification overfits chance coincidences (accepted a
+  10 px-wrong OSIRIS solution), quadruplets / 1/N vote weights / per-scale contrast all did worse. Pattern/blind find
+  nothing on dense lists (LUCI NeArXe, MIRADAS UArNe) - learned/neighbor/trend cover those.
+- **Poor solutions must not feed trend/neighbor/learned** (MIRADAS SOS wrong order 2 poisoned order 1's trend); and try
+  each guess with measured intensities, then the list's.
+- Pipeline results: SOS orders 1-2 and LUCI arc slit 10 fixed by the second pass; everything else log-identical
+  (first pass byte-identical; second-pass lines appended).
+- NIST ASD query (makeLineList.py): `format=1`, `show_av=3` = vacuum; needs a User-Agent (403 otherwise); columns
+  differ by spectrum (parse by header). Strong blue Xe I lines have no NIST intensity; Handbook omits them.
+
 
 - **QA**: every fit prints RMS in wavelength units and px (residual / local dispersion from the polynomial
   derivative), a grade (`wavecal_quality_thresholds`), lines used, coverage of the cut; per-frame summary line;

@@ -1448,48 +1448,13 @@ class wavelengthCalibrateProcess(fatboyProcess):
         return (dlines, dpeak, dwave)
     #end findTemplateLines
 
-    #Guess the wavelength range of this 1-d cut from an already calibrated slitlet/segment: cross-correlate the
-    #two cuts to find the pixel shift between them and map the neighbor's solution across.  Uses the calibrated
-    #cut that correlates best (nearest slitlet first on ties).  Returns (lamLo, lamHi, scale, label) or None.
-    def neighborWavelengthGuess(self, oned, solvedCuts, j, seg):
-        best = None
-        a = np.asarray(oned, dtype=np.float64)
-        a = a-np.median(a)
-        na = math.sqrt(np.sum(a*a))
-        if (na == 0):
-            return None
-        npix = len(a)
-        for (sj, sseg, scut, scoeffs, sorder) in sorted(solvedCuts, key=lambda t: (abs(t[0]-j), abs(t[1]-seg))):
-            b = np.asarray(scut, dtype=np.float64)
-            if (len(b) != npix):
-                continue
-            b = b-np.median(b)
-            nb = math.sqrt(np.sum(b*b))
-            if (nb == 0):
-                continue
-            ccor = np.correlate(a, b, mode='full')/(na*nb)
-            k = int(np.argmax(ccor))
-            if (best is None or ccor[k] > best[0]):
-                best = (ccor[k], k-(npix-1), scoeffs, sorder, sj, sseg)
-        if (best is None or best[0] < 0.3):
-            return None
-        (cmax, lag, scoeffs, sorder, sj, sseg) = best
-        #feature at pixel x here sits at x-lag in the calibrated cut
-        lam = polyFunction(scoeffs, np.array([0-lag, npix-1-lag], dtype=np.float64), sorder)
-        mid = (npix-1)/2.0-lag
-        scale = 0.0
-        for i in range(1, sorder+1):
-            scale += i*scoeffs[i]*mid**(i-1)
-        label = "calibrated slitlet "+str(sj+1)+" (shift "+str(lag)+" px, correlation "+formatNum(cmax)+")"
-        return (min(lam), max(lam), scale, label)
-    #end neighborWavelengthGuess
-
     #Blind search for a linear solution when the configured scale and range don't match: for each scale on a
     #log grid within wavecal_blind_scale_range times the guess, cross-correlate the cut with the line list
     #(intensities compressed to the 1/4 power, since line-list intensities are often unreliable) to find the
     #best zero point, then verify the best few candidates by how many of the brightest peaks land within 1.5 px
-    #of a line-list line.  Not limited to min/max_wavelength.  Returns (lamLo, lamHi, scale, label) or None.
-    def blindWavelengthSearch(self, oned, masterWave, masterFlux, scaleGuess, gaussWidth, fdu):
+    #of a line-list line, judged against chance coincidences (lineMatchSignificance).  Not limited to
+    #min/max_wavelength.  Returns a guess dict or None.
+    def blindWavelengthSearch(self, oned, masterWave, masterFlux, scaleGuess, gaussWidth, fdu, label=""):
         from scipy.signal import fftconvolve
         try:
             (rlo, rhi) = [float(v) for v in str(self.getOption("wavecal_blind_scale_range", fdu.getTag())).split(",")]
@@ -1507,10 +1472,10 @@ class wavelengthCalibrateProcess(fatboyProcess):
         if (len(lines) < 5):
             return None
         #brightest peaks in the cut, for verification
-        cand = np.where((y[1:-1] > y[:-2]) & (y[1:-1] >= y[2:]) & (y[1:-1] > 0))[0]+1
-        if (len(cand) < 4):
+        (peaks, heights) = self.findCutPeaks(y, 15)
+        if (len(peaks) < 5):
             return None
-        peaks = np.sort(cand[np.argsort(y[cand])[::-1][:15]]).astype(np.float64)
+        sortedLines = np.sort(lines)
         width = max(gaussWidth, 1.0)
         kern = np.exp(-0.5*(np.arange(-int(5*width), int(5*width)+1)/width)**2)
         sign = 1.0 if (scaleGuess > 0) else -1.0
@@ -1538,80 +1503,1088 @@ class wavelengthCalibrateProcess(fatboyProcess):
             return None
         results.sort(key=lambda r: -r[0])
         #verify the best distinct candidates by line-list matches of the brightest peaks
-        best = None
         tried = []
+        verified = []
         for (cmax, sc, lam0) in results:
             if (any(abs(sc-ts) < 0.01*abs(sc) and abs(lam0-tl) < 10*abs(sc) for (ts, tl) in tried)):
                 continue
             tried.append((sc, lam0))
-            lam = lam0+sc*peaks
-            dist = np.array([np.min(np.abs(lines-l)) for l in lam])/abs(sc)
-            nmatch = int((dist < 1.5).sum())
-            if (best is None or nmatch > best[0]):
-                best = (nmatch, cmax, sc, lam0)
+            (nmatch, z) = self.scoreLinearCandidate(peaks, lam0, sc, sortedLines)
+            if (nmatch >= 3 and z >= 4):
+                verified.append((z, nmatch, sc, lam0))
             if (len(tried) >= 8):
                 break
-        (nmatch, cmax, sc, lam0) = best
-        if (nmatch < 4 or nmatch < 0.3*len(peaks)):
-            print("wavelengthCalibrateProcess::blindWavelengthSearch> No convincing solution: best had "+str(nmatch)+" of "+str(len(peaks))+" bright peaks on line-list lines (scale "+formatNum(sc)+")")
-            self._log.writeLog(__name__, "No convincing blind solution: best had "+str(nmatch)+" of "+str(len(peaks))+" bright peaks on line-list lines (scale "+formatNum(sc)+")")
+        if (len(verified) == 0):
+            print("wavelengthCalibrateProcess::blindWavelengthSearch> No convincing solution"+label)
+            self._log.writeLog(__name__, "No convincing blind solution"+label)
             return None
-        lam = lam0+sc*np.array([0, npix-1], dtype=np.float64)
-        label = "blind search ("+str(nmatch)+" of "+str(len(peaks))+" bright peaks on line-list lines, correlation "+formatNum(cmax)+")"
-        return (min(lam), max(lam), sc, label)
+        #the most significant few; the full match and fit decide
+        guesses = []
+        for (z, nmatch, sc, lam0) in sorted(verified, key=lambda v: -v[0])[:3]:
+            lam = lam0+sc*np.array([0, npix-1], dtype=np.float64)
+            glabel = "blind search ("+str(nmatch)+" matches, significance "+formatNum(z)+")"+label
+            guesses.append({"lamLo": min(lam), "lamHi": max(lam), "scale": sc, "label": glabel, "pad": 0.15})
+        return guesses
     #end blindWavelengthSearch
 
-    #The 3 brightest lines could not be matched with the configured scale and wavelength range: try better
-    #guesses (a calibrated neighboring slitlet, then a blind search - see wavecal_fallback) and rerun the same
-    #match on a template built over each predicted range.  Returns None, or the match results with the new
-    #range and template: (currLines, dumPeak, idx, min_wavelength, max_wavelength, scale, dummySize, dummyFlux,
-    #dummyWave, dummyOrder, fluxScale, label).
-    def retryMatch3BrightestLines(self, fdu, j, seg, oned, solvedCuts, masterWave, masterFlux, wclines, wccentroids, gaussWidth, scaleGuess, n_brightest_lines, usePlot, pass_name):
-        methods = [m.strip().lower() for m in str(self.getOption("wavecal_fallback", fdu.getTag())).split(",")]
+    #Find the n_brightest_data brightest lines in the 1-d cut (Gaussian centroids, widths and peaks).
+    #Returns (wclines, wccentroids, lineParams, lineWidths, linePeaks).
+    def findDataLines(self, oned, gaussWidth, n_brightest_data, bl_min, bl_max, min_separation):
+        #Find n_brightest_data (default 3) brightest lines in image, n_brightest_lines (default 14) brightest in template
+        wclines = []
+        wccentroids = [] #Keep track of actual centroids of lines for calculating wavelength scale
+        lineParams = [] #Keep track of Gaussian parameters for each line
+        refCut = oned.copy()
+        lineWidths = []
+        linePeaks = []
+        #Only look from 100 to length-100
+        #Only look from search_min to search_max - defaults 100, -100
+        refCut[0:bl_min] = 0
+        refCut[bl_max:] = 0
+        #Use 3 passes to find and fit brightest line in refCut
+        #Then zero out 21 pixels centered around line
+        for i in range(n_brightest_data):
+            blref = np.where(refCut == np.max(refCut))[0][0]
+            if (blref < bl_min or blref >= bl_max % len(refCut)):
+                refCut[blref] = refCut.min()-1
+                continue
+            keepLine = False
+            while (not keepLine):
+                keepLine = True
+                for k in range(len(wclines)):
+                    if (abs(blref-wclines[k]) < min_separation):
+                        #Too close to another line
+                        keepLine = False
+                if (not keepLine):
+                    #Fit Gaussian and remove line 8/29/19
+                    tempCut = refCut[max(blref-10,0):blref+11]**2
+                    p = np.zeros(4, dtype=np.float64)
+                    p[0] = np.max(tempCut)
+                    p[1] = 10
+                    p[2] = gaussWidth/math.sqrt(2)
+                    p[3] = gpu_arraymedian(tempCut)
+                    try:
+                        lsq = leastsq(gaussResiduals, p, args=(np.arange(len(tempCut), dtype=np.float64), tempCut))
+                    except Exception as ex:
+                        #Should not happen; use initial guess
+                        lsq = [p]
+                    p = np.zeros(4)
+                    p[0] = math.sqrt(abs(lsq[0][0]))
+                    p[1] = lsq[0][1]+blref-10
+                    p[2] = abs(lsq[0][2]*math.sqrt(2))
+                    refCut -= gaussFunction(p, np.arange(len(refCut), dtype=np.float32))
+                    refCut[refCut < 0] = 0
+                    #refCut[blref-2:blref+3] = 0
+                    blref = np.where(refCut == np.max(refCut))[0][0]
+
+            #Centroid line for subpixel accuracy
+            #Square data to ensure bright line dominates fit
+            tempCut = refCut[max(blref-10,0):blref+11]**2
+            p = np.zeros(4, dtype=np.float64)
+            p[0] = np.max(tempCut)
+            p[1] = 10
+            p[2] = gaussWidth/math.sqrt(2)
+            p[3] = gpu_arraymedian(tempCut)
+            try:
+                lsq = leastsq(gaussResiduals, p, args=(np.arange(len(tempCut), dtype=np.float64), tempCut))
+            except Exception as ex:
+                #Error centroiding, continue to next line
+                refCut -= gaussFunction(p, np.arange(len(refCut), dtype=np.float32))
+                refCut[refCut < 0] = 0
+                continue
+            mcor = lsq[0][1]
+            wccentroids.append(blref+mcor-10) #Actual centroid
+            wclines.append(int(blref+mcor-9.5)) #Rounded to nearest pixel
+            #Check each component's width rather than the average
+            currWidth = abs(lsq[0][2]*math.sqrt(2))
+            if (currWidth > 2.5):
+                currWidth = 1.5
+            elif (currWidth > 2):
+                currWidth = 1.75
+            lineWidths.append(currWidth)
+            #Add line to lineParams
+            p = np.zeros(4)
+            p[0] = math.sqrt(abs(lsq[0][0]))
+            p[1] = lsq[0][1]+blref-10
+            p[2] = abs(lsq[0][2]*math.sqrt(2))
+            #subtract Gaussian fitted to line rather than zeroing out 21 pixel
+            #box 8/29/19.  Also ensure no negative points
+            refCut -= gaussFunction(p, np.arange(len(refCut), dtype=np.float32))
+            refCut[refCut < 0] = 0
+            p[2] = currWidth
+            linePeaks.append(math.sqrt(abs(lsq[0][0])))
+            #Keep track of Gaussian params for line
+            lineParams.append(p)
+            #zero out 21 pixel box centered at this line
+            #refCut[max(blref-10,0):blref+11] = 0
+        return (wclines, wccentroids, lineParams, lineWidths, linePeaks)
+    #end findDataLines
+
+    #Starting from 3 matched lines, find the other lines in the cut by cross-correlating with the template,
+    #then fit the wavelength solution with iterative sigma clipping.  Returns a dict with the matched lines
+    #(reflines = pixel centroids, wlines = wavelengths, lineParams), the fit (coeffs, fit_order, residLines,
+    #norig) and the refined gaussWidth, fluxScale, scale and obsSpec.  coeffs (a nonlinear guess) is refined in place.
+    def solveFromMatch(self, fdu, oned, currLines, dumPeak, idx, wclines, wccentroids, lineParams, lineWidths, linePeaks, dummySize, dummyFlux, dummyWave, dummyOrder, fluxScale, masterWave, masterFlux, masterFlag, gaussWidth, scale, nonlinear, coeffs, min_wavelength, max_wavelength, min_lines_nonlinear, min_threshold, min_intensity_pct, use_tolerance, shift_tol, fit_order, pass_name):
+        #reflines = pixel value in image, wlines = wavelength taken from masterWave
+        reflines = []
+        wlines = []
+        #idx is already sorted for wavelength so confusion as to < > comparisons with pos/neg values
+        wclines = np.array(wclines)[idx]
+        wccentroids = np.array(wccentroids)[idx]
+        lineParams = np.array(lineParams)[idx].tolist()
+        sumWidth = np.array(lineWidths)[idx].sum()
+        sumPeak = np.array(linePeaks)[idx].sum()
+
+        #oned = one-d cut of image; obsSpec = gaussians of found lines;
+        #obsFlag = flagged pixels; resid = used for finding next line
+        obsSpec = np.zeros(len(oned))
+        resid = np.zeros(len(oned))
+        obsFlag = np.ones(len(oned))
+        #Add actual wavelengths of 3 lines to wlines np.array
+        for i in range(len(currLines)):
+            #Get wavelgnth from masterWave -- dummyWave is now an approximation
+            #Find closest wavelength in masterWave
+            currWave =  masterWave[np.where(np.abs(masterWave-dummyWave[currLines[i]]) == np.min(np.abs(masterWave-dummyWave[currLines[i]])))][0]
+            wlines.append(currWave)
+        #Add pixel centroid of 3 lines to reflines np.array
+        for i in range(len(wclines)):
+            reflines.append(wccentroids[i])
+            #Add line to obsSpec
+            obsSpec += gaussFunction(lineParams[i], np.arange(len(obsSpec), dtype=np.float32))
+        #Refine Gaussian width, flux scale by taking average from 3 lines
+        gaussWidth = sumWidth/3.
+        maxPeak = sumPeak/3.
+        fluxScale *= sumPeak/dumPeak
+        #Refine scale, dummy arrays
+        #With 3 datapoints, use linear approximation
+        scale = (wlines[2]-wlines[0])/(reflines[2]-reflines[0])
+        p = np.zeros(2, dtype=np.float32)
+        p[0] = wlines[0]-scale*reflines[0]
+        p[1] = scale
+        try:
+            lsq = leastsq(linResiduals, p, args=(np.array(reflines), np.array(wlines)))
+            scale = lsq[0][1]
+        except Exception as ex:
+            print("wavelengthCalibrateProcess::wavelengthCalibrate> Warning: exception "+str(ex)+" while doing least squares fit to linear scale.")
+            self._log.writeLog(__name__, "exception "+str(ex)+" while doing least squares fit to linear scale.", type=fatboyLog.WARNING)
+
+        #Print and write to log the wavelengths and pixel values of these 3 lines
+        print("wavelengthCalibrateProcess::wavelengthCalibrate> Matched up brightest 3 lines "+pass_name+fdu.getFullId())
+        self._log.writeLog(__name__, "Matched up brightest 3 lines "+pass_name+fdu.getFullId())
+        for i in range(len(reflines)):
+            print("\tLine ("+str(i)+"): pixel="+formatNum(reflines[i])+", wavelength="+formatNum(wlines[i]))
+            self._log.writeLog(__name__, "Line ("+str(i)+"): pixel="+formatNum(reflines[i])+", wavelength="+formatNum(wlines[i]), printCaller=False, tabLevel=1)
+        nlines = 3
+
+        #Force arrays to be updated on first pass
+        oldnlines = 0
+        findLines = True
+        inloop = 0
+        xlo = int(max(min(reflines)-200, 50))
+        xhi = int(min(max(reflines)+200, len(oned)-51))
+        #Loop over other lines in +/- 200 px area
+
+        while (findLines and inloop < 20):
+            #Refine scale with linear approximation if new line found
+            #Do not update if nonlinear until range expands below and at least min_lines_to_refine_nonlinear_guess lines found
+            if (nlines > oldnlines):
+                #Use helper method refineWavelengthScale.  npass = 1.
+                (success, scale, dummySize, dummyWave, dummyFlux) = self.refineWavelengthScale(1, nlines, nonlinear, reflines, wlines, scale, min_wavelength, max_wavelength, dummySize, min_lines_nonlinear, coeffs)
+                if (not success):
+                    print("wavelengthCalibrateProcess::wavelengthCalibrate> Warning: Unable to refine wavelength solution "+pass_name+fdu.getFullId())
+                    self._log.writeLog(__name__, "Unable to refine wavelength solution "+pass_name+fdu.getFullId(), type=fatboyLog.WARNING)
+                #Add gaussians for each line in line list
+                dummyFlux = self.populateDummyFlux(masterFlux, masterWave, dummyWave, dummyFlux, scale, gaussWidth, wlines)
+                #Scale template
+                dummyFlux *= fluxScale
+            oldnlines = nlines
+
+            #Set up resid np.array = residuals of (oned - found lines) * obsFlag
+            resid = (oned-obsSpec)*obsFlag
+            #If peak in resid np.array is <= 2*min_intensity_pct (default 1%) of peak of brightest line, break out of loop
+            if (resid[xlo+5:xhi-4].max() <= maxPeak*min_intensity_pct*2):
+                findLines = False
+                break
+            #blref = line center of brightest line remaining in resid, rounded to nearest pixel
+            blref = np.where(resid[xlo:xhi+1] == np.max(resid[xlo+5:xhi-4]))[0][0]+xlo
+            #Edge cases - ensure peak of line found
+            if (blref-xlo < 10):
+                blref = np.where(resid[blref-5:blref+1] == np.max(resid[blref-5:blref+1]))[0][0]+blref-5
+            if (xhi-blref < 10):
+                blref = np.where(resid[blref:blref+6] == np.max(resid[blref:blref+6]))[0][0]+blref
+            if (blref-xlo < 30):
+                resid[blref-50:blref-30] = 0
+            elif (xhi-blref < 30):
+                resid[blref+30:blref+50] = 0
+            refbox = 25
+            searchbox = 25
+            templines = np.array(reflines)
+            #Find closest line in pixel space to this one to use for initial guesses
+            refline = np.where(np.abs(templines-blref) == np.min(np.abs(templines-blref)))[0][0]
+            #Find index of dummyWave closest to actual wavelength of refline
+            refIdx = np.where(np.abs(dummyWave-wlines[refline]) == np.min(np.abs(dummyWave-wlines[refline])))[0][0]
+            #Guess at index offset between oned cut and dummyFlux cut
+            xoffGuess = int(refIdx-reflines[refline])
+            refCut = resid[blref-refbox:blref+refbox+1]
+
+            if (nonlinear):
+                waveguess = polyFunction(coeffs, blref, dummyOrder)-polyFunction(coeffs, reflines[refline], dummyOrder)+dummyWave[refIdx]
+                guessIdx = np.where(np.abs(dummyWave-waveguess) == np.min(np.abs(dummyWave-waveguess)))[0][0]
+                xoffGuess = guessIdx-blref
+            if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
+                print("Line at ref pixel BLREF ", blref, "nearest line", reflines[refline], "wavelength=",wlines[refline])
+                print("\tguess at offset=", xoffGuess)
+
+            #Rejection criteria 0-6 now use helper method
+            (success, inloop, lsigma) = self.checkPrefitRejectionCriteria(fdu, blref, resid, reflines, wlines, obsFlag, inloop, refbox, searchbox, nlines, dummyWave, dummyFlux, min_threshold)
+            if (success == False):
+                continue
+
+            #Cross-correlate
+            dumCut = dummyFlux[blref-searchbox+xoffGuess:blref+searchbox+1+xoffGuess]
+            n = min(len(refCut),len(dumCut))
+            #Make sure refCut and dumCut are same length
+            refCut = refCut[:n]
+            dumCut = dumCut[:n]
+            ccor = np.correlate(refCut, dumCut, mode='same')
+            #plt.plot(refCut)
+            #plt.plot(dumCut)
+            #plt.show()
+            #plt.plot(ccor)
+            #plt.show()
+            #Fit cross correlation function with a Gaussian
+            p = np.zeros(4, dtype=np.float64)
+            p[0] = np.max(ccor)
+            p[1] = np.where(ccor == np.max(ccor))[0][0]
+            if (use_tolerance and abs(p[1]-len(ccor)//2) > shift_tol):
+                #Maybe a line in list that is not in the data?
+                #Zero out 5 pixels around max
+                ccor[max(int(p[1])-2, 0):min(int(p[1])+3, len(ccor))] = 0
+                #Examine second highest peak
+                cmax2 = np.max(ccor)
+                peak2 = np.where(ccor == np.max(ccor))[0][0]
+                if (cmax2 >= p[0]*0.25 and abs(peak2-len(ccor)//2) <= shift_tol):
+                    p[0] = cmax2
+                    p[1] = peak2
+            p[2] = gaussWidth
+            p[3] = gpu_arraymedian(ccor)
+            llo = max(0, int(p[1]-5))
+            lhi = min(len(ccor), int(p[1]+6))
+            try:
+                lsq = leastsq(gaussResiduals, p, args=(np.arange(lhi-llo, dtype=np.float64)+llo, ccor[llo:lhi]))
+            except Exception as ex:
+                #Flag and continue
+                obsFlag[blref-1:blref+2] = 0
+                continue
+            if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
+                print("\tleast squares fit to ccor pixel value=",lsq[0][1],"guess param=",p[1])
+            inloop += 1
+
+            success = self.checkPostfitRejectionCriteria(fdu, lsq, obsFlag, blref, ccor)
+            if (success == False):
+                continue
+
+            mcor = lsq[0][1]
+            #Centroided position in dummyFlux, dummyWave arrays
+            currDummy = blref+xoffGuess-mcor+searchbox
+            if (currDummy > len(dummyWave)-3 or currDummy < 2):
+                #Flag and continue
+                obsFlag[blref-1:blref+2] = 0
+                continue
+            #Centroid line for subpixel accuracy
+            #Square data to ensure bright line dominates fit
+            refCut = resid[max(blref-10,0):blref+11]**2
+            p = np.zeros(4, dtype=np.float64)
+            p[0] = np.max(refCut)
+            p[1] = 10
+            p[2] = gaussWidth/math.sqrt(2)
+            p[3] = gpu_arraymedian(refCut)
+            try:
+                lsq = leastsq(gaussResiduals, p, args=(np.arange(len(refCut), dtype=np.float64), refCut))
+            except Exception as ex:
+                #Flag and continue
+                obsFlag[blref-1:blref+2] = 0
+                continue
+            #Actual centroid of line in image, in pixel space
+            currLine = blref+lsq[0][1]-10
+            #Add line to obsSpec
+            p = np.zeros(4)
+            p[0] = math.sqrt(abs(lsq[0][0]))
+            p[1] = currLine
+            p[2] = abs(lsq[0][2]*math.sqrt(2))
+            #Common sense check of paramaters
+            if (p[0] > 1.5*np.max(resid[blref-5:blref+6]) or p[2] > 5*gaussWidth):
+                #If width or height seems weird, use actual peak vaule and gaussWidth from 3 brightest lines
+                p[0] = np.max(resid[blref-5:blref+6])
+                p[1] = blref
+                p[2] = gaussWidth
+            obsSpec += gaussFunction(p, np.arange(len(obsSpec), dtype=np.float32))
+            #Get wavelength from masterWave np.array.  Use int(currDummy) as index
+            #and find wavelength from line list closest to wavelength of dummyWave at this index.
+            currWave =  masterWave[np.where(np.abs(masterWave-dummyWave[int(currDummy)]) == np.min(np.abs(masterWave-dummyWave[int(currDummy)])))][0]
+            diff = abs(reflines[refline] - currLine)
+
+            closestLinesIndices = np.argsort(abs(templines-blref))[:2]
+            #scale from closest 2 lines
+            slocal = (wlines[closestLinesIndices[1]]-wlines[closestLinesIndices[0]])/(reflines[closestLinesIndices[1]]-reflines[closestLinesIndices[0]])
+            delta = (wlines[refline]-currWave)/slocal - (wlines[refline]-currWave)/scale
+
+            success = self.checkFinalRejectionCriteria(fdu, mcor, refbox, diff, wlines, currWave, reflines, currLine, scale, delta)
+            if (success == False):
+                obsFlag[blref-1:blref+2] = 0
+                continue
+
+            #Reset inloop np.array
+            inloop = 0
+            #Append this line's pixel centroid to reflines and wavelength to wlines and its parameters to lineParams.
+            reflines.append(currLine)
+            wlines.append(currWave)
+            lineParams.append(p)
+            print("\tLine found ("+str(nlines)+"): pixel="+formatNum(currLine)+", wavelength="+formatNum(currWave)+" (sigma = "+formatNum(lsigma)+")")
+            self._log.writeLog(__name__, "Line ("+str(nlines)+"): pixel="+formatNum(currLine)+", wavelength="+formatNum(currWave)+" (sigma = "+formatNum(lsigma)+")", printCaller=False, tabLevel=1)
+            #Increment nlines
+            nlines+=1
+            #If peak in resid np.array is <= 2*min_intensity_pct (default 1%) of peak of brightest line, break out of loop
+            if (resid[xlo+5:xhi-4].max() <= maxPeak*min_intensity_pct*2):
+                findLines = False
+
+        if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
+            print("Expanding search box...")
+        #Expand search range out incrementally until entire image reached
+        npass = 0
+        #oldnlines = nlines-1
+        while (xlo > 25 or xhi < len(oned)-26):
+            findLines = True
+            inloop = 0
+            #Incrementally expand range by 50 pixels per pass
+            xlo = int(max(min(reflines)-(250+npass*50), 25))
+            xhi = int(min(max(reflines)+(250+npass*50), len(oned)-26))
+            npass+=1
+            #Within each pass, loop over current range until found all lines in area
+            while (findLines and inloop < 25):
+                #Refine wavelength scale
+                if (nlines > oldnlines):
+                    #Use helper method refineWavelengthScale
+                    (success, scale, dummySize, dummyWave, dummyFlux) = self.refineWavelengthScale(npass, nlines, nonlinear, reflines, wlines, scale, min_wavelength, max_wavelength, dummySize, min_lines_nonlinear, coeffs)
+                    if (not success):
+                        print("wavelengthCalibrateProcess::wavelengthCalibrate> Warning: Unable to refine wavelength solution "+pass_name+fdu.getFullId())
+                        self._log.writeLog(__name__, "Unable to refine wavelength solution "+pass_name+fdu.getFullId(), type=fatboyLog.WARNING)
+                    #Add gaussians for each line in line list
+                    dummyFlux = self.populateDummyFlux(masterFlux, masterWave, dummyWave, dummyFlux, scale, gaussWidth, wlines)
+                    #Scale template
+                    dummyFlux *= fluxScale
+                oldnlines = nlines
+
+                #Set up resid np.array = residuals of (oned - found lines) * obsFlag
+                resid = (oned-obsSpec)*obsFlag
+                #If peak in resid np.array is <= min_intensity_pct (default 0.5%) of peak of brightest line, break out of loop
+                #continue to next pass in expanding range
+                if (resid[xlo+5:xhi-4].max() <= maxPeak*min_intensity_pct):
+                    findLines = False
+                    break
+                blref = np.where(resid[xlo:xhi+1] == np.max(resid[xlo+5:xhi-4]))[0][0]+xlo
+                #Edge cases - ensure peak of line found
+                if (blref-xlo < 10):
+                    blref = np.where(resid[blref-5:blref+1] == np.max(resid[blref-5:blref+1]))[0][0]+blref-5
+                if (xhi-blref < 10):
+                    blref = np.where(resid[blref:blref+6] == np.max(resid[blref:blref+6]))[0][0]+blref
+                if (xlo == 25 and blref < 75):
+                    resid[:20] = 0
+                elif (xhi == len(oned)-26 and blref > len(oned)-76):
+                    resid[-20:] = 0
+                elif (blref-xlo < 30):
+                    resid[blref-50:blref-30] = 0
+                elif (xhi-blref < 30):
+                    resid[blref+30:blref+50] = 0
+                refbox = 25
+                searchbox = 25
+                templines = np.array(reflines)
+                #Find closest line in pixel space to this one to use for initial guesses
+                refline = np.where(np.abs(templines-blref) == np.min(np.abs(templines-blref)))[0][0]
+                #Find index of dummyWave closest to actual wavelength of ref line
+                refIdx = np.where(np.abs(dummyWave-wlines[refline]) == np.min(np.abs(dummyWave-wlines[refline])))[0][0]
+                #Guess at index offset between oned cut and dummyFlux cut
+                xoffGuess = int(refIdx-reflines[refline])
+                refCut = resid[blref-refbox:blref+refbox+1]
+                if (nonlinear):
+                    waveguess = polyFunction(coeffs, blref, dummyOrder)-polyFunction(coeffs, reflines[refline], dummyOrder)+dummyWave[refIdx]
+                    guessIdx = np.where(np.abs(dummyWave-waveguess) == np.min(np.abs(dummyWave-waveguess)))[0][0]
+                    xoffGuess = guessIdx-blref
+                elif ((abs(reflines[refline]-blref) > 200 and nlines >= 8) or (abs(reflines[refline]-blref) > 100 and nlines >= 32)):
+                    #Try 2nd order guess if > 200 pixels from closest matched line and at least 8 lines matched
+                    p = np.zeros(3, dtype=np.float32)
+                    p[1] = scale
+                    lsq = leastsq(polyResiduals, p, args=(np.array(reflines), np.array(wlines), 2))
+                    waveguess = polyFunction(lsq[0], blref, 2)-polyFunction(lsq[0], reflines[refline], 2)+dummyWave[refIdx]
+                    #Find nearest line
+                    guessIdx = np.where(np.abs(dummyWave-waveguess) == np.min(np.abs(dummyWave-waveguess)))[0][0]
+                    xoffGuess = guessIdx-blref
+                    if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
+                        print("2nd order XOFF guess", lsq[0], waveguess, guessIdx, xoffGuess)
+                if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
+                    print("Line at ref pixel BLREF ", blref, "nearest line", reflines[refline], "wavelength=",wlines[refline])
+                    print("\tguess at offset=", xoffGuess)
+
+                #Rejection criteria 0-6 now use helper method
+                (success, inloop, lsigma) = self.checkPrefitRejectionCriteria(fdu, blref, resid, reflines, wlines, obsFlag, inloop, refbox, searchbox, nlines, dummyWave, dummyFlux, min_threshold)
+                if (success == False):
+                    continue
+
+                if (blref-searchbox+xoffGuess < 0):
+                    #Too close to edge!  Blank out 3 pixels and try again
+                    obsFlag[blref-1:blref+2] = 0
+                    inloop+=1
+                    continue
+
+                #Cross-correlate
+                dumCut = dummyFlux[blref-searchbox+xoffGuess:blref+searchbox+1+xoffGuess]
+                n = min(len(refCut),len(dumCut))
+                #Make sure refCut and dumCut are same length
+                refCut = refCut[:n]
+                dumCut = dumCut[:n]
+                ccor = np.correlate(refCut, dumCut, mode='same')
+                #if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
+                #  plt.plot(refCut, 'r')
+                #  plt.plot(dumCut, 'g')
+                #  plt.show()
+                #  plt.plot(ccor)
+                #  plt.show()
+                #Fit cross correlation function with a Gaussian
+                p = np.zeros(4, dtype=np.float64)
+                p[0] = np.max(ccor)
+                p[1] = np.where(ccor == np.max(ccor))[0][0]
+                p[2] = gaussWidth
+                p[3] = gpu_arraymedian(ccor)
+                llo = max(0, int(p[1]-5))
+                lhi = min(len(ccor), int(p[1]+6))
+                try:
+                    lsq = leastsq(gaussResiduals, p, args=(np.arange(lhi-llo, dtype=np.float64)+llo, ccor[llo:lhi]))
+                except Exception as ex:
+                    #Flag and continue
+                    obsFlag[blref-1:blref+2] = 0
+                    continue
+                if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
+                    print("\tleast squares fit to ccor pixel value=",lsq[0][1],"guess param=",p[1])
+                inloop += 1
+
+                success = self.checkPostfitRejectionCriteria(fdu, lsq, obsFlag, blref, ccor)
+                if (success == False):
+                    continue
+
+                mcor = lsq[0][1]
+                #Centroided position in dummyFlux, dummyWave arrays
+                currDummy = blref+xoffGuess-mcor+searchbox
+                #Centroid line for subpixel accuracy
+                #Square data to ensure bright line dominates fit
+                refCut = resid[max(blref-10,0):blref+11]**2
+                p = np.zeros(4, dtype=np.float64)
+                p[0] = np.max(refCut)
+                p[1] = 10
+                p[2] = gaussWidth/math.sqrt(2)
+                p[3] = gpu_arraymedian(refCut)
+                try:
+                    lsq = leastsq(gaussResiduals, p, args=(np.arange(len(refCut), dtype=np.float64), refCut))
+                except Exception as ex:
+                    #Flag and continue
+                    obsFlag[blref-1:blref+2] = 0
+                    continue
+                currLine = blref+lsq[0][1]-10
+                #Add line to obsSpec
+                p = np.zeros(4)
+                p[0] = math.sqrt(abs(lsq[0][0]))
+                p[1] = currLine
+                p[2] = abs(lsq[0][2]*math.sqrt(2))
+                #Common sense check of paramaters
+                if (p[0] > 1.5*np.max(resid[blref-5:blref+6]) or p[2] > 5*gaussWidth):
+                    #If width or height seems weird, use actual peak vaule and gaussWidth from 3 brightest lines
+                    p[0] = np.max(resid[blref-5:blref+6])
+                    p[1] = blref
+                    p[2] = gaussWidth
+                obsSpec += gaussFunction(p, np.arange(len(obsSpec))+0.)
+                if (int(currDummy-1) < 0 or int(currDummy+1) > len(dummyWave)):
+                    #Out of range!
+                    if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
+                        print("FAIL X - out of range")
+                    continue
+                #Get wavelength from masterWave np.array.  Use int(currDummy) as index
+                #and find wavelength from line list closest to wavelength of dummyWave at this index.
+                currWave =  masterWave[np.where(np.abs(masterWave-dummyWave[int(currDummy)]) == np.min(np.abs(masterWave-dummyWave[int(currDummy)])))][0]
+                diff = abs(reflines[refline] - currLine)
+
+                closestLinesIndices = np.argsort(np.abs(templines-blref))[:2]
+                #scale from closest 2 lines
+                slocal = (wlines[closestLinesIndices[1]]-wlines[closestLinesIndices[0]])/(reflines[closestLinesIndices[1]]-reflines[closestLinesIndices[0]])
+                delta = (wlines[refline]-currWave)/slocal - (wlines[refline]-currWave)/scale
+
+                success = self.checkFinalRejectionCriteria(fdu, mcor, refbox, diff, wlines, currWave, reflines, currLine, scale, delta)
+                if (success == False):
+                    obsFlag[blref-1:blref+2] = 0
+                    continue
+
+                #Reset inloop np.array
+                inloop = 0
+                #Append this line's pixel centroid to reflines and wavelength to wlines and its parameters to lineParams.
+                reflines.append(currLine)
+                wlines.append(currWave)
+                lineParams.append(p)
+                print("\tLine found ("+str(nlines)+"): pixel="+formatNum(currLine)+", wavelength="+formatNum(currWave)+" (sigma = "+formatNum(lsigma)+")")
+                self._log.writeLog(__name__, "Line ("+str(nlines)+"): pixel="+formatNum(currLine)+", wavelength="+formatNum(currWave)+" (sigma = "+formatNum(lsigma)+")", printCaller=False, tabLevel=1)
+                #Increment nlines
+                nlines+=1
+                #If peak in resid np.array is <= min_intensity_pct (default 0.5%) of peak of brightest line, break out of loop
+                if (resid[xlo+5:xhi-4].max() <= maxPeak*min_intensity_pct):
+                    findLines = False
+
+        #Fit polynomial to find wavelength solution
+        #Convert lists to arrays
+        reflines = np.array(reflines)
+        wlines = np.array(wlines)
+        lineParams = np.array(lineParams)
+        #Throw out flagged lines to not use in fit
+        flags = np.zeros(len(wlines))
+        for i in range(len(wlines)):
+            b = np.where(masterWave == wlines[i])
+            #0 = use for fit, nonzero = don't use for fit
+            flags[i] = masterFlag[b[0][0]]
+        if ((flags == 0).sum() > 3):
+            nflagged = (flags != 0).sum()
+            print("\tThrowing out "+str(nflagged)+" flagged lines.")
+            self._log.writeLog(__name__, "Throwing out "+str(nflagged)+" flagged lines.", printCaller=False, tabLevel=1)
+            #good = lines to use in fit, subscript arrays
+            good = (flags == 0)
+            reflines = reflines[good]
+            wlines = wlines[good]
+            lineParams = lineParams[good]
+        else:
+            print("\tWarning: Could not throw out flagged lines because not enough lines would remain to perform fit.")
+            self._log.writeLog(__name__, "Could not throw out flagged lines because not enough lines would remain to perform fit.", type=fatboyLog.WARNING, printCaller=False, tabLevel=1)
+
+        #Fit polynomial of order fit_order to lines
+        p = np.zeros(fit_order+1, dtype=np.float32)
+        p[1] = scale
+        if (len(reflines) <= fit_order):
+            print("\tWarning: Only found "+str(len(reflines))+" lines.  Using fit order = 1.")
+            self._log.writeLog(__name__, "Only found "+str(len(reflines))+" lines.  Using fit order = 1.", type=fatboyLog.WARNING, printCaller=False, tabLevel=1)
+            fit_order = 1
+            p = p[:2]
+        #wavelength_fit_function: lsq[0] is always the power series; lsq[1] the native coefficients if not polynomial
+        fitFunction = str(self.getOption("wavelength_fit_function", fdu.getTag())).lower()
+        if (fitFunction not in ["polynomial", "legendre", "chebyshev"]):
+            fitFunction = "polynomial"
+        lsq = self.fitWavelengthFunction(reflines, wlines, fit_order, p, fitFunction, len(oned))
+        #Calculate residuals
+        residLines = polyFunction(lsq[0], reflines, fit_order)-wlines
+        print("\t\tFound "+str(len(reflines))+" datapoints.  Fit: "+formatList(lsq[0]))
+        print("\t\tData - fit mean: "+formatNum(residLines.mean())+"\tsigma: "+formatNum(residLines.std()))
+        self._log.writeLog(__name__, "Found "+str(len(reflines))+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=2)
+        self._log.writeLog(__name__, "Data - fit mean: "+formatNum(residLines.mean())+"\tsigma: "+formatNum(residLines.std()), printCaller=False, tabLevel=2)
+
+        #Throw away outliers starting at 2 sigma significance
+        sigThresh = 2
+        niter = 0
+        norig = len(reflines)
+        bad = np.where(np.abs(residLines-residLines.mean())/residLines.std() > sigThresh)
+        print("\t\tPerforming iterative sigma clipping to throw away outliers...")
+        self._log.writeLog(__name__, "Performing iterative sigma clipping to throw away outliers...", printCaller=False, tabLevel=2)
+        #Iterative sigma clipping
+        while (len(bad[0]) > 0):
+            niter += 1
+            good = np.where(np.abs(residLines-residLines.mean())/residLines.std() <= sigThresh)
+            if (len(good[0]) < fit_order):
+                break
+            reflines = reflines[good]
+            wlines = wlines[good]
+            lineParams = lineParams[good]
+            #Refit, use last actual fit coordinates as input guess
+            p = lsq[0]
+            try:
+                lastLsq = lsq
+                lsq = self.fitWavelengthFunction(reflines, wlines, fit_order, p, fitFunction, len(oned))
+            except Exception as ex:
+                lsq = lastLsq
+                break
+            #Calculate residuals
+            residLines = polyFunction(lsq[0], reflines, fit_order)-wlines
+            if (niter > 2):
+                #Gradually increase sigma threshold
+                sigThresh += 0.2
+            bad = np.where(np.abs(residLines-residLines.mean())/residLines.std() > sigThresh)
+        print("\t\tAfter "+str(niter)+" passes, kept "+str(len(reflines))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]))
+        print("\t\tData - fit mean: "+formatNum(residLines.mean())+"\tsigma: "+formatNum(residLines.std()))
+        self._log.writeLog(__name__, "After "+str(niter)+" passes, kept "+str(len(reflines))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=2)
+        self._log.writeLog(__name__, "Data - fit mean: "+formatNum(residLines.mean())+"\tsigma: "+formatNum(residLines.std()), printCaller=False, tabLevel=2)
+        return {"reflines": reflines, "wlines": wlines, "lineParams": lineParams, "coeffs": lsq[0], "native": lsq[1], "fit_order": fit_order, "residLines": residLines, "norig": norig, "obsSpec": obsSpec, "gaussWidth": gaussWidth, "fluxScale": fluxScale, "scale": scale}
+    #end solveFromMatch
+
+    #Fit the wavelength solution of order fit_order to (x, wavelength) with wavelength_fit_function.  polynomial =
+    #the original least squares fit; legendre / chebyshev = a linear least squares fit in that basis over
+    #[0, npix-1].  Returns a tuple whose element 0 is the equivalent power series (PCOEFF convention) and element 1
+    #the (function, native coefficients) or None for a polynomial.
+    def fitWavelengthFunction(self, x, w, fit_order, p, fitFunction, npix):
+        if (fitFunction == "polynomial"):
+            lsq = leastsq(polyResiduals, p, args=(x, w, fit_order))
+            return (lsq[0], None)
+        from numpy.polynomial import Legendre, Chebyshev, Polynomial
+        basis = Legendre
+        if (fitFunction == "chebyshev"):
+            basis = Chebyshev
+        series = basis.fit(np.asarray(x, dtype=np.float64), np.asarray(w, dtype=np.float64), fit_order, domain=[0, npix-1])
+        power = series.convert(kind=Polynomial).coef
+        if (len(power) < fit_order+1):
+            power = np.append(power, np.zeros(fit_order+1-len(power)))
+        return (power, (fitFunction, series.coef.copy()))
+    #end fitWavelengthFunction
+
+    #Measure the relative intensities of the line-list lines in a calibrated 1-d cut: the peak of the cut within
+    #+/-2 px of each line's position, put on the line list's scale by the median measured/list ratio of the lines used
+    #in the fit (lines closer than 2 line widths share their peak in proportion to the list intensities).  Lines
+    #that are not in the data come out near 0.  Returns {index in masterWave: intensity}.
+    def measureLineIntensities(self, oned, coeffs, order, masterWave, masterFlux, wlines, gaussWidth):
+        npix = len(oned)
+        xs = np.arange(npix, dtype=np.float64)
+        lam = polyFunction(coeffs, xs, order)
+        if (lam[-1] < lam[0]):
+            lam = lam[::-1]
+            xs = xs[::-1]
+        if (np.any(np.diff(lam) <= 0)):
+            #not monotonic - don't trust it
+            return dict()
+        y = np.asarray(oned, dtype=np.float64)
+        nz = np.where(y != 0)[0]
+        if (len(nz) < 100):
+            return dict()
+        #stay clear of the zeroed and filtered ends of the cut
+        (plo, phi) = (nz.min()+20, nz.max()-20)
+        idx = [i for i in range(len(masterWave)) if lam[0] < masterWave[i] < lam[-1] and masterFlux[i] > 0]
+        peaks = dict()
+        for i in idx:
+            x = np.interp(masterWave[i], lam, xs)
+            if (x < plo or x > phi):
+                continue
+            k = int(round(x))
+            peaks[i] = max(float(y[k-2:k+3].max()), 0.0)
+        if (len(peaks) == 0):
+            return dict()
+        #share the peak of lines closer than 2 line widths
+        disp = abs(lam[-1]-lam[0])/npix
+        keys = sorted(peaks, key=lambda i: masterWave[i])
+        groups = [[keys[0]]]
+        for i in keys[1:]:
+            if (masterWave[i]-masterWave[groups[-1][-1]] < 2*gaussWidth*disp):
+                groups[-1].append(i)
+            else:
+                groups.append([i])
+        for g in groups:
+            if (len(g) > 1):
+                pk = max(peaks[i] for i in g)
+                tot = sum(masterFlux[i] for i in g)
+                for i in g:
+                    peaks[i] = pk*masterFlux[i]/tot
+        #scale to the line list using the lines that were fit
+        fitted = [i for i in peaks if peaks[i] > 0 and np.min(np.abs(np.asarray(wlines)-masterWave[i])) < 1.e-6]
+        if (len(fitted) < 3):
+            return dict()
+        k = np.median([masterFlux[i]/peaks[i] for i in fitted])
+        return dict((i, peaks[i]*k) for i in peaks)
+    #end measureLineIntensities
+
+    #Line-list intensities learned from the calibrated slitlets: the median measured intensity of each line that was
+    #measured in at least one slitlet, the list intensity otherwise.  measures = {index: [(j, seg, value), ...]}.
+    def learnedLineFlux(self, masterFlux, measures):
+        flux = np.array(masterFlux, dtype=np.float64)
+        for i in measures:
+            if (len(measures[i]) > 0):
+                flux[i] = max(np.median([m[2] for m in measures[i]]), 0.0)
+        return flux
+    #end learnedLineFlux
+
+    #How convincingly a linear solution lam0 + sc*x matches the peaks (pixel positions) with line-list lines.  From
+    #the peaks' side: n of N peaks within tol px of a line, against the chance p that a random position is (p = the
+    #fraction of the range within tol px of some line, high for a dense list): z = (n - N p)/sqrt(N p (1-p)).  For a
+    #sparse list (fewer lines in range than peaks) the same from the lines' side.  Returns (matches, z).
+    def lineMatchSignificance(self, peaks, lam0, sc, lines, tol=1.5):
+        lam = np.sort(lam0+sc*np.asarray(peaks, dtype=np.float64))
+        n = len(lam)
+        if (n < 2 or lam[-1] <= lam[0]):
+            return (0, 0.0)
+        width = tol*abs(sc)
+        (wlo, whi) = (lam[0], lam[-1])
+        inr = lines[(lines > wlo) & (lines < whi)]
+
+        #number of points in a that are within width of a point in (sorted) b, and the fraction of [wlo, whi]
+        #within width of a point in b
+        def matched(a, b):
+            if (len(b) == 0):
+                return (0, 0.0)
+            j = np.searchsorted(b, a)
+            dist = np.full(len(a), np.inf)
+            for off in (-1, 0):
+                jj = np.clip(j+off, 0, len(b)-1)
+                dist = np.minimum(dist, np.abs(b[jj]-a))
+            covered = 0.0
+            last = wlo
+            for x in b:
+                lo = max(x-width, last)
+                hi = min(x+width, whi)
+                if (hi > lo):
+                    covered += hi-lo
+                    last = hi
+            return (int((dist < width).sum()), covered/(whi-wlo))
+
+        def zscore(k, N, p):
+            p = min(max(p, 1.e-3), 0.999)
+            return (k-N*p)/math.sqrt(N*p*(1-p))
+        (k, p) = matched(lam, lines)
+        z = zscore(k, n, p)
+        if (len(inr) >= 3 and len(inr) < n):
+            (k2, p2) = matched(inr, lam)
+            z2 = zscore(k2, len(inr), p2)
+            if (z2 > z):
+                return (k2, z2)
+        return (k, z)
+    #end lineMatchSignificance
+
+    #Score a linear candidate lam0 + sc*x with lineMatchSignificance at a tight (1.5 px) and a loose (4 px) tolerance,
+    #keeping the more significant: the loose one allows for curvature across the cut (a linear guess is off by several
+    #px at the ends of a strongly nonlinear cut), and the chance probability grows with the tolerance, so no free
+    #parameters are fit to chance coincidences.  Returns (matches, z).
+    def scoreLinearCandidate(self, peaks, lam0, sc, lines):
+        best = (0, -np.inf)
+        for tol in (1.5, 4.0):
+            (nmatch, z) = self.lineMatchSignificance(peaks, lam0, sc, lines, tol=tol)
+            if (z > best[1]):
+                best = (nmatch, z)
+        return best
+    #end scoreLinearCandidate
+
+    #Emission peaks in a 1-d cut above 5 sigma (MAD) of the cut, centroided with a 3-point parabola, at least 3 px
+    #apart; the nmax brightest, sorted by position.  Returns (positions, heights).
+    def findCutPeaks(self, oned, nmax=30):
+        y = np.asarray(oned, dtype=np.float64)
+        nz = y[y != 0]
+        if (len(nz) < 50):
+            return (np.array([]), np.array([]))
+        noise = 1.4826*np.median(np.abs(nz-np.median(nz)))
+        if (noise <= 0):
+            noise = nz.std()
+        cand = np.where((y[1:-1] > y[:-2]) & (y[1:-1] >= y[2:]) & (y[1:-1] > 5*noise))[0]+1
+        cand = cand[np.argsort(y[cand])[::-1]]
+        keep = []
+        for c in cand:
+            if (all(abs(c-k) >= 3 for k in keep)):
+                keep.append(c)
+            if (len(keep) >= nmax):
+                break
+        keep = np.sort(np.array(keep, dtype=int))
+        if (len(keep) == 0):
+            return (np.array([]), np.array([]))
+        (a, b, c) = (y[keep-1], y[keep], y[keep+1])
+        den = a-2*b+c
+        shift = np.where(den != 0, 0.5*(a-c)/np.where(den != 0, den, 1), 0)
+        return (keep+np.clip(shift, -0.5, 0.5), b)
+    #end findCutPeaks
+
+    #Guess the wavelength range of this 1-d cut from an already calibrated slitlet/segment: cross-correlate the
+    #two cuts to find the pixel shift between them and map the neighbor's solution across.  Only calibrated cuts whose
+    #wavelength range overlaps at least half of this cut's configured range are used (MIRADAS: each slitlet is a
+    #different order with different lines).  Returns a guess dict or None.
+    def neighborWavelengthGuess(self, oned, solvedCuts, j, seg, window=None):
+        best = None
+        a = np.asarray(oned, dtype=np.float64)
+        a = a-np.median(a)
+        na = math.sqrt(np.sum(a*a))
+        if (na == 0):
+            return None
+        npix = len(a)
+        for (sj, sseg, scut, scoeffs, sorder) in sorted(solvedCuts, key=lambda t: (abs(t[0]-j), abs(t[1]-seg))):
+            if (sj == j and sseg == seg):
+                continue
+            b = np.asarray(scut, dtype=np.float64)
+            if (len(b) != npix):
+                continue
+            if (window is not None):
+                lam = polyFunction(scoeffs, np.array([0, npix-1], dtype=np.float64), sorder)
+                overlap = min(max(lam), window[1])-max(min(lam), window[0])
+                if (overlap < 0.5*min(max(lam)-min(lam), window[1]-window[0])):
+                    continue
+            b = b-np.median(b)
+            nb = math.sqrt(np.sum(b*b))
+            if (nb == 0):
+                continue
+            ccor = np.correlate(a, b, mode='full')/(na*nb)
+            k = int(np.argmax(ccor))
+            if (best is None or ccor[k] > best[0]):
+                best = (ccor[k], k-(npix-1), scoeffs, sorder, sj, sseg)
+        if (best is None or best[0] < 0.3):
+            return None
+        (cmax, lag, scoeffs, sorder, sj, sseg) = best
+        #feature at pixel x here sits at x-lag in the calibrated cut: the neighbor's polynomial, shifted
+        xs = np.linspace(0, npix-1, 9)
+        poly = np.polyfit(xs, polyFunction(scoeffs, xs-lag, sorder), min(sorder, 3))[::-1]
+        label = "calibrated slitlet "+str(sj+1)+" (shift "+str(lag)+" px, correlation "+formatNum(cmax)+")"
+        return {"poly": poly, "label": label, "pad": 0.03}
+    #end neighborWavelengthGuess
+
+    #Predict this slitlet's solution from the trend of the calibrated slitlets with the same segment index: the
+    #wavelength at 9 pixels along the cut is fit against slitlet index (robust line, or parabola with 5+ slitlets,
+    #using the 6 nearest) and the prediction refit with a cubic.  Works for orders (MIRADAS: wavelengths change
+    #smoothly from order to order) and for slitlets that share a range.  Needs 3 calibrated slitlets.
+    def trendWavelengthGuess(self, j, seg, npix, solvedCuts):
+        same = [s for s in solvedCuts if s[1] == seg and s[0] != j and len(s[2]) == npix]
+        if (len(same) < 3):
+            return None
+        same = sorted(same, key=lambda s: abs(s[0]-j))[:6]
+        xs = np.linspace(0, npix-1, 9)
+        jj = np.array([s[0] for s in same], dtype=np.float64)
+        lams = np.array([polyFunction(s[3], xs, s[4]) for s in same])
+        deg = 1
+        if (len(same) >= 5):
+            deg = 2
+        pred = np.zeros(len(xs))
+        spread = 0.0
+        for k in range(len(xs)):
+            use = np.ones(len(jj), dtype=bool)
+            for it in range(2):
+                c = np.polyfit(jj[use], lams[use,k], deg)
+                r = lams[:,k]-np.polyval(c, jj)
+                mad = 1.4826*np.median(np.abs(r[use]))
+                if (mad == 0 or use.sum() <= deg+2):
+                    break
+                use = np.abs(r) < 3*mad
+                if (use.sum() < deg+2):
+                    use = np.ones(len(jj), dtype=bool)
+                    break
+            pred[k] = np.polyval(c, j)
+            spread = max(spread, 1.4826*np.median(np.abs(r)))
+        c3 = np.polyfit(xs, pred, 3)[::-1]
+        deriv = c3[1]+2*c3[2]*xs+3*c3[3]*xs**2
+        if (np.any(deriv == 0) or np.any(np.sign(deriv) != np.sign(deriv[0]))):
+            return None
+        label = "trend of calibrated slitlets "+",".join(str(int(s)+1) for s in sorted(jj))+" (scatter "+formatNum(spread)+")"
+        return {"poly": c3, "label": label, "pad": 0.03}
+    #end trendWavelengthGuess
+
+    #Intensity-free pattern match: for triplets of neighboring bright peaks in the cut, the ratio of their spacings
+    #is independent of the wavelength scale, so each triplet is compared with all triplets of line-list lines spanning
+    #wavelength_scale_guess times wavecal_blind_scale_range.  Every match votes for a (scale, central wavelength); the
+    #best vote peaks are verified with scoreLinearCandidate.  Linear, so run on the central half of the cut first.
+    #Works well for sparse and moderately dense lists; for very dense lists (OH, ThAr) triplet ratios are not
+    #distinctive enough and the vote peak can be chance.  Returns up to 3 guess dicts, most significant first, or None.
+    def patternWavelengthGuess(self, oned, masterWave, masterFlux, scaleGuess, fdu, label=""):
+        try:
+            (rlo, rhi) = [float(v) for v in str(self.getOption("wavecal_blind_scale_range", fdu.getTag())).split(",")]
+        except Exception:
+            (rlo, rhi) = (0.5, 2.0)
+        (peaks, heights) = self.findCutPeaks(oned, 25)
+        if (len(peaks) < 5):
+            return None
+        sign = 1.0 if (scaleGuess > 0) else -1.0
+        #work with positions increasing along wavelength
+        xp = np.sort(sign*peaks)
+        lines = np.unique(np.asarray(masterWave, dtype=np.float64)[np.asarray(masterFlux) > 0])
+        if (len(lines) < 5):
+            return None
+        if (len(lines) > 2000):
+            lines = np.sort(np.asarray(masterWave)[np.argsort(np.asarray(masterFlux))[::-1][:2000]])
+        (smin, smax) = (rlo*abs(scaleGuess), rhi*abs(scaleGuess))
+        xref = np.median(xp)
+        votes = []
+        n = len(xp)
+        for i in range(n-2):
+            for jx in range(i+1, min(i+4, n-1)):
+                for kx in range(jx+1, min(jx+4, n)):
+                    s = xp[kx]-xp[i]
+                    if (s < 10):
+                        continue
+                    r = (xp[jx]-xp[i])/s
+                    clo = np.searchsorted(lines, lines+s*smin)
+                    chi = np.searchsorted(lines, lines+s*smax)
+                    cnt = chi-clo
+                    if (cnt.sum() == 0):
+                        continue
+                    A = np.repeat(np.arange(len(lines)), cnt)
+                    C = np.concatenate([np.arange(clo[q], chi[q]) for q in np.where(cnt > 0)[0]])
+                    span = lines[C]-lines[A]
+                    target = lines[A]+r*span
+                    tol = 1.5/s*span
+                    ib = np.clip(np.searchsorted(lines, target), 1, len(lines)-1)
+                    d = np.minimum(np.abs(lines[ib]-target), np.abs(lines[ib-1]-target))
+                    ok = d < tol
+                    if (ok.sum() == 0):
+                        continue
+                    sc = span[ok]/s
+                    lref = lines[A[ok]]+sc*(xref-xp[i])
+                    votes.append(np.column_stack((np.log(sc), lref, sc)))
+        if (len(votes) == 0):
+            return None
+        votes = np.concatenate(votes)
+        #2-d histogram: 1% in scale, 6 px in central wavelength
+        lsb = 0.01
+        wb = 6*abs(scaleGuess)
+        ki = np.floor((votes[:,0]-np.log(smin))/lsb).astype(np.int64)
+        kj = np.floor((votes[:,1]-votes[:,1].min())/wb).astype(np.int64)
+        key = ki*(kj.max()+2)+kj
+        (ukeys, counts) = np.unique(key, return_counts=True)
+        verified = []
+        for uk in ukeys[np.argsort(counts)[::-1][:10]]:
+            sel = (key == uk)
+            sc = np.median(votes[sel,2])
+            lref = np.median(votes[sel,1])
+            lam0 = lref-sc*xref
+            (nmatch, z) = self.scoreLinearCandidate(xp, lam0, sc, lines)
+            if (nmatch >= 3 and z >= 4 and all(abs(sc-v[2]) > 0.01*sc or abs(lam0-v[3]) > 5*sc for v in verified)):
+                verified.append((z, nmatch, sc, lam0))
+        if (len(verified) == 0):
+            print("wavelengthCalibrateProcess::patternWavelengthGuess> No convincing solution"+label)
+            self._log.writeLog(__name__, "No convincing pattern-match solution"+label)
+            return None
+        #the most significant few; the full match and fit decide.  Back to pixels: lam = lam0+sc*(sign*x)
+        guesses = []
+        for (z, nmatch, sc, lam0) in sorted(verified, key=lambda v: -v[0])[:3]:
+            lamEnds = lam0+sc*sign*np.array([0, len(oned)-1], dtype=np.float64)
+            glabel = "pattern match ("+str(nmatch)+" matches, significance "+formatNum(z)+")"+label
+            guesses.append({"lamLo": lamEnds.min(), "lamHi": lamEnds.max(), "scale": sign*sc, "label": glabel, "pad": 0.15})
+        return guesses
+    #end patternWavelengthGuess
+
+    #Build the template for one guess, match the 3 brightest lines and, if they match, find the other lines and
+    #fit (solveFromMatch).  guess: {"config": (min_wavelength, max_wavelength, scale, nonlinear, coeffs)}, a linear
+    #{"lamLo", "lamHi", "scale"} or a polynomial {"poly": power coefficients}, plus "pad" (fraction of the range added
+    #at each end), "label" and optionally "flux" (line intensities to use instead of the list's).  ctx holds the cut,
+    #its bright lines and the fit settings.  Returns a candidate (the solveFromMatch dict plus the guess, template
+    #settings and QA) or None.
+    def tryWavelengthGuess(self, guess, ctx):
+        fdu = ctx["fdu"]
+        oned = ctx["oned"]
+        npix = len(oned)
+        flux = guess.get("flux", ctx["masterFlux"])
+        if ("config" in guess):
+            (min_wavelength, max_wavelength, scale, nonlinear, coeffs) = guess["config"]
+            coeffs = list(coeffs)
+        elif ("poly" in guess):
+            c = np.asarray(guess["poly"], dtype=np.float64)
+            lamEnds = polyFunction(c, np.array([0, npix-1], dtype=np.float64), len(c)-1)
+            pad = guess.get("pad", 0.05)*abs(lamEnds[1]-lamEnds[0])
+            scale = 0.0
+            mid = (npix-1)/2.0
+            for i in range(1, len(c)):
+                scale += i*c[i]*mid**(i-1)
+            nonlinear = True
+            coeffs = [0]+list(c[1:])
+            if (scale > 0):
+                min_wavelength = c[0]-pad
+                max_wavelength = lamEnds[1]+pad
+            else:
+                max_wavelength = c[0]+pad
+                min_wavelength = lamEnds[1]-pad
+        else:
+            pad = guess.get("pad", 0.05)*(guess["lamHi"]-guess["lamLo"])
+            min_wavelength = guess["lamLo"]-pad
+            max_wavelength = guess["lamHi"]+pad
+            scale = guess["scale"]
+            nonlinear = False
+            coeffs = []
+        if (scale == 0 or max_wavelength <= min_wavelength):
+            return None
+        label = guess["label"]
+        print("wavelengthCalibrateProcess::tryWavelengthGuess> Trying"+ctx["pass_name"]+fdu.getFullId()+" with "+label+": "+formatNum(min_wavelength, 1)+"-"+formatNum(max_wavelength, 1)+", scale "+formatNum(scale))
+        self._log.writeLog(__name__, "Trying"+ctx["pass_name"]+fdu.getFullId()+" with "+label+": "+formatNum(min_wavelength, 1)+"-"+formatNum(max_wavelength, 1)+", scale "+formatNum(scale))
+        (dummySize, dummyFlux, dummyWave, dummyOrder) = self.buildDummySpectrum(min_wavelength, max_wavelength, scale, nonlinear, coeffs, flux, ctx["masterWave"], ctx["gaussWidth"])
+        if (len(dummyFlux) <= 200 or dummyFlux[100:-100].max() == 0):
+            return None
+        fluxScale = oned[100:-100].max()/dummyFlux[100:-100].max()
+        dummyFlux *= fluxScale
+        dummyFlux[dummyFlux == 0] = 1.e-6
+        dummyFlux[np.where(dummyFlux < -100)] = 1.e-6
+        (dlines, dpeak, dwave) = self.findTemplateLines(dummyFlux, dummyWave, ctx["masterWave"], ctx["n_brightest_lines"], ctx["gaussWidth"])
+        if (len(dlines) < 3):
+            return None
+        (success, currLines, dumPeak, idx) = self.match3BrightestLines(coeffs, dlines, dpeak, dwave, dummyFlux, dummyOrder, dummyWave, fdu, oned, nonlinear, scale, usePlot, ctx["wccentroids"], ctx["wclines"])
+        if (not success):
+            return None
+        cand = self.solveFromMatch(fdu, oned, currLines, dumPeak, idx, ctx["wclines"], ctx["wccentroids"], ctx["lineParams"], ctx["lineWidths"], ctx["linePeaks"], dummySize, dummyFlux, dummyWave, dummyOrder, fluxScale, ctx["masterWave"], flux, ctx["masterFlag"], ctx["gaussWidth"], scale, nonlinear, coeffs, min_wavelength, max_wavelength, ctx["min_lines_nonlinear"], ctx["min_threshold"], ctx["min_intensity_pct"], ctx["use_tolerance"], ctx["shift_tol"], ctx["fit_order"], ctx["pass_name"])
+        (rmsWave, rmsPix, quality, coverage) = self.wavecalQuality(cand["coeffs"], cand["fit_order"], cand["reflines"], cand["residLines"], npix, fdu)
+        cand.update({"label": label, "min_wavelength": min_wavelength, "max_wavelength": max_wavelength, "nonlinear": nonlinear, "coeffsGuess": coeffs, "dummySize": dummySize, "dummyOrder": dummyOrder, "masterFlux": flux, "rmsWave": rmsWave, "rmsPix": rmsPix, "quality": quality, "coverage": coverage})
+        print("wavelengthCalibrateProcess::tryWavelengthGuess> Solution from "+label+": RMS "+formatNum(rmsPix)+" px ("+quality+"), "+str(len(cand["reflines"]))+" lines")
+        self._log.writeLog(__name__, "Solution"+ctx["pass_name"]+fdu.getFullId()+" from "+label+": RMS "+formatNum(rmsPix)+" px ("+quality+"), "+str(len(cand["reflines"]))+" lines")
+        return cand
+    #end tryWavelengthGuess
+
+    #Guesses for a slitlet whose 3 brightest lines did not match, or whose solution is poor (see wavecal_fallback),
+    #in the order given.  Each guess uses the line intensities measured in the calibrated slitlets (learnedFlux) when
+    #there are any.  Yields candidates from tryWavelengthGuess.
+    def fallbackCandidates(self, ctx, methods, j, seg, solvedCuts, configGuess, learnedFlux, scaleGuess):
+        oned = ctx["oned"]
+        npix = len(oned)
+        fdu = ctx["fdu"]
+        window = (configGuess[0], configGuess[1])
         for method in methods:
-            guess = None
-            if (method == "neighbor" and len(solvedCuts) > 0):
-                guess = self.neighborWavelengthGuess(oned, solvedCuts, j, seg)
-            elif (method == "blind"):
-                #central half first: a linear solution describes it well even when the dispersion is
-                #strongly nonlinear across the whole cut; then the whole cut
-                npix = len(oned)
+            guesses = []
+            if (method == "learned"):
+                if (learnedFlux is not None):
+                    guesses.append({"config": configGuess, "flux": learnedFlux, "label": "the configured guess and line intensities measured in the calibrated slitlets"})
+            elif (method == "neighbor"):
+                if (len(solvedCuts) > 0):
+                    guesses.append(self.neighborWavelengthGuess(oned, solvedCuts, j, seg, window))
+            elif (method == "trend"):
+                guesses.append(self.trendWavelengthGuess(j, seg, npix, solvedCuts))
+            elif (method == "pattern" or method == "blind"):
+                #central half first: a linear solution describes it well even when the dispersion is strongly
+                #nonlinear across the whole cut; then the whole cut
+                flux = ctx["masterFlux"] if learnedFlux is None else learnedFlux
                 (c0, c1) = (npix//4, npix-npix//4)
-                guess = self.blindWavelengthSearch(oned[c0:c1], masterWave, masterFlux, scaleGuess, gaussWidth, fdu)
-                if (guess is not None):
-                    (lamLo, lamHi, sc, label) = guess
-                    lam0 = (lamLo if sc > 0 else lamHi)-sc*c0
-                    lamEnds = [lam0, lam0+sc*(npix-1)]
-                    guess = (min(lamEnds), max(lamEnds), sc, label+" on the central half")
-                else:
-                    guess = self.blindWavelengthSearch(oned, masterWave, masterFlux, scaleGuess, gaussWidth, fdu)
-            if (guess is None):
-                continue
-            (lamLo, lamHi, scale, label) = guess
-            #pad the predicted range so lines near the ends are in the template (more for a blind
-            #linear guess, which ignores the curvature of the solution)
-            pad = (0.15 if (method == "blind") else 0.05)*(lamHi-lamLo)
-            min_wavelength = lamLo-pad
-            max_wavelength = lamHi+pad
-            print("wavelengthCalibrateProcess::retryMatch3BrightestLines> Retrying"+pass_name+fdu.getFullId()+" with "+label+": "+formatNum(min_wavelength, 1)+"-"+formatNum(max_wavelength, 1)+", scale "+formatNum(scale))
-            self._log.writeLog(__name__, "Retrying"+pass_name+fdu.getFullId()+" with "+label+": "+formatNum(min_wavelength, 1)+"-"+formatNum(max_wavelength, 1)+", scale "+formatNum(scale))
-            (dummySize, dummyFlux, dummyWave, dummyOrder) = self.buildDummySpectrum(min_wavelength, max_wavelength, scale, False, [], masterFlux, masterWave, gaussWidth)
-            if (len(dummyFlux) <= 200 or dummyFlux[100:-100].max() == 0):
-                continue
-            fluxScale = oned[100:-100].max()/dummyFlux[100:-100].max()
-            dummyFlux *= fluxScale
-            dummyFlux[dummyFlux == 0] = 1.e-6
-            dummyFlux[np.where(dummyFlux < -100)] = 1.e-6
-            (dlines, dpeak, dwave) = self.findTemplateLines(dummyFlux, dummyWave, masterWave, n_brightest_lines, gaussWidth)
-            if (len(dlines) < 3):
-                continue
-            (success, currLines, dumPeak, idx) = self.match3BrightestLines([], dlines, dpeak, dwave, dummyFlux, dummyOrder, dummyWave, fdu, oned, False, scale, usePlot, wccentroids, wclines)
-            if (success):
-                print("wavelengthCalibrateProcess::retryMatch3BrightestLines> Matched 3 brightest lines"+pass_name+fdu.getFullId()+" using "+label)
-                self._log.writeLog(__name__, "Matched 3 brightest lines"+pass_name+fdu.getFullId()+" using "+label, type=fatboyLog.WARNING)
-                return (currLines, dumPeak, idx, min_wavelength, max_wavelength, scale, dummySize, dummyFlux, dummyWave, dummyOrder, fluxScale, label)
-        return None
-    #end retryMatch3BrightestLines
+                for (lo, hi, what) in ((c0, c1, " on the central half"), (0, npix, "")):
+                    if (method == "pattern"):
+                        g = self.patternWavelengthGuess(oned[lo:hi], ctx["masterWave"], flux, scaleGuess, fdu, what)
+                    else:
+                        g = self.blindWavelengthSearch(oned[lo:hi], ctx["masterWave"], flux, scaleGuess, ctx["gaussWidth"], fdu, what)
+                    if (g is not None):
+                        #ranges refer to the sub-cut: shift to the whole cut
+                        for gg in g:
+                            lam0 = (gg["lamLo"] if gg["scale"] > 0 else gg["lamHi"])-gg["scale"]*lo
+                            lamEnds = [lam0, lam0+gg["scale"]*(npix-1)]
+                            gg["lamLo"] = min(lamEnds)
+                            gg["lamHi"] = max(lamEnds)
+                            guesses.append(gg)
+                        break
+            for g in guesses:
+                if (g is None):
+                    continue
+                #with the measured intensities first, then (if that gives nothing good enough) the list's
+                variants = [g]
+                if (learnedFlux is not None and "flux" not in g):
+                    variants = [dict(g, flux=learnedFlux, label=g["label"]+" with measured line intensities"), g]
+                for v in variants:
+                    try:
+                        cand = self.tryWavelengthGuess(v, ctx)
+                    except Exception as ex:
+                        print("wavelengthCalibrateProcess::fallbackCandidates> Warning: "+type(ex).__name__+": "+str(ex)+" trying "+v["label"])
+                        self._log.writeLog(__name__, type(ex).__name__+": "+str(ex)+" trying "+v["label"], type=fatboyLog.WARNING)
+                        cand = None
+                    if (cand is not None):
+                        cand["method"] = method
+                        yield cand
+                        if (self.acceptableFallback(cand)):
+                            break
+    #end fallbackCandidates
+
+    #A solution from a fallback guess must be good to be trusted (a wrong guess can still match 3 lines in a dense
+    #line list): satisfactory or better, with at least max(2*(fit_order+1), 8) lines
+    def acceptableFallback(self, cand):
+        return (cand["quality"] in ["excellent", "good", "satisfactory"] and len(cand["reflines"]) >= max(2*(cand["fit_order"]+1), 8))
+    #end acceptableFallback
+
+    #Is solution new better than old?  Clearly lower RMS with nearly as many lines, or many more lines with no worse RMS.
+    def betterSolution(self, new, old):
+        if (old is None):
+            return True
+        (nn, no) = (len(new["reflines"]), len(old["reflines"]))
+        if (new["rmsPix"] < 0.8*old["rmsPix"] and nn >= 0.9*no):
+            return True
+        if (nn >= 1.5*no and new["rmsPix"] <= old["rmsPix"]):
+            return True
+        return False
+    #end betterSolution
 
     def setDefaultOptions(self):
         self._options.setdefault('bright_line_searchbox_max', '-100')
@@ -1625,7 +2598,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
         self._options.setdefault('fit_order', '3')
         self._optioninfo.setdefault('fit_order', 'Order of polynomial to use to fit wavelength solution.\nRecommended value = 3.')
         self._options.setdefault('line_list', None)
-        self._optioninfo.setdefault('ASCII file containing line wavelengths and relative intensities.\nOptional 3rd column contains flag of -1 for blended lines\nthat should not be used in final fit.')
+        self._optioninfo.setdefault('line_list', 'ASCII file containing line wavelengths and relative intensities.\nOptional 3rd column contains flag of -1 for blended lines\nthat should not be used in final fit.')
         self._options.setdefault('max_bright_line_separation', None)
         self._optioninfo.setdefault('max_bright_line_separation', 'Maximum separation in pixels for any two bright lines\nto be used in matching up 3 brightest.\nUsed when data is nonlinear.')
         self._options.setdefault('max_shift_tolerance', None)
@@ -1665,13 +2638,17 @@ class wavelengthCalibrateProcess(fatboyProcess):
         self._options.setdefault('wavelength_line_2', None)
         self._optioninfo.setdefault('wavelength_line_2', 'The wavelength (in output units) of a particular line,\nfor use in constructing "dummy" spectrum.')
         self._options.setdefault('wavelength_line_separation', None)
-        self._optioninfo.setdefault('wavelength_separation', 'The separation in pixels between line_1 and line_2,\nfor use in constructing "dummy" spectrum.')
+        self._optioninfo.setdefault('wavelength_line_separation', 'The separation in pixels between line_1 and line_2,\nfor use in constructing "dummy" spectrum.')
         self._options.setdefault('wavelength_scale_guess', None)
         self._optioninfo.setdefault('wavelength_scale_guess', 'Initial guess of linear wavelength scale,\nfor use in constructing "dummy" spectrum.\nCan also be space delmited list of\npolynomail coefficients, starting with linear term.')
-        self._options.setdefault('wavecal_fallback', 'neighbor,blind')
-        self._optioninfo.setdefault('wavecal_fallback', 'If the 3 brightest lines cannot be matched with wavelength_scale_guess and\nmin/max_wavelength, retry with these guesses, in order (comma-separated, or none):\nneighbor = the solution of an already calibrated slitlet, shifted by cross-correlating\nthe two 1-d cuts; blind = a search over scales (wavecal_blind_scale_range times the\nguess) and all zero points, counting how many bright peaks land on line-list lines')
+        self._options.setdefault('wavecal_fallback', 'learned,neighbor,trend,pattern,blind')
+        self._optioninfo.setdefault('wavecal_fallback', 'If the 3 brightest lines cannot be matched with wavelength_scale_guess and\nmin/max_wavelength (or the solution is graded wavecal_retry_grade or worse), try these guesses,\nin order (comma-separated, or none).  Each uses line intensities measured in the calibrated\nslitlets when there are any.  learned = the configured guess with those measured intensities;\nneighbor = the solution of a calibrated slitlet covering the same range, shifted by\ncross-correlating the 1-d cuts; trend = predicted from the calibrated slitlets on either side\n(orders, e.g. MIRADAS); pattern = matching the spacing ratios of neighboring bright lines\n(no intensities); blind = cross-correlation over scales and zero points.  A solution from a\nfallback is kept only if graded satisfactory or better with enough lines.')
+        self._options.setdefault('wavecal_retry_grade', 'poor')
+        self._optioninfo.setdefault('wavecal_retry_grade', 'Once all slitlets have been tried, try the wavecal_fallback guesses again for slitlets that\nfailed or were graded this or worse (excellent, good, satisfactory, marginal, poor, or none = only\nfailures); a new solution replaces the old one only if it is clearly better.')
+        self._options.setdefault('wavelength_fit_function', 'polynomial')
+        self._optioninfo.setdefault('wavelength_fit_function', 'Function fit to the lines: polynomial, legendre or chebyshev (of order fit_order).  The same\nfunctions of pixel, so PORDER/PCOEFF still hold the equivalent polynomial; legendre/chebyshev also\nwrite WCFUNC and their own coefficients NCOEFF_i (MOS: WCFUNxx, NCFi_Sxx), pixels 0..WCXMAX mapped to [-1,1].')
         self._options.setdefault('wavecal_blind_scale_range', '0.5,2')
-        self._optioninfo.setdefault('wavecal_blind_scale_range', 'Range of scales searched by the blind fallback, as factors of wavelength_scale_guess')
+        self._optioninfo.setdefault('wavecal_blind_scale_range', 'Range of scales searched by the pattern and blind fallbacks, as factors of wavelength_scale_guess')
         self._options.setdefault('wavecal_quality_thresholds', '0.1,0.2,0.3,0.4')
         self._optioninfo.setdefault('wavecal_quality_thresholds', 'RMS of each wavelength fit in PIXELS separating excellent, good, satisfactory,\nmarginal and poor (printed per slitlet, in the qa_*.dat file and the WCQUAL header keyword)')
         self._options.setdefault('write_noisemaps', 'no')
@@ -1882,12 +2859,28 @@ class wavelengthCalibrateProcess(fatboyProcess):
 
         #Calibrated 1-d cuts and their solutions, used to guess the range of slitlets that fail to match
         solvedCuts = []
+        #Second pass: once every slitlet has been tried, slitlets that failed or were graded wavecal_retry_grade or
+        #worse are tried again with guesses from all the calibrated slitlets.  segState[(j, seg)] remembers the first
+        #pass: its solution (or None), its grade and the positions of its entries in fitParams, minLambdaList and qaParams.
+        segState = dict()
+        #Intensities of line-list lines measured in the calibrated slitlets, per line list: {index: [(j, seg, value)]}
+        lineMeasures = dict()
+        fallbackMethods = [m.strip().lower() for m in str(self.getOption("wavecal_fallback", fdu.getTag())).split(",") if m.strip().lower() not in ["", "none"]]
+        retryGrade = str(self.getOption("wavecal_retry_grade", fdu.getTag())).lower()
+        gradeRank = {"excellent": 0, "good": 1, "satisfactory": 2, "marginal": 3, "poor": 4}
+        retrySet = set()
+        nchanged = 0
+        scaleAfterFirstPass = None
+        schedule = [(j, 1) for j in range(nslits)]
+        ischedule = 0
         #A fallback match narrows the wavelength range for its own slitlet only; restore it for the next one
         if (not useWCfile):
             origMinWavelength = min_wavelength
             origMaxWavelength = max_wavelength
-        #Loop over nslits
-        for j in range(nslits):
+        #Loop over nslits (passNum 1), then the slitlets scheduled for a second pass (passNum 2)
+        while (ischedule < len(schedule)):
+            (j, passNum) = schedule[ischedule]
+            ischedule += 1
             #Reset scale to original wavelength_scale_guess in each iteration
             if (not useWCfile):
                 scale = wavelength_scale_guess[0]
@@ -1902,7 +2895,8 @@ class wavelengthCalibrateProcess(fatboyProcess):
                 n_segments = self.getWCParam(wcinfo, 'n_segments', j)
             #mult_seg = True if multiple segments
             mult_seg = (n_segments > 1)
-            fitParams.append([]) #Append new np.empty list for this order
+            if (passNum == 1):
+                fitParams.append([]) #Append new np.empty list for this order
 
             #Check slitlets_to_debug
             if (debugSlitlets):
@@ -1919,10 +2913,15 @@ class wavelengthCalibrateProcess(fatboyProcess):
 
             #Now loop over segments.  If n_segments == 1, this loop will only be done once (most data)
             for seg in range(n_segments):
+                if (passNum == 2 and (j, seg) not in retrySet):
+                    continue
                 #Fail cleanly: an unexpected error in one slitlet/segment is logged and that order skipped,
                 #keeping the per-segment lists aligned so the other slitlets and the header are unaffected
                 segFitStart = len(fitParams[j])
                 segLambdaStart = len(minLambdaList)
+                segQaStart = len(qaParams)
+                if (passNum == 1):
+                    segState[(j, seg)] = {"cand": None, "quality": "failed", "pos": (segFitStart, segLambdaStart, segQaStart)}
                 pass_name = " for order "+str(j+1)+" of "
                 if (not useWCfile):
                     min_wavelength = origMinWavelength
@@ -1965,10 +2964,20 @@ class wavelengthCalibrateProcess(fatboyProcess):
                         if (line_list is None):
                             print("wavelengthCalibrateProcess::wavelengthCalibrate> ERROR: Could not find line_list "+line_list+pass_name+fdu.getFullId()+"! Skipping order!")
                             self._log.writeLog(__name__, "Could not find line_list "+line_list+pass_name+fdu.getFullId()+"! Skipping order!", type=fatboyLog.ERROR)
+                            if (passNum == 1):
+                                fitParams[j].append([])
+                                minLambdaList.append(0)
+                                maxLambdaList.append(xsize-1)
+                                qaParams.append(str(j+1)+"\t"+str(seg+1)+"\t0\t0\t-\t-\t-\t[]\t-\t-\tfailed: no line list\t-")
                             continue
                         if (scale is None):
                             print("wavelengthCalibrateProcess::wavelengthCalibrate> ERROR: No wavelength_scale_guess "+pass_name+fdu.getFullId()+"! Skipping order!")
                             self._log.writeLog(__name__, "No wavelength_scale_guess "+pass_name+fdu.getFullId()+"! Skipping order!", type=fatboyLog.ERROR)
+                            if (passNum == 1):
+                                fitParams[j].append([])
+                                minLambdaList.append(0)
+                                maxLambdaList.append(xsize-1)
+                                qaParams.append(str(j+1)+"\t"+str(seg+1)+"\t0\t0\t-\t-\t-\t[]\t-\t-\tfailed: no wavelength_scale_guess\t-")
                             continue
 
                     (masterWave, masterFlux, masterFlag) = self.readLineList(line_list)
@@ -2094,7 +3103,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
 
                     #Create 1st guess at dummy 1-d cuts and add gaussians for each line in line list
                     (dummySize, dummyFlux, dummyWave, dummyOrder) = self.buildDummySpectrum(min_wavelength, max_wavelength, scale, nonlinear, coeffs, masterFlux, masterWave, gaussWidth)
-                    if (dummyFlux[100:-100].max() == 0):
+                    if (passNum == 1 and dummyFlux[100:-100].max() == 0):
                         #If this happened, no lines were found in the given wavelength range!  Print error and skip slitlet
                         print("wavelengthCalibrateProcess::wavelengthCalibrate> ERROR: No lines found in wavelength range ["+str(min_wavelength)+":"+str(max_wavelength)+"] "+pass_name+fdu.getFullId()+"! Skipping order!")
                         self._log.writeLog(__name__, "No lines found in wavelength range ["+str(min_wavelength)+":"+str(max_wavelength)+"] "+pass_name+fdu.getFullId()+"! Skipping order!", type=fatboyLog.ERROR)
@@ -2161,7 +3170,10 @@ class wavelengthCalibrateProcess(fatboyProcess):
                         continue
 
                     #Scale template
-                    fluxScale = oned[100:-100].max()/dummyFlux[100:-100].max()
+                    if (passNum == 1 or (len(dummyFlux) > 200 and dummyFlux[100:-100].max() > 0)):
+                        fluxScale = oned[100:-100].max()/dummyFlux[100:-100].max()
+                    else:
+                        fluxScale = 1.0
                     dummyFlux *= fluxScale
                     #Set zero values to small positive number so they're not considered flagged
                     dummyFlux[dummyFlux == 0] = 1.e-6
@@ -2169,125 +3181,73 @@ class wavelengthCalibrateProcess(fatboyProcess):
                     dummyFlux[np.where(dummyFlux < -100)] = 1.e-6
 
                     #Find n_brightest_data (default 3) brightest lines in image, n_brightest_lines (default 14) brightest in template
-                    wclines = []
-                    wccentroids = [] #Keep track of actual centroids of lines for calculating wavelength scale
-                    lineParams = [] #Keep track of Gaussian parameters for each line
-                    refCut = oned.copy()
-                    lineWidths = []
-                    linePeaks = []
-                    #Only look from 100 to length-100
-                    #Only look from search_min to search_max - defaults 100, -100
-                    refCut[0:bl_min] = 0
-                    refCut[bl_max:] = 0
-                    #Use 3 passes to find and fit brightest line in refCut
-                    #Then zero out 21 pixels centered around line
-                    for i in range(n_brightest_data):
-                        blref = np.where(refCut == np.max(refCut))[0][0]
-                        if (blref < bl_min or blref >= bl_max % len(refCut)):
-                            refCut[blref] = refCut.min()-1
-                            continue
-                        keepLine = False
-                        while (not keepLine):
-                            keepLine = True
-                            for k in range(len(wclines)):
-                                if (abs(blref-wclines[k]) < min_separation):
-                                    #Too close to another line
-                                    keepLine = False
-                            if (not keepLine):
-                                #Fit Gaussian and remove line 8/29/19
-                                tempCut = refCut[max(blref-10,0):blref+11]**2
-                                p = np.zeros(4, dtype=np.float64)
-                                p[0] = np.max(tempCut)
-                                p[1] = 10
-                                p[2] = gaussWidth/math.sqrt(2)
-                                p[3] = gpu_arraymedian(tempCut)
-                                try:
-                                    lsq = leastsq(gaussResiduals, p, args=(np.arange(len(tempCut), dtype=np.float64), tempCut))
-                                except Exception as ex:
-                                    #Should not happen; use initial guess
-                                    lsq = [p]
-                                p = np.zeros(4)
-                                p[0] = math.sqrt(abs(lsq[0][0]))
-                                p[1] = lsq[0][1]+blref-10
-                                p[2] = abs(lsq[0][2]*math.sqrt(2))
-                                refCut -= gaussFunction(p, np.arange(len(refCut), dtype=np.float32))
-                                refCut[refCut < 0] = 0
-                                #refCut[blref-2:blref+3] = 0
-                                blref = np.where(refCut == np.max(refCut))[0][0]
-
-                        #Centroid line for subpixel accuracy
-                        #Square data to ensure bright line dominates fit
-                        tempCut = refCut[max(blref-10,0):blref+11]**2
-                        p = np.zeros(4, dtype=np.float64)
-                        p[0] = np.max(tempCut)
-                        p[1] = 10
-                        p[2] = gaussWidth/math.sqrt(2)
-                        p[3] = gpu_arraymedian(tempCut)
-                        try:
-                            lsq = leastsq(gaussResiduals, p, args=(np.arange(len(tempCut), dtype=np.float64), tempCut))
-                        except Exception as ex:
-                            #Error centroiding, continue to next line
-                            refCut -= gaussFunction(p, np.arange(len(refCut), dtype=np.float32))
-                            refCut[refCut < 0] = 0
-                            continue
-                        mcor = lsq[0][1]
-                        wccentroids.append(blref+mcor-10) #Actual centroid
-                        wclines.append(int(blref+mcor-9.5)) #Rounded to nearest pixel
-                        #Check each component's width rather than the average
-                        currWidth = abs(lsq[0][2]*math.sqrt(2))
-                        if (currWidth > 2.5):
-                            currWidth = 1.5
-                        elif (currWidth > 2):
-                            currWidth = 1.75
-                        lineWidths.append(currWidth)
-                        #Add line to lineParams
-                        p = np.zeros(4)
-                        p[0] = math.sqrt(abs(lsq[0][0]))
-                        p[1] = lsq[0][1]+blref-10
-                        p[2] = abs(lsq[0][2]*math.sqrt(2))
-                        #subtract Gaussian fitted to line rather than zeroing out 21 pixel
-                        #box 8/29/19.  Also ensure no negative points
-                        refCut -= gaussFunction(p, np.arange(len(refCut), dtype=np.float32))
-                        refCut[refCut < 0] = 0
-                        p[2] = currWidth
-                        linePeaks.append(math.sqrt(abs(lsq[0][0])))
-                        #Keep track of Gaussian params for line
-                        lineParams.append(p)
-                        #zero out 21 pixel box centered at this line
-                        #refCut[max(blref-10,0):blref+11] = 0
+                    (wclines, wccentroids, lineParams, lineWidths, linePeaks) = self.findDataLines(oned, gaussWidth, n_brightest_data, bl_min, bl_max, min_separation)
 
                     #Find n_brightest_lines (default 14) brightest lines in "dummy" template
                     (dlines, dpeak, dwave) = self.findTemplateLines(dummyFlux, dummyWave, masterWave, n_brightest_lines, gaussWidth)
 
 
-                    #Use helper method to match 3 brightest lines in image with
-                    #corresponding lines in template
-                    (success, currLines, dumPeak, idx) = self.match3BrightestLines(coeffs, dlines, dpeak, dwave, dummyFlux, dummyOrder, dummyWave, fdu, oned, nonlinear, scale, usePlot, wccentroids, wclines)
-                    if (not success):
-                        #Fallbacks for a bad initial guess: a calibrated neighboring slitlet, then a blind search
-                        retry = self.retryMatch3BrightestLines(fdu, j, seg, oned, solvedCuts, masterWave, masterFlux, wclines, wccentroids, gaussWidth, scale, n_brightest_lines, usePlot, pass_name)
-                        if (retry is not None):
-                            (currLines, dumPeak, idx, min_wavelength, max_wavelength, scale, dummySize, dummyFlux, dummyWave, dummyOrder, fluxScale, retryLabel) = retry
-                            success = True
-                            usedFallback = True
-                            nonlinear = False
-                            coeffs = []
-                    #reflines = pixel value in image, wlines = wavelength taken from masterWave
-                    reflines = []
-                    wlines = []
-                    if (success):
-                        #idx is already sorted for wavelength so confusion as to < > comparisons with pos/neg values
-                        wclines = np.array(wclines)[idx]
-                        wccentroids = np.array(wccentroids)[idx]
-                        lineParams = np.array(lineParams)[idx].tolist()
-                        sumWidth = np.array(lineWidths)[idx].sum()
-                        sumPeak = np.array(linePeaks)[idx].sum()
+                    #This cut and the fit settings, for trying other guesses (wavecal_fallback)
+                    ctx = {"fdu": fdu, "oned": oned, "wclines": wclines, "wccentroids": wccentroids, "lineParams": lineParams, "lineWidths": lineWidths, "linePeaks": linePeaks, "masterWave": masterWave, "masterFlux": masterFlux, "masterFlag": masterFlag, "gaussWidth": gaussWidth, "n_brightest_lines": n_brightest_lines, "fit_order": fit_order, "min_lines_nonlinear": min_lines_nonlinear, "min_threshold": min_threshold, "min_intensity_pct": min_intensity_pct, "use_tolerance": use_tolerance, "shift_tol": (shift_tol if use_tolerance else None), "pass_name": pass_name}
+                    configGuess = (min_wavelength, max_wavelength, scale, nonlinear, list(coeffs))
+                    learnedFlux = None
+                    if (line_list in lineMeasures and len(lineMeasures[line_list]) > 0):
+                        learnedFlux = self.learnedLineFlux(masterFlux, lineMeasures[line_list])
+                    cand = None
+                    failReason = "3 brightest lines not matched"
+                    if (passNum == 1):
+                        #Use helper method to match 3 brightest lines in image with
+                        #corresponding lines in template
+                        (success, currLines, dumPeak, idx) = self.match3BrightestLines(coeffs, dlines, dpeak, dwave, dummyFlux, dummyOrder, dummyWave, fdu, oned, nonlinear, scale, usePlot, wccentroids, wclines)
+                        if (success):
+                            #oned = one-d cut of image; match the remaining lines and fit the solution
+                            cand = self.solveFromMatch(fdu, oned, currLines, dumPeak, idx, wclines, wccentroids, lineParams, lineWidths, linePeaks, dummySize, dummyFlux, dummyWave, dummyOrder, fluxScale, masterWave, masterFlux, masterFlag, gaussWidth, scale, nonlinear, coeffs, min_wavelength, max_wavelength, min_lines_nonlinear, min_threshold, min_intensity_pct, use_tolerance, (shift_tol if use_tolerance else None), fit_order, pass_name)
+                            (cand["rmsWave"], cand["rmsPix"], cand["quality"], cand["coverage"]) = self.wavecalQuality(cand["coeffs"], cand["fit_order"], cand["reflines"], cand["residLines"], len(oned), fdu)
+                            cand["label"] = None
+                        else:
+                            #Fallbacks for a bad initial guess (wavecal_fallback): the best good-enough solution from the
+                            #first method that gives one
+                            for alt in self.fallbackCandidates(ctx, fallbackMethods, j, seg, solvedCuts, configGuess, learnedFlux, scale):
+                                if (cand is not None and alt["method"] != cand["method"]):
+                                    break
+                                if (self.acceptableFallback(alt)):
+                                    if (self.betterSolution(alt, cand)):
+                                        cand = alt
+                                    continue
+                                #A wrong guess can still match 3 lines in a dense line list
+                                print("wavelengthCalibrateProcess::wavelengthCalibrate> Rejecting the solution from "+alt["label"]+pass_name+fdu.getFullId()+" ("+alt["quality"]+", "+str(len(alt["reflines"]))+" lines)")
+                                self._log.writeLog(__name__, "Rejecting the solution from "+alt["label"]+pass_name+fdu.getFullId()+" ("+alt["quality"]+", "+str(len(alt["reflines"]))+" lines)", type=fatboyLog.WARNING)
+                                failReason = "fallback solution "+alt["quality"]
                     else:
+                        #Second pass: try the fallbacks with what all the calibrated slitlets tell us now, and keep a
+                        #solution only if it is better than the first pass's (see betterSolution)
+                        prev = segState[(j, seg)]["cand"]
+                        others = [sc for sc in solvedCuts if not (sc[0] == j and sc[1] == seg)]
+                        for alt in self.fallbackCandidates(ctx, fallbackMethods, j, seg, others, configGuess, learnedFlux, scale):
+                            if (self.acceptableFallback(alt) and self.betterSolution(alt, (cand if cand is not None else prev))):
+                                cand = alt
+                                if (gradeRank[cand["quality"]] <= gradeRank["good"]):
+                                    break
+                        if (cand is None):
+                            print("wavelengthCalibrateProcess::wavelengthCalibrate> Second pass: no better solution"+pass_name+fdu.getFullId())
+                            self._log.writeLog(__name__, "Second pass: no better solution"+pass_name+fdu.getFullId())
+                            continue
+                        prevText = "failed slitlet"
+                        if (prev is not None):
+                            prevText = prev["quality"]+" solution ("+formatNum(prev["rmsPix"])+" px, "+str(len(prev["reflines"]))+" lines)"
+                        print("wavelengthCalibrateProcess::wavelengthCalibrate> Second pass: replacing the "+prevText+pass_name+fdu.getFullId()+" with the solution from "+cand["label"])
+                        self._log.writeLog(__name__, "Second pass: replacing the "+prevText+pass_name+fdu.getFullId()+" with the solution from "+cand["label"], type=fatboyLog.WARNING)
+                        nchanged += 1
+                    if (cand is None):
                         #Could not match 3 brightest lines
-                        print("wavelengthCalibrateProcess::wavelengthCalibrate> ERROR: Could not match 3 brightest lines "+pass_name+fdu.getFullId()+"! Skipping order!")
+                        if (failReason.startswith("fallback")):
+                            print("wavelengthCalibrateProcess::wavelengthCalibrate> ERROR: No acceptable solution "+pass_name+fdu.getFullId()+" (3 brightest lines not matched with the configured guess; fallback solutions not good enough)! Skipping order!")
+                            self._log.writeLog(__name__, "No acceptable solution "+pass_name+fdu.getFullId()+" (3 brightest lines not matched with the configured guess; fallback solutions not good enough)! Skipping order!", type=fatboyLog.ERROR)
+                        else:
+                            print("wavelengthCalibrateProcess::wavelengthCalibrate> ERROR: Could not match 3 brightest lines "+pass_name+fdu.getFullId()+"! Skipping order!")
+                            self._log.writeLog(__name__, "Could not match 3 brightest lines "+pass_name+fdu.getFullId()+"! Skipping order!", type=fatboyLog.ERROR)
                         print("wavelengthCalibrateProcess::wavelengthCalibrate> Check "+specfile+" for data.")
-                        self._log.writeLog(__name__, "Could not match 3 brightest lines "+pass_name+fdu.getFullId()+"! Skipping order!", type=fatboyLog.ERROR)
-                        qaParams.append(str(j+1)+"\t"+str(seg+1)+"\t0\t0\t-\t-\t-\t[]\t-\t-\tfailed: 3 brightest lines not matched\t-")
+                        qaParams.append(str(j+1)+"\t"+str(seg+1)+"\t0\t0\t-\t-\t-\t[]\t-\t-\tfailed: "+failReason+"\t-")
                         self._log.writeLog(__name__, "Check "+specfile+" for data.")
                         #Output "spec" file
                         xs = np.arange(len(oned), dtype=np.float32)*scale+min_wavelength
@@ -2371,499 +3331,37 @@ class wavelengthCalibrateProcess(fatboyProcess):
                             maxLambdaList.append(xsize-1)
                         continue
 
-                    #oned = one-d cut of image; obsSpec = gaussians of found lines;
-                    #obsFlag = flagged pixels; resid = used for finding next line
-                    obsSpec = np.zeros(len(oned))
-                    resid = np.zeros(len(oned))
-                    obsFlag = np.ones(len(oned))
-                    #Add actual wavelengths of 3 lines to wlines np.array
-                    for i in range(len(currLines)):
-                        #Get wavelgnth from masterWave -- dummyWave is now an approximation
-                        #Find closest wavelength in masterWave
-                        currWave =  masterWave[np.where(np.abs(masterWave-dummyWave[currLines[i]]) == np.min(np.abs(masterWave-dummyWave[currLines[i]])))][0]
-                        wlines.append(currWave)
-                    #Add pixel centroid of 3 lines to reflines np.array
-                    for i in range(len(wclines)):
-                        reflines.append(wccentroids[i])
-                        #Add line to obsSpec
-                        obsSpec += gaussFunction(lineParams[i], np.arange(len(obsSpec), dtype=np.float32))
-                    #Refine Gaussian width, flux scale by taking average from 3 lines
-                    gaussWidth = sumWidth/3.
-                    maxPeak = sumPeak/3.
-                    fluxScale *= sumPeak/dumPeak
-                    #Refine scale, dummy arrays
-                    #With 3 datapoints, use linear approximation
-                    scale = (wlines[2]-wlines[0])/(reflines[2]-reflines[0])
-                    p = np.zeros(2, dtype=np.float32)
-                    p[0] = wlines[0]-scale*reflines[0]
-                    p[1] = scale
-                    try:
-                        lsq = leastsq(linResiduals, p, args=(np.array(reflines), np.array(wlines)))
-                        scale = lsq[0][1]
-                    except Exception as ex:
-                        print("wavelengthCalibrateProcess::wavelengthCalibrate> Warning: exception "+str(ex)+" while doing least squares fit to linear scale.")
-                        self._log.writeLog(__name__, "exception "+str(ex)+" while doing least squares fit to linear scale.", type=fatboyLog.WARNING)
-
-                    #Print and write to log the wavelengths and pixel values of these 3 lines
-                    print("wavelengthCalibrateProcess::wavelengthCalibrate> Matched up brightest 3 lines "+pass_name+fdu.getFullId())
-                    self._log.writeLog(__name__, "Matched up brightest 3 lines "+pass_name+fdu.getFullId())
-                    for i in range(len(reflines)):
-                        print("\tLine ("+str(i)+"): pixel="+formatNum(reflines[i])+", wavelength="+formatNum(wlines[i]))
-                        self._log.writeLog(__name__, "Line ("+str(i)+"): pixel="+formatNum(reflines[i])+", wavelength="+formatNum(wlines[i]), printCaller=False, tabLevel=1)
-                    nlines = 3
-
-                    #Force arrays to be updated on first pass
-                    oldnlines = 0
-                    findLines = True
-                    inloop = 0
-                    xlo = int(max(min(reflines)-200, 50))
-                    xhi = int(min(max(reflines)+200, len(oned)-51))
-                    #Loop over other lines in +/- 200 px area
-
-                    while (findLines and inloop < 20):
-                        #Refine scale with linear approximation if new line found
-                        #Do not update if nonlinear until range expands below and at least min_lines_to_refine_nonlinear_guess lines found
-                        if (nlines > oldnlines):
-                            #Use helper method refineWavelengthScale.  npass = 1.
-                            (success, scale, dummySize, dummyWave, dummyFlux) = self.refineWavelengthScale(1, nlines, nonlinear, reflines, wlines, scale, min_wavelength, max_wavelength, dummySize, min_lines_nonlinear, coeffs)
-                            if (not success):
-                                print("wavelengthCalibrateProcess::wavelengthCalibrate> Warning: Unable to refine wavelength solution "+pass_name+fdu.getFullId())
-                                self._log.writeLog(__name__, "Unable to refine wavelength solution "+pass_name+fdu.getFullId(), type=fatboyLog.WARNING)
-                            #Add gaussians for each line in line list
-                            dummyFlux = self.populateDummyFlux(masterFlux, masterWave, dummyWave, dummyFlux, scale, gaussWidth, wlines)
-                            #Scale template
-                            dummyFlux *= fluxScale
-                        oldnlines = nlines
-
-                        #Set up resid np.array = residuals of (oned - found lines) * obsFlag
-                        resid = (oned-obsSpec)*obsFlag
-                        #If peak in resid np.array is <= 2*min_intensity_pct (default 1%) of peak of brightest line, break out of loop
-                        if (resid[xlo+5:xhi-4].max() <= maxPeak*min_intensity_pct*2):
-                            findLines = False
-                            break
-                        #blref = line center of brightest line remaining in resid, rounded to nearest pixel
-                        blref = np.where(resid[xlo:xhi+1] == np.max(resid[xlo+5:xhi-4]))[0][0]+xlo
-                        #Edge cases - ensure peak of line found
-                        if (blref-xlo < 10):
-                            blref = np.where(resid[blref-5:blref+1] == np.max(resid[blref-5:blref+1]))[0][0]+blref-5
-                        if (xhi-blref < 10):
-                            blref = np.where(resid[blref:blref+6] == np.max(resid[blref:blref+6]))[0][0]+blref
-                        if (blref-xlo < 30):
-                            resid[blref-50:blref-30] = 0
-                        elif (xhi-blref < 30):
-                            resid[blref+30:blref+50] = 0
-                        refbox = 25
-                        searchbox = 25
-                        templines = np.array(reflines)
-                        #Find closest line in pixel space to this one to use for initial guesses
-                        refline = np.where(np.abs(templines-blref) == np.min(np.abs(templines-blref)))[0][0]
-                        #Find index of dummyWave closest to actual wavelength of refline
-                        refIdx = np.where(np.abs(dummyWave-wlines[refline]) == np.min(np.abs(dummyWave-wlines[refline])))[0][0]
-                        #Guess at index offset between oned cut and dummyFlux cut
-                        xoffGuess = int(refIdx-reflines[refline])
-                        refCut = resid[blref-refbox:blref+refbox+1]
-
-                        if (nonlinear):
-                            waveguess = polyFunction(coeffs, blref, dummyOrder)-polyFunction(coeffs, reflines[refline], dummyOrder)+dummyWave[refIdx]
-                            guessIdx = np.where(np.abs(dummyWave-waveguess) == np.min(np.abs(dummyWave-waveguess)))[0][0]
-                            xoffGuess = guessIdx-blref
-                        if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
-                            print("Line at ref pixel BLREF ", blref, "nearest line", reflines[refline], "wavelength=",wlines[refline])
-                            print("\tguess at offset=", xoffGuess)
-
-                        #Rejection criteria 0-6 now use helper method
-                        (success, inloop, lsigma) = self.checkPrefitRejectionCriteria(fdu, blref, resid, reflines, wlines, obsFlag, inloop, refbox, searchbox, nlines, dummyWave, dummyFlux, min_threshold)
-                        if (success == False):
-                            continue
-
-                        #Cross-correlate
-                        dumCut = dummyFlux[blref-searchbox+xoffGuess:blref+searchbox+1+xoffGuess]
-                        n = min(len(refCut),len(dumCut))
-                        #Make sure refCut and dumCut are same length
-                        refCut = refCut[:n]
-                        dumCut = dumCut[:n]
-                        ccor = np.correlate(refCut, dumCut, mode='same')
-                        #plt.plot(refCut)
-                        #plt.plot(dumCut)
-                        #plt.show()
-                        #plt.plot(ccor)
-                        #plt.show()
-                        #Fit cross correlation function with a Gaussian
-                        p = np.zeros(4, dtype=np.float64)
-                        p[0] = np.max(ccor)
-                        p[1] = np.where(ccor == np.max(ccor))[0][0]
-                        if (use_tolerance and abs(p[1]-len(ccor)//2) > shift_tol):
-                            #Maybe a line in list that is not in the data?
-                            #Zero out 5 pixels around max
-                            ccor[max(int(p[1])-2, 0):min(int(p[1])+3, len(ccor))] = 0
-                            #Examine second highest peak
-                            cmax2 = np.max(ccor)
-                            peak2 = np.where(ccor == np.max(ccor))[0][0]
-                            if (cmax2 >= p[0]*0.25 and abs(peak2-len(ccor)//2) <= shift_tol):
-                                p[0] = cmax2
-                                p[1] = peak2
-                        p[2] = gaussWidth
-                        p[3] = gpu_arraymedian(ccor)
-                        llo = max(0, int(p[1]-5))
-                        lhi = min(len(ccor), int(p[1]+6))
-                        try:
-                            lsq = leastsq(gaussResiduals, p, args=(np.arange(lhi-llo, dtype=np.float64)+llo, ccor[llo:lhi]))
-                        except Exception as ex:
-                            #Flag and continue
-                            obsFlag[blref-1:blref+2] = 0
-                            continue
-                        if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
-                            print("\tleast squares fit to ccor pixel value=",lsq[0][1],"guess param=",p[1])
-                        inloop += 1
-
-                        success = self.checkPostfitRejectionCriteria(fdu, lsq, obsFlag, blref, ccor)
-                        if (success == False):
-                            continue
-
-                        mcor = lsq[0][1]
-                        #Centroided position in dummyFlux, dummyWave arrays
-                        currDummy = blref+xoffGuess-mcor+searchbox
-                        if (currDummy > len(dummyWave)-3 or currDummy < 2):
-                            #Flag and continue
-                            obsFlag[blref-1:blref+2] = 0
-                            continue
-                        #Centroid line for subpixel accuracy
-                        #Square data to ensure bright line dominates fit
-                        refCut = resid[max(blref-10,0):blref+11]**2
-                        p = np.zeros(4, dtype=np.float64)
-                        p[0] = np.max(refCut)
-                        p[1] = 10
-                        p[2] = gaussWidth/math.sqrt(2)
-                        p[3] = gpu_arraymedian(refCut)
-                        try:
-                            lsq = leastsq(gaussResiduals, p, args=(np.arange(len(refCut), dtype=np.float64), refCut))
-                        except Exception as ex:
-                            #Flag and continue
-                            obsFlag[blref-1:blref+2] = 0
-                            continue
-                        #Actual centroid of line in image, in pixel space
-                        currLine = blref+lsq[0][1]-10
-                        #Add line to obsSpec
-                        p = np.zeros(4)
-                        p[0] = math.sqrt(abs(lsq[0][0]))
-                        p[1] = currLine
-                        p[2] = abs(lsq[0][2]*math.sqrt(2))
-                        #Common sense check of paramaters
-                        if (p[0] > 1.5*np.max(resid[blref-5:blref+6]) or p[2] > 5*gaussWidth):
-                            #If width or height seems weird, use actual peak vaule and gaussWidth from 3 brightest lines
-                            p[0] = np.max(resid[blref-5:blref+6])
-                            p[1] = blref
-                            p[2] = gaussWidth
-                        obsSpec += gaussFunction(p, np.arange(len(obsSpec), dtype=np.float32))
-                        #Get wavelength from masterWave np.array.  Use int(currDummy) as index
-                        #and find wavelength from line list closest to wavelength of dummyWave at this index.
-                        currWave =  masterWave[np.where(np.abs(masterWave-dummyWave[int(currDummy)]) == np.min(np.abs(masterWave-dummyWave[int(currDummy)])))][0]
-                        diff = abs(reflines[refline] - currLine)
-
-                        closestLinesIndices = np.argsort(abs(templines-blref))[:2]
-                        #scale from closest 2 lines
-                        slocal = (wlines[closestLinesIndices[1]]-wlines[closestLinesIndices[0]])/(reflines[closestLinesIndices[1]]-reflines[closestLinesIndices[0]])
-                        delta = (wlines[refline]-currWave)/slocal - (wlines[refline]-currWave)/scale
-
-                        success = self.checkFinalRejectionCriteria(fdu, mcor, refbox, diff, wlines, currWave, reflines, currLine, scale, delta)
-                        if (success == False):
-                            obsFlag[blref-1:blref+2] = 0
-                            continue
-
-                        #Reset inloop np.array
-                        inloop = 0
-                        #Append this line's pixel centroid to reflines and wavelength to wlines and its parameters to lineParams.
-                        reflines.append(currLine)
-                        wlines.append(currWave)
-                        lineParams.append(p)
-                        print("\tLine found ("+str(nlines)+"): pixel="+formatNum(currLine)+", wavelength="+formatNum(currWave)+" (sigma = "+formatNum(lsigma)+")")
-                        self._log.writeLog(__name__, "Line ("+str(nlines)+"): pixel="+formatNum(currLine)+", wavelength="+formatNum(currWave)+" (sigma = "+formatNum(lsigma)+")", printCaller=False, tabLevel=1)
-                        #Increment nlines
-                        nlines+=1
-                        #If peak in resid np.array is <= 2*min_intensity_pct (default 1%) of peak of brightest line, break out of loop
-                        if (resid[xlo+5:xhi-4].max() <= maxPeak*min_intensity_pct*2):
-                            findLines = False
-
-                    if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
-                        print("Expanding search box...")
-                    #Expand search range out incrementally until entire image reached
-                    npass = 0
-                    #oldnlines = nlines-1
-                    while (xlo > 25 or xhi < len(oned)-26):
-                        findLines = True
-                        inloop = 0
-                        #Incrementally expand range by 50 pixels per pass
-                        xlo = int(max(min(reflines)-(250+npass*50), 25))
-                        xhi = int(min(max(reflines)+(250+npass*50), len(oned)-26))
-                        npass+=1
-                        #Within each pass, loop over current range until found all lines in area
-                        while (findLines and inloop < 25):
-                            #Refine wavelength scale
-                            if (nlines > oldnlines):
-                                #Use helper method refineWavelengthScale
-                                (success, scale, dummySize, dummyWave, dummyFlux) = self.refineWavelengthScale(npass, nlines, nonlinear, reflines, wlines, scale, min_wavelength, max_wavelength, dummySize, min_lines_nonlinear, coeffs)
-                                if (not success):
-                                    print("wavelengthCalibrateProcess::wavelengthCalibrate> Warning: Unable to refine wavelength solution "+pass_name+fdu.getFullId())
-                                    self._log.writeLog(__name__, "Unable to refine wavelength solution "+pass_name+fdu.getFullId(), type=fatboyLog.WARNING)
-                                #Add gaussians for each line in line list
-                                dummyFlux = self.populateDummyFlux(masterFlux, masterWave, dummyWave, dummyFlux, scale, gaussWidth, wlines)
-                                #Scale template
-                                dummyFlux *= fluxScale
-                            oldnlines = nlines
-
-                            #Set up resid np.array = residuals of (oned - found lines) * obsFlag
-                            resid = (oned-obsSpec)*obsFlag
-                            #If peak in resid np.array is <= min_intensity_pct (default 0.5%) of peak of brightest line, break out of loop
-                            #continue to next pass in expanding range
-                            if (resid[xlo+5:xhi-4].max() <= maxPeak*min_intensity_pct):
-                                findLines = False
-                                break
-                            blref = np.where(resid[xlo:xhi+1] == np.max(resid[xlo+5:xhi-4]))[0][0]+xlo
-                            #Edge cases - ensure peak of line found
-                            if (blref-xlo < 10):
-                                blref = np.where(resid[blref-5:blref+1] == np.max(resid[blref-5:blref+1]))[0][0]+blref-5
-                            if (xhi-blref < 10):
-                                blref = np.where(resid[blref:blref+6] == np.max(resid[blref:blref+6]))[0][0]+blref
-                            if (xlo == 25 and blref < 75):
-                                resid[:20] = 0
-                            elif (xhi == len(oned)-26 and blref > len(oned)-76):
-                                resid[-20:] = 0
-                            elif (blref-xlo < 30):
-                                resid[blref-50:blref-30] = 0
-                            elif (xhi-blref < 30):
-                                resid[blref+30:blref+50] = 0
-                            refbox = 25
-                            searchbox = 25
-                            templines = np.array(reflines)
-                            #Find closest line in pixel space to this one to use for initial guesses
-                            refline = np.where(np.abs(templines-blref) == np.min(np.abs(templines-blref)))[0][0]
-                            #Find index of dummyWave closest to actual wavelength of ref line
-                            refIdx = np.where(np.abs(dummyWave-wlines[refline]) == np.min(np.abs(dummyWave-wlines[refline])))[0][0]
-                            #Guess at index offset between oned cut and dummyFlux cut
-                            xoffGuess = int(refIdx-reflines[refline])
-                            refCut = resid[blref-refbox:blref+refbox+1]
-                            if (nonlinear):
-                                waveguess = polyFunction(coeffs, blref, dummyOrder)-polyFunction(coeffs, reflines[refline], dummyOrder)+dummyWave[refIdx]
-                                guessIdx = np.where(np.abs(dummyWave-waveguess) == np.min(np.abs(dummyWave-waveguess)))[0][0]
-                                xoffGuess = guessIdx-blref
-                            elif ((abs(reflines[refline]-blref) > 200 and nlines >= 8) or (abs(reflines[refline]-blref) > 100 and nlines >= 32)):
-                                #Try 2nd order guess if > 200 pixels from closest matched line and at least 8 lines matched
-                                p = np.zeros(3, dtype=np.float32)
-                                p[1] = scale
-                                lsq = leastsq(polyResiduals, p, args=(np.array(reflines), np.array(wlines), 2))
-                                waveguess = polyFunction(lsq[0], blref, 2)-polyFunction(lsq[0], reflines[refline], 2)+dummyWave[refIdx]
-                                #Find nearest line
-                                guessIdx = np.where(np.abs(dummyWave-waveguess) == np.min(np.abs(dummyWave-waveguess)))[0][0]
-                                xoffGuess = guessIdx-blref
-                                if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
-                                    print("2nd order XOFF guess", lsq[0], waveguess, guessIdx, xoffGuess)
-                            if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
-                                print("Line at ref pixel BLREF ", blref, "nearest line", reflines[refline], "wavelength=",wlines[refline])
-                                print("\tguess at offset=", xoffGuess)
-
-                            #Rejection criteria 0-6 now use helper method
-                            (success, inloop, lsigma) = self.checkPrefitRejectionCriteria(fdu, blref, resid, reflines, wlines, obsFlag, inloop, refbox, searchbox, nlines, dummyWave, dummyFlux, min_threshold)
-                            if (success == False):
-                                continue
-
-                            if (blref-searchbox+xoffGuess < 0):
-                                #Too close to edge!  Blank out 3 pixels and try again
-                                obsFlag[blref-1:blref+2] = 0
-                                inloop+=1
-                                continue
-
-                            #Cross-correlate
-                            dumCut = dummyFlux[blref-searchbox+xoffGuess:blref+searchbox+1+xoffGuess]
-                            n = min(len(refCut),len(dumCut))
-                            #Make sure refCut and dumCut are same length
-                            refCut = refCut[:n]
-                            dumCut = dumCut[:n]
-                            ccor = np.correlate(refCut, dumCut, mode='same')
-                            #if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
-                            #  plt.plot(refCut, 'r')
-                            #  plt.plot(dumCut, 'g')
-                            #  plt.show()
-                            #  plt.plot(ccor)
-                            #  plt.show()
-                            #Fit cross correlation function with a Gaussian
-                            p = np.zeros(4, dtype=np.float64)
-                            p[0] = np.max(ccor)
-                            p[1] = np.where(ccor == np.max(ccor))[0][0]
-                            p[2] = gaussWidth
-                            p[3] = gpu_arraymedian(ccor)
-                            llo = max(0, int(p[1]-5))
-                            lhi = min(len(ccor), int(p[1]+6))
-                            try:
-                                lsq = leastsq(gaussResiduals, p, args=(np.arange(lhi-llo, dtype=np.float64)+llo, ccor[llo:lhi]))
-                            except Exception as ex:
-                                #Flag and continue
-                                obsFlag[blref-1:blref+2] = 0
-                                continue
-                            if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
-                                print("\tleast squares fit to ccor pixel value=",lsq[0][1],"guess param=",p[1])
-                            inloop += 1
-
-                            success = self.checkPostfitRejectionCriteria(fdu, lsq, obsFlag, blref, ccor)
-                            if (success == False):
-                                continue
-
-                            mcor = lsq[0][1]
-                            #Centroided position in dummyFlux, dummyWave arrays
-                            currDummy = blref+xoffGuess-mcor+searchbox
-                            #Centroid line for subpixel accuracy
-                            #Square data to ensure bright line dominates fit
-                            refCut = resid[max(blref-10,0):blref+11]**2
-                            p = np.zeros(4, dtype=np.float64)
-                            p[0] = np.max(refCut)
-                            p[1] = 10
-                            p[2] = gaussWidth/math.sqrt(2)
-                            p[3] = gpu_arraymedian(refCut)
-                            try:
-                                lsq = leastsq(gaussResiduals, p, args=(np.arange(len(refCut), dtype=np.float64), refCut))
-                            except Exception as ex:
-                                #Flag and continue
-                                obsFlag[blref-1:blref+2] = 0
-                                continue
-                            currLine = blref+lsq[0][1]-10
-                            #Add line to obsSpec
-                            p = np.zeros(4)
-                            p[0] = math.sqrt(abs(lsq[0][0]))
-                            p[1] = currLine
-                            p[2] = abs(lsq[0][2]*math.sqrt(2))
-                            #Common sense check of paramaters
-                            if (p[0] > 1.5*np.max(resid[blref-5:blref+6]) or p[2] > 5*gaussWidth):
-                                #If width or height seems weird, use actual peak vaule and gaussWidth from 3 brightest lines
-                                p[0] = np.max(resid[blref-5:blref+6])
-                                p[1] = blref
-                                p[2] = gaussWidth
-                            obsSpec += gaussFunction(p, np.arange(len(obsSpec))+0.)
-                            if (int(currDummy-1) < 0 or int(currDummy+1) > len(dummyWave)):
-                                #Out of range!
-                                if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
-                                    print("FAIL X - out of range")
-                                continue
-                            #Get wavelength from masterWave np.array.  Use int(currDummy) as index
-                            #and find wavelength from line list closest to wavelength of dummyWave at this index.
-                            currWave =  masterWave[np.where(np.abs(masterWave-dummyWave[int(currDummy)]) == np.min(np.abs(masterWave-dummyWave[int(currDummy)])))][0]
-                            diff = abs(reflines[refline] - currLine)
-
-                            closestLinesIndices = np.argsort(np.abs(templines-blref))[:2]
-                            #scale from closest 2 lines
-                            slocal = (wlines[closestLinesIndices[1]]-wlines[closestLinesIndices[0]])/(reflines[closestLinesIndices[1]]-reflines[closestLinesIndices[0]])
-                            delta = (wlines[refline]-currWave)/slocal - (wlines[refline]-currWave)/scale
-
-                            success = self.checkFinalRejectionCriteria(fdu, mcor, refbox, diff, wlines, currWave, reflines, currLine, scale, delta)
-                            if (success == False):
-                                obsFlag[blref-1:blref+2] = 0
-                                continue
-
-                            #Reset inloop np.array
-                            inloop = 0
-                            #Append this line's pixel centroid to reflines and wavelength to wlines and its parameters to lineParams.
-                            reflines.append(currLine)
-                            wlines.append(currWave)
-                            lineParams.append(p)
-                            print("\tLine found ("+str(nlines)+"): pixel="+formatNum(currLine)+", wavelength="+formatNum(currWave)+" (sigma = "+formatNum(lsigma)+")")
-                            self._log.writeLog(__name__, "Line ("+str(nlines)+"): pixel="+formatNum(currLine)+", wavelength="+formatNum(currWave)+" (sigma = "+formatNum(lsigma)+")", printCaller=False, tabLevel=1)
-                            #Increment nlines
-                            nlines+=1
-                            #If peak in resid np.array is <= min_intensity_pct (default 0.5%) of peak of brightest line, break out of loop
-                            if (resid[xlo+5:xhi-4].max() <= maxPeak*min_intensity_pct):
-                                findLines = False
-
-                    #Fit polynomial to find wavelength solution
-                    #Convert lists to arrays
-                    reflines = np.array(reflines)
-                    wlines = np.array(wlines)
-                    lineParams = np.array(lineParams)
-                    #Throw out flagged lines to not use in fit
-                    flags = np.zeros(len(wlines))
-                    for i in range(len(wlines)):
-                        b = np.where(masterWave == wlines[i])
-                        #0 = use for fit, nonzero = don't use for fit
-                        flags[i] = masterFlag[b[0][0]]
-                    if ((flags == 0).sum() > 3):
-                        nflagged = (flags != 0).sum()
-                        print("\tThrowing out "+str(nflagged)+" flagged lines.")
-                        self._log.writeLog(__name__, "Throwing out "+str(nflagged)+" flagged lines.", printCaller=False, tabLevel=1)
-                        #good = lines to use in fit, subscript arrays
-                        good = (flags == 0)
-                        reflines = reflines[good]
-                        wlines = wlines[good]
-                        lineParams = lineParams[good]
-                    else:
-                        print("\tWarning: Could not throw out flagged lines because not enough lines would remain to perform fit.")
-                        self._log.writeLog(__name__, "Could not throw out flagged lines because not enough lines would remain to perform fit.", type=fatboyLog.WARNING, printCaller=False, tabLevel=1)
-
-                    #Fit polynomial of order fit_order to lines
-                    p = np.zeros(fit_order+1, dtype=np.float32)
-                    p[1] = scale
-                    if (len(reflines) <= fit_order):
-                        print("\tWarning: Only found "+str(len(reflines))+" lines.  Using fit order = 1.")
-                        self._log.writeLog(__name__, "Only found "+str(len(reflines))+" lines.  Using fit order = 1.", type=fatboyLog.WARNING, printCaller=False, tabLevel=1)
-                        fit_order = 1
-                        p = p[:2]
-                    lsq = leastsq(polyResiduals, p, args=(reflines, wlines, fit_order))
-                    #Calculate residuals
-                    residLines = polyFunction(lsq[0], reflines, fit_order)-wlines
-                    print("\t\tFound "+str(len(reflines))+" datapoints.  Fit: "+formatList(lsq[0]))
-                    print("\t\tData - fit mean: "+formatNum(residLines.mean())+"\tsigma: "+formatNum(residLines.std()))
-                    self._log.writeLog(__name__, "Found "+str(len(reflines))+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=2)
-                    self._log.writeLog(__name__, "Data - fit mean: "+formatNum(residLines.mean())+"\tsigma: "+formatNum(residLines.std()), printCaller=False, tabLevel=2)
-
-                    #Throw away outliers starting at 2 sigma significance
-                    sigThresh = 2
-                    niter = 0
-                    norig = len(reflines)
-                    bad = np.where(np.abs(residLines-residLines.mean())/residLines.std() > sigThresh)
-                    print("\t\tPerforming iterative sigma clipping to throw away outliers...")
-                    self._log.writeLog(__name__, "Performing iterative sigma clipping to throw away outliers...", printCaller=False, tabLevel=2)
-                    #Iterative sigma clipping
-                    while (len(bad[0]) > 0):
-                        niter += 1
-                        good = np.where(np.abs(residLines-residLines.mean())/residLines.std() <= sigThresh)
-                        if (len(good[0]) < fit_order):
-                            break
-                        reflines = reflines[good]
-                        wlines = wlines[good]
-                        lineParams = lineParams[good]
-                        #Refit, use last actual fit coordinates as input guess
-                        p = lsq[0]
-                        try:
-                            lastLsq = lsq
-                            lsq = leastsq(polyResiduals, p, args=(reflines, wlines, fit_order))
-                        except Exception as ex:
-                            lsq = lastLsq
-                            break
-                        #Calculate residuals
-                        residLines = polyFunction(lsq[0], reflines, fit_order)-wlines
-                        if (niter > 2):
-                            #Gradually increase sigma threshold
-                            sigThresh += 0.2
-                        bad = np.where(np.abs(residLines-residLines.mean())/residLines.std() > sigThresh)
-                    print("\t\tAfter "+str(niter)+" passes, kept "+str(len(reflines))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]))
-                    print("\t\tData - fit mean: "+formatNum(residLines.mean())+"\tsigma: "+formatNum(residLines.std()))
-                    self._log.writeLog(__name__, "After "+str(niter)+" passes, kept "+str(len(reflines))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=2)
-                    self._log.writeLog(__name__, "Data - fit mean: "+formatNum(residLines.mean())+"\tsigma: "+formatNum(residLines.std()), printCaller=False, tabLevel=2)
+                    usedFallback = (cand["label"] is not None)
+                    masterFluxUsed = masterFlux
+                    if (usedFallback):
+                        retryLabel = cand["label"]
+                        min_wavelength = cand["min_wavelength"]
+                        max_wavelength = cand["max_wavelength"]
+                        nonlinear = cand["nonlinear"]
+                        coeffs = cand["coeffsGuess"]
+                        dummySize = cand["dummySize"]
+                        dummyOrder = cand["dummyOrder"]
+                        masterFluxUsed = cand["masterFlux"]
+                    reflines = cand["reflines"]
+                    wlines = cand["wlines"]
+                    lineParams = cand["lineParams"]
+                    lsq = [cand["coeffs"]]
+                    fit_order = cand["fit_order"]
+                    residLines = cand["residLines"]
+                    norig = cand["norig"]
+                    obsSpec = cand["obsSpec"]
+                    gaussWidth = cand["gaussWidth"]
+                    fluxScale = cand["fluxScale"]
+                    scale = cand["scale"]
 
                     #QA: RMS in wavelength units and pixels, grade, and how much of the cut the lines span
-                    (rmsWave, rmsPix, quality, coverage) = self.wavecalQuality(lsq[0], fit_order, reflines, residLines, len(oned), fdu)
+                    (rmsWave, rmsPix, quality, coverage) = (cand["rmsWave"], cand["rmsPix"], cand["quality"], cand["coverage"])
                     qamsg = "RMS = "+formatNum(rmsWave)+" (wavelength units) = "+formatNum(rmsPix)+" px: "+quality.upper()+"; "+str(len(reflines))+" of "+str(norig)+" lines used, spanning pixels "+str(int(np.min(reflines)))+"-"+str(int(np.max(reflines)))+" ("+str(int(round(coverage*100)))+"% of the cut)"
                     print("\t\t"+qamsg)
                     self._log.writeLog(__name__, qamsg, printCaller=False, tabLevel=2)
                     if (coverage < 0.5):
                         print("wavelengthCalibrateProcess::wavelengthCalibrate> WARNING: lines span only "+str(int(round(coverage*100)))+"% of the cut"+pass_name+fdu.getFullId()+"; the solution is extrapolated beyond them.")
                         self._log.writeLog(__name__, "lines span only "+str(int(round(coverage*100)))+"% of the cut"+pass_name+fdu.getFullId()+"; the solution is extrapolated beyond them.", type=fatboyLog.WARNING)
-                    if (usedFallback and (quality not in ["excellent", "good", "satisfactory"] or len(reflines) < max(2*(fit_order+1), 8))):
-                        #A solution reached through a fallback guess must be good to be trusted (a wrong
-                        #guess can still match 3 lines in a dense line list)
-                        print("wavelengthCalibrateProcess::wavelengthCalibrate> ERROR: rejecting the solution from "+retryLabel+pass_name+fdu.getFullId()+" ("+quality+", "+str(len(reflines))+" lines)! Skipping order!")
-                        self._log.writeLog(__name__, "rejecting the solution from "+retryLabel+pass_name+fdu.getFullId()+" ("+quality+", "+str(len(reflines))+" lines)! Skipping order!", type=fatboyLog.ERROR)
-                        fitParams[j].append([])
-                        minLambdaList.append(0)
-                        maxLambdaList.append(xsize-1)
-                        qaParams.append(str(j+1)+"\t"+str(seg+1)+"\t"+str(norig)+"\t"+str(len(reflines))+"\t-\t-\t-\t[]\t"+formatNum(rmsWave)+"\t"+formatNum(rmsPix)+"\tfailed: fallback solution "+quality+"\t"+str(int(round(coverage*100))))
-                        continue
                     if (usedFallback):
                         print("wavelengthCalibrateProcess::wavelengthCalibrate> Solution"+pass_name+fdu.getFullId()+" found with "+retryLabel)
                         self._log.writeLog(__name__, "Solution"+pass_name+fdu.getFullId()+" found with "+retryLabel, type=fatboyLog.WARNING)
@@ -2872,7 +3370,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
                     xs = polyFunction(lsq[0], np.arange(len(oned), dtype=np.float32), fit_order)
                     dummyFlux = np.zeros(len(oned), dtype=np.float32)
                     #Add gaussians for each line in line list
-                    dummyFlux = self.populateDummyFlux(masterFlux, masterWave, xs, dummyFlux, lsq[0][1], gaussWidth)
+                    dummyFlux = self.populateDummyFlux(masterFluxUsed, masterWave, xs, dummyFlux, lsq[0][1], gaussWidth)
                     #Scale template
                     dummyFlux *= fluxScale
                     f = open(specfile,'w')
@@ -2961,6 +3459,12 @@ class wavelengthCalibrateProcess(fatboyProcess):
                         wcHeader['WCRMSPX'] = rmsPix
                         wcHeader['WCQUAL'] = quality
                         wcHeader['WCNLINES'] = len(reflines)
+                        if (cand["native"] is not None):
+                            #legendre/chebyshev: the native coefficients, with pixels 0..WCXMAX mapped to [-1, 1]
+                            wcHeader['WCFUNC'] = cand["native"][0]
+                            wcHeader['WCXMAX'] = len(oned)-1
+                            for i in range(len(cand["native"][1])):
+                                wcHeader['NCOEFF_'+str(i)] = cand["native"][1][i]
                     else:
                         #Use PORDERxx and PCFi_Sxx
                         slitStr = str(j+1)
@@ -2975,6 +3479,11 @@ class wavelengthCalibrateProcess(fatboyProcess):
                             wcHeader['WCRPX'+slitStr] = rmsPix
                             wcHeader['WCQUL'+slitStr] = quality
                             wcHeader['WCNLN'+slitStr] = len(reflines)
+                            if (cand["native"] is not None):
+                                wcHeader['WCFUN'+slitStr] = cand["native"][0]
+                                wcHeader['WCXMX'+slitStr] = len(oned)-1
+                                for i in range(len(cand["native"][1])):
+                                    wcHeader['NCF'+str(i)+'_S'+slitStr] = cand["native"][1][i]
                         else:
                             #Multiple segments, use hierarchical keywords PORDER_xx_SEGy and PCFi_Sxx_SEGy
                             slitStr += '_SEG' + str(seg)
@@ -2985,24 +3494,84 @@ class wavelengthCalibrateProcess(fatboyProcess):
                             wcHeader['HIERARCH WCRPX'+slitStr] = rmsPix
                             wcHeader['HIERARCH WCQUL'+slitStr] = quality
                             wcHeader['HIERARCH WCNLN'+slitStr] = len(reflines)
+                            if (cand["native"] is not None):
+                                wcHeader['HIERARCH WCFUN'+slitStr] = cand["native"][0]
+                                wcHeader['HIERARCH WCXMX'+slitStr] = len(oned)-1
+                                for i in range(len(cand["native"][1])):
+                                    wcHeader['HIERARCH NCF'+str(i)+'_S'+slitStr] = cand["native"][1][i]
                     #Append fit params to list
                     fitParams[j].append(lsq[0])
-                    #Keep this cut and solution as a guess for slitlets that fail to match later
-                    solvedCuts.append((j, seg, oned.copy(), np.array(lsq[0], dtype=np.float64), fit_order))
+                    #Keep this cut and solution as a guess for slitlets that fail to match later - unless it is poor
+                    #(possibly a wrong match, which would mislead the neighbor and trend guesses)
+                    solvedCuts = [sc for sc in solvedCuts if not (sc[0] == j and sc[1] == seg)]
+                    if (quality != "poor"):
+                        solvedCuts.append((j, seg, oned.copy(), np.array(lsq[0], dtype=np.float64), fit_order))
                     #Append qa params - slitlet, segment, norig, n lines used in fit, sigma
                     #Format as string
                     qaParams.append(str(j+1)+"\t"+str(seg+1)+"\t"+str(norig)+"\t"+str(len(reflines))+"\t"+formatNum(residLines.std())+"\t"+formatNum(minLambdaList[-1], 0)+"\t"+formatNum(maxLambdaList[-1],0)+"\t"+formatList(lsq[0])+"\t"+formatNum(rmsWave)+"\t"+formatNum(rmsPix)+"\t"+quality+"\t"+str(int(round(coverage*100))))
+                    if (passNum == 2):
+                        #Replace the first pass's entries for this slitlet/segment
+                        (pf, pl, pq) = segState[(j, seg)]["pos"]
+                        fitParams[j][pf] = fitParams[j].pop()
+                        minLambdaList[pl] = minLambdaList.pop()
+                        maxLambdaList[pl] = maxLambdaList.pop()
+                        qaParams[pq] = qaParams.pop()
+                    segState[(j, seg)]["cand"] = cand
+                    segState[(j, seg)]["quality"] = quality
+                    #Measure the line intensities in this cut, for the templates of slitlets that need a fallback
+                    try:
+                        lm = lineMeasures.setdefault(line_list, dict())
+                        for i in lm:
+                            lm[i] = [m for m in lm[i] if not (m[0] == j and m[1] == seg)]
+                        if (quality != "poor"):
+                            measured = self.measureLineIntensities(oned, lsq[0], fit_order, masterWave, masterFlux, wlines, gaussWidth)
+                            for i in measured:
+                                lm.setdefault(i, []).append((j, seg, measured[i]))
+                    except Exception as ex:
+                        print("wavelengthCalibrateProcess::wavelengthCalibrate> Warning: could not measure line intensities"+pass_name+fdu.getFullId()+": "+str(ex))
+                        self._log.writeLog(__name__, "could not measure line intensities"+pass_name+fdu.getFullId()+": "+str(ex), type=fatboyLog.WARNING)
                 except Exception as ex:
                     print("wavelengthCalibrateProcess::wavelengthCalibrate> ERROR: "+type(ex).__name__+": "+str(ex)+pass_name+fdu.getFullId()+"! Skipping order!")
                     self._log.writeLog(__name__, type(ex).__name__+": "+str(ex)+pass_name+fdu.getFullId()+"! Skipping order!", type=fatboyLog.ERROR)
                     self._log.writeLog(__name__, traceback.format_exc(), printCaller=False, tabLevel=1)
                     del fitParams[j][segFitStart:]
-                    fitParams[j].append([])
                     del minLambdaList[segLambdaStart:]
                     del maxLambdaList[segLambdaStart:]
+                    del qaParams[segQaStart:]
+                    if (passNum == 2):
+                        #keep the first pass's result
+                        continue
+                    fitParams[j].append([])
                     minLambdaList.append(0)
                     maxLambdaList.append(xsize-1)
                     qaParams.append(str(j+1)+"\t"+str(seg+1)+"\t0\t0\t-\t-\t-\t[]\t-\t-\tfailed\t-")
+
+            if (passNum == 1 and ischedule == nslits):
+                #Every slitlet has been tried: schedule a second pass for those that failed or were graded
+                #wavecal_retry_grade or worse, now that guesses from all the calibrated slitlets are available
+                scaleAfterFirstPass = scale
+                if (len(fallbackMethods) > 0 and len(solvedCuts) > 0):
+                    for key in sorted(segState):
+                        q = segState[key]["quality"]
+                        if (q == "failed" or (retryGrade in gradeRank and gradeRank[q] >= gradeRank[retryGrade])):
+                            retrySet.add(key)
+                if (len(retrySet) > 0):
+                    print("wavelengthCalibrateProcess::wavelengthCalibrate> Second pass for "+str(len(retrySet))+" slitlets/segments that failed or were graded "+retryGrade+" or worse"+" for "+fdu.getFullId())
+                    self._log.writeLog(__name__, "Second pass for "+str(len(retrySet))+" slitlets/segments that failed or were graded "+retryGrade+" or worse"+" for "+fdu.getFullId())
+                    for jj in sorted(set(key[0] for key in retrySet)):
+                        schedule.append((jj, 2))
+
+        if (scaleAfterFirstPass is not None and len(retrySet) > 0):
+            #The second pass reuses the per-slitlet variables; the resampling below uses the first pass's scale
+            scale = scaleAfterFirstPass
+            if (nchanged > 0):
+                #Overall wavelength range from the final solutions
+                lams = [(minLambdaList[segState[key]["pos"][1]], maxLambdaList[segState[key]["pos"][1]]) for key in segState if len(fitParams[key[0]][segState[key]["pos"][0]]) > 0]
+                if (len(lams) > 0):
+                    minLambda = min(l[0] for l in lams)
+                    maxLambda = max(l[1] for l in lams)
+            print("wavelengthCalibrateProcess::wavelengthCalibrate> Second pass improved "+str(nchanged)+" of "+str(len(retrySet))+" slitlets/segments for "+fdu.getFullId())
+            self._log.writeLog(__name__, "Second pass improved "+str(nchanged)+" of "+str(len(retrySet))+" slitlets/segments for "+fdu.getFullId())
 
 
         #Update header
@@ -3030,6 +3599,25 @@ class wavelengthCalibrateProcess(fatboyProcess):
         for i in range(len(qaParams)):
             f.write(qaParams[i]+"\n")
         f.close()
+        #Line intensities measured in the calibrated slitlets, in the line-list format (wavelength, intensity), for
+        #building a line list that matches this lamp/sky and instrument
+        for (ilist, line_list) in enumerate(sorted(lineMeasures)):
+            lm = lineMeasures[line_list]
+            if (len(lm) == 0):
+                continue
+            (listWave, listFlux, listFlag) = self.readLineList(line_list)
+            mfile = outdir+"/wavelengthCalibrated/measured_lines_"+skyFDU._id
+            if (len(lineMeasures) > 1):
+                mfile += "_"+os.path.basename(str(line_list)).split(".")[0]
+            mfile += ".dat"
+            f = open(mfile, 'w')
+            f.write("#Line intensities measured in the calibrated slitlets of "+skyFDU.getFullId()+", on the scale of "+str(line_list)+"\n")
+            f.write("#(median over slitlets; near 0 = in range but not seen).  Columns: wavelength, measured intensity, flag, #list intensity, n slitlets\n")
+            for i in sorted(lm, key=lambda k: listWave[k]):
+                if (len(lm[i]) == 0):
+                    continue
+                f.write(str(listWave[i])+"\t"+formatNum(np.median([m[2] for m in lm[i]]), 1)+"\t"+str(listFlag[i])+"\t#"+formatNum(listFlux[i], 1)+"\t"+str(len(lm[i]))+"\n")
+            f.close()
         #Summary: how many slitlets/segments got each grade, and the median RMS of those that were fit
         grades = [q.split("\t")[10] for q in qaParams if len(q.split("\t")) > 10]
         fitRms = [(float(q.split("\t")[8]), float(q.split("\t")[9])) for q in qaParams if len(q.split("\t")) > 10 and not q.split("\t")[10].startswith("failed")]
