@@ -46,7 +46,7 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
         if (slitmask.hasProperty("nslits")):
             nslits = slitmask.getProperty("nslits")
         else:
-            nslits = slitmask.getData().max()
+            nslits = int(slitmask.getData().max())
             slitmask.setProperty("nslits", nslits)
         if (slitmask.hasProperty("regions")):
             (ylos, yhis, slitx, slitw) = slitmask.getProperty("regions")
@@ -268,8 +268,8 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
                 my = b[0][0]
                 (fwhm, sig, fwhm1ds, bg) = fwhm2d(data)
                 (xcen, ycen) = getCentroid(data, mx, my, fwhm)
-                xcen -= padx
-                ycen -= pady
+                #xcen -= padx
+                #ycen -= pady
             print("sinfoniCollapseSlitletsProcess::centroidImages> 2d image centroid with "+centroid_method+": (x="+formatNum(xcen)+"; y="+formatNum(ycen)+") fwhm="+formatNum(fwhm))
             self._log.writeLog(__name__, "2d image centroid with "+centroid_method+": (x="+formatNum(xcen)+"; y="+formatNum(ycen)+") fwhm="+formatNum(fwhm))
             if (usePlot):
@@ -300,7 +300,7 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
         if (slitmask.hasProperty("nslits")):
             nslits = slitmask.getProperty("nslits")
         else:
-            nslits = slitmask.getData().max()
+            nslits = int(slitmask.getData().max())
             slitmask.setProperty("nslits", nslits)
         if (slitmask.hasProperty("regions")):
             (ylos, yhis, slitx, slitw) = slitmask.getProperty("regions")

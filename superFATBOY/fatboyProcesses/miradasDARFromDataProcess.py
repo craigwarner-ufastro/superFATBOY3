@@ -15,6 +15,7 @@ class miradasDARFromDataProcess(fatboyProcess):
     def calculateDAR(self, fdu):
         #Read options
         slitlet_number = self.getOption("slitlet_number", fdu.getTag())
+        nslits = fdu.getProperty("nslits")
         doAllSlitlets = False
         if (slitlet_number == 'all'):
             doAllSlitlets = True
