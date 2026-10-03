@@ -99,5 +99,38 @@ there if the file is not found as given. `superFatboy3.py -config` lists them.
 | `NeAr_lines_IR.dat`, `ThAr_lines_IR.dat`, `Xenon_IR.dat` | infrared arclamp lists |
 | `KAST_hehgcd.txt`, `KAST_neon.txt` | KAST blue and red arclamps |
 | `osiris_HgAr_air_nist.dat` | OSIRIS HgAr lamp |
+| `Xenon_optical_air.dat` | Xe I and Xe II, 2860-8230 A (air), with the strong blue Xe I lines (4501, 4525, 4583, 4624, 4671 A) and intensities measured from a GTC/OSIRIS xenon arc between 3446 and 4606 A (see the file header for how each intensity was derived) |
 | `megara_ThArNe_list.dat` | MEGARA ThArNe lamp |
 | `wc_miradas_sol.xml`, `wc_miradas_sos.xml`, `wc_miradas_mos_NN.xml` | MIRADAS per-slitlet wavelength-calibration starting guesses (see the [MIRADAS guide](miradas.md)) |
+
+### Making a line list: `makeLineList.py`
+
+`makeLineList.py` (installed with superFATBOY) builds a line list for any set of spectra and wavelength range from the
+[NIST Atomic Spectra Database](https://physics.nist.gov/asd):
+
+```bash
+makeLineList.py -e "Xe I,Xe II" -r 3400 5000 -o xenon_blue.dat
+makeLineList.py -e "Ne I,Ar I" -r 13000 26000 --vacuum --min-intensity 50 -o NeAr_HK.dat
+```
+
+It queries NIST in vacuum and converts to air (IAU standard formula) unless `--vacuum` is given, so a list that
+crosses 2 microns does not mix the two. Responses are cached in `~/.cache/superFATBOY/nist` (`--cache`), and
+`--nist-file "Xe I=file"` reads a saved response instead of querying.
+
+**Intensities are the weak point of any line list**, and superFATBOY's first match depends on them. NIST relative
+intensities come from different sources for different spectra (Xe I and Xe II, or Ne and Ar, are not on a common
+scale), and some strong lines have none at all. So:
+
+- `--missing estimate` (the default) fills in a missing intensity from the transition probability g*A, scaled to the
+  lines of the same spectrum that have both; `--missing skip` drops those lines, or give a number.
+- `-s "Ar I=0.5,Ne I=2"` scales each spectrum by hand.
+- `-m measured_lines.dat` fits a scale per spectrum to intensities measured in your own data, and `--use-measured`
+  uses the measured values wherever a line was measured. `wavelengthCalibrate` writes these for every frame it
+  calibrates: `wavelengthCalibrated/measured_lines_<frame>.dat` (see the
+  [spectroscopy page](processes/spectroscopy.md#wavelengthcalibrate)). Calibrate once with a NIST list, then rebuild
+  the list with the intensities of your lamp and instrument.
+- `--blend 1.0` flags lines closer than 1 A (of comparable strength) with -1, so they shape the template but are not
+  used in the fit; lines NIST marks as blended are flagged too.
+
+`--min-intensity` and `--max-lines` trim faint lines; a list with many lines the data never shows makes the first
+match harder.

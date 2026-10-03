@@ -1,0 +1,208 @@
+#Xenon lines, air wavelengths (Angstrom), 2865-8232 A.  Columns: wavelength, relative intensity, optional flag
+#(-1 = blended, not used in the fit), comment.
+#Wavelengths: NIST ASD observed wavelengths (Xe I) and the NIST Handbook of Basic Atomic Spectroscopic Data
+#strong-line tables (Xe II, and Xe I outside 3400-5000 A).
+#Intensities: between 3446 and 4606 A, measured from a GTC/OSIRIS R2500U xenon arc calibrated by superFATBOY
+#(0.06 px RMS) and put on the Handbook Xe II scale by the median ratio of the Xe II lines.  Other Xe I lines in
+#3400-5000 A: NIST ASD intensity x 47 (the median measured/ASD ratio of the strong Xe I lines in range) or, where ASD
+#gives none (4624.28, 4671.23, 4697.02), an estimate from g*A relative to 4500.98, corrected by 0.69 (the
+#measured/predicted ratio for 4524.68 and 4582.75).  Elsewhere the Handbook intensities are kept.
+#A xenon lamp is mostly neutral: its Xe I lines are 30-150 times brighter than its Xe II lines, which the Handbook
+#scale (Xe II from a different source) hides.  Relative intensities still depend on the lamp and the instrument
+#throughput; superFATBOY writes the intensities it measures in your own data to wavelengthCalibrated/measured_lines_*.dat.
+2864.730	70	#Xe II; NIST Handbook
+2895.220	50	#Xe II; NIST Handbook
+2979.320	130	#Xe II; NIST Handbook
+3017.430	30	#Xe II; NIST Handbook
+3121.870	100	#Xe II; NIST Handbook
+3366.720	70	#Xe II; NIST Handbook
+3461.260	1	#Xe II; measured, OSIRIS R2500U arc
+3907.910	45	#Xe II; measured, OSIRIS R2500U arc
+3948.720	1568	#Xe I; measured, OSIRIS R2500U arc
+3950.924	6061	#Xe I; measured, OSIRIS R2500U arc
+3967.541	8615	#Xe I; measured, OSIRIS R2500U arc
+4037.590	158	#Xe II; measured, OSIRIS R2500U arc
+4057.460	72	#Xe II; measured, OSIRIS R2500U arc
+4078.820	5258	#Xe I; measured, OSIRIS R2500U arc
+4098.890	36	#Xe II; measured, OSIRIS R2500U arc
+4109.709	2439	#Xe I; measured, OSIRIS R2500U arc
+4116.115	3420	#Xe I; measured, OSIRIS R2500U arc
+4158.040	82	#Xe II; measured, OSIRIS R2500U arc
+4180.100	293	#Xe II; measured, OSIRIS R2500U arc
+4193.010	8381	#Xe I; measured, OSIRIS R2500U arc
+4193.150	150	-1	#Xe II; NIST Handbook; blended with Xe I 4193.53
+4193.528	8381	-1	#Xe I; measured, OSIRIS R2500U arc
+4203.695	2371	#Xe I; measured, OSIRIS R2500U arc
+4205.404	1106	#Xe I; measured, OSIRIS R2500U arc
+4208.480	101	#Xe II; measured, OSIRIS R2500U arc; peak shared with 4209.47
+4209.470	30	#Xe II; measured, OSIRIS R2500U arc; peak shared with 4208.48
+4213.720	358	#Xe II; measured, OSIRIS R2500U arc; peak shared with 4215.60
+4215.600	107	#Xe II; measured, OSIRIS R2500U arc; peak shared with 4213.72
+4223.000	95	#Xe II; measured, OSIRIS R2500U arc
+4238.250	153	#Xe II; measured, OSIRIS R2500U arc
+4245.380	241	#Xe II; measured, OSIRIS R2500U arc
+4251.570	98	#Xe II; measured, OSIRIS R2500U arc
+4296.400	138	#Xe II; measured, OSIRIS R2500U arc
+4310.510	49	#Xe II; measured, OSIRIS R2500U arc
+4330.520	276	#Xe II; measured, OSIRIS R2500U arc
+4369.200	93	#Xe II; measured, OSIRIS R2500U arc
+4373.780	146	#Xe II; measured, OSIRIS R2500U arc
+4383.908	2631	#Xe I; measured, OSIRIS R2500U arc
+4385.768	2425	#Xe I; measured, OSIRIS R2500U arc
+4393.200	134	#Xe II; measured, OSIRIS R2500U arc
+4395.770	157	#Xe II; measured, OSIRIS R2500U arc
+4406.880	21	#Xe II; measured, OSIRIS R2500U arc
+4416.070	146	#Xe II; measured, OSIRIS R2500U arc
+4448.130	120	#Xe II; measured, OSIRIS R2500U arc
+4462.190	171	#Xe II; measured, OSIRIS R2500U arc
+4480.860	88	#Xe II; measured, OSIRIS R2500U arc
+4500.978	27558	#Xe I; measured, OSIRIS R2500U arc
+4521.860	30	#Xe II; NIST Handbook (in the wing of Xe I 4524.68 in the arc)
+4524.681	10157	#Xe I; measured, OSIRIS R2500U arc
+4582.747	5536	#Xe I; measured, OSIRIS R2500U arc
+4611.888	4679	#Xe I; NIST ASD intensity x 47
+4624.276	52481	#Xe I; estimated from NIST g*A relative to 4500.98
+4671.226	75598	#Xe I; estimated from NIST g*A relative to 4500.98
+4690.970	4679	#Xe I; NIST ASD intensity x 47
+4697.021	15961	#Xe I; estimated from NIST g*A relative to 4500.98
+4734.152	28074	#Xe I; NIST ASD intensity x 47
+4792.619	7019	#Xe I; NIST ASD intensity x 47
+4807.020	23395	#Xe I; NIST ASD intensity x 47
+4829.710	18716	#Xe I; NIST ASD intensity x 47
+4843.290	14037	#Xe I; NIST ASD intensity x 47
+4844.330	700	#Xe II; NIST Handbook
+4916.510	23395	#Xe I; NIST ASD intensity x 47
+4923.152	23395	#Xe I; NIST ASD intensity x 47
+4971.710	70	#Xe II; NIST Handbook
+4972.710	130	#Xe II; NIST Handbook
+4988.770	100	#Xe II; NIST Handbook
+4991.170	30	#Xe II; NIST Handbook
+5028.280	20	#Xe I; NIST Handbook
+5044.920	70	#Xe II; NIST Handbook
+5080.620	300	#Xe II; NIST Handbook
+5122.420	100	#Xe II; NIST Handbook
+5125.700	30	#Xe II; NIST Handbook
+5178.820	30	#Xe II; NIST Handbook
+5188.040	100	#Xe II; NIST Handbook
+5191.370	130	#Xe II; NIST Handbook
+5192.100	30	#Xe II; NIST Handbook
+5260.440	150	#Xe II; NIST Handbook
+5261.950	150	#Xe II; NIST Handbook
+5292.220	700	#Xe II; NIST Handbook
+5309.270	100	#Xe II; NIST Handbook
+5313.870	300	#Xe II; NIST Handbook
+5339.330	700	#Xe II; NIST Handbook
+5363.200	70	#Xe II; NIST Handbook
+5368.070	70	#Xe II; NIST Handbook
+5372.390	150	#Xe II; NIST Handbook
+5392.800	10	#Xe I; NIST Handbook
+5419.150	1000	#Xe II; NIST Handbook
+5438.960	250	#Xe II; NIST Handbook
+5445.450	100	#Xe II; NIST Handbook
+5450.450	70	#Xe II; NIST Handbook
+5460.390	130	#Xe II; NIST Handbook
+5472.610	300	#Xe II; NIST Handbook
+5494.860	30	#Xe II; NIST Handbook
+5525.530	70	#Xe II; NIST Handbook
+5531.070	200	#Xe II; NIST Handbook
+5566.620	10	#Xe I; NIST Handbook
+5616.670	100	#Xe II; NIST Handbook
+5659.380	100	#Xe II; NIST Handbook
+5667.560	200	#Xe II; NIST Handbook
+5670.910	50	#Xe II; NIST Handbook
+5695.750	10	#Xe I; NIST Handbook
+5699.610	70	#Xe II; NIST Handbook
+5716.100	70	#Xe II; NIST Handbook
+5726.910	150	#Xe II; NIST Handbook
+5751.030	150	#Xe II; NIST Handbook
+5758.650	100	#Xe II; NIST Handbook
+5776.390	100	#Xe II; NIST Handbook
+5815.960	30	#Xe II; NIST Handbook
+5823.890	30	#Xe I; NIST Handbook
+5824.800	15	#Xe I; NIST Handbook
+5875.020	10	#Xe I; NIST Handbook
+5893.290	100	#Xe II; NIST Handbook
+5894.990	10	#Xe I; NIST Handbook
+5905.130	70	#Xe II; NIST Handbook
+5934.170	10	#Xe I; NIST Handbook
+5945.530	150	#Xe II; NIST Handbook
+5971.130	100	#Xe II; NIST Handbook
+5976.460	700	#Xe II; NIST Handbook
+6008.920	70	#Xe II; NIST Handbook
+6036.200	300	#Xe II; NIST Handbook
+6051.150	700	#Xe II; NIST Handbook
+6093.500	200	#Xe II; NIST Handbook
+6097.590	500	#Xe II; NIST Handbook
+6101.430	130	#Xe II; NIST Handbook
+6115.080	30	#Xe II; NIST Handbook
+6146.450	30	#Xe II; NIST Handbook
+6178.300	15	#Xe I; NIST Handbook
+6179.660	12	#Xe I; NIST Handbook
+6182.420	30	#Xe I; NIST Handbook
+6194.070	150	#Xe II; NIST Handbook
+6198.260	10	#Xe I; NIST Handbook
+6270.820	150	#Xe II; NIST Handbook
+6277.540	130	#Xe II; NIST Handbook
+6284.410	30	#Xe II; NIST Handbook
+6286.010	10	#Xe I; NIST Handbook
+6300.860	80	#Xe II; NIST Handbook
+6318.060	50	#Xe I; NIST Handbook
+6343.960	130	#Xe II; NIST Handbook
+6356.350	200	#Xe II; NIST Handbook
+6375.280	70	#Xe II; NIST Handbook
+6397.990	30	#Xe II; NIST Handbook
+6469.700	30	#Xe I; NIST Handbook
+6472.840	15	#Xe I; NIST Handbook
+6487.760	12	#Xe I; NIST Handbook
+6498.720	10	#Xe I; NIST Handbook
+6504.180	20	#Xe I; NIST Handbook
+6512.830	100	#Xe II; NIST Handbook
+6528.650	70	#Xe II; NIST Handbook
+6533.160	10	#Xe I; NIST Handbook
+6595.010	300	#Xe II; NIST Handbook
+6595.560	10	#Xe I; NIST Handbook
+6597.250	130	#Xe II; NIST Handbook
+6598.840	30	#Xe II; NIST Handbook
+6668.920	15	#Xe I; NIST Handbook
+6694.320	100	#Xe II; NIST Handbook
+6728.010	20	#Xe I; NIST Handbook
+6788.710	50	#Xe II; NIST Handbook
+6790.370	30	#Xe II; NIST Handbook
+6805.740	300	#Xe II; NIST Handbook
+6827.320	20	#Xe I; NIST Handbook
+6872.110	10	#Xe I; NIST Handbook
+6882.160	30	#Xe I; NIST Handbook
+6910.220	25	#Xe II; NIST Handbook
+6925.530	10	#Xe I; NIST Handbook
+6942.110	250	#Xe II; NIST Handbook
+6976.180	10	#Xe I; NIST Handbook
+6990.880	700	#Xe II; NIST Handbook
+7082.150	50	#Xe II; NIST Handbook
+7119.600	50	#Xe I; NIST Handbook
+7147.500	15	#Xe II; NIST Handbook
+7149.030	70	#Xe II; NIST Handbook
+7164.830	150	#Xe II; NIST Handbook
+7284.340	30	#Xe II; NIST Handbook
+7301.800	70	#Xe II; NIST Handbook
+7339.300	70	#Xe II; NIST Handbook
+7386.000	10	#Xe I; NIST Handbook
+7393.790	15	#Xe I; NIST Handbook
+7548.450	100	#Xe II; NIST Handbook
+7584.680	20	#Xe I; NIST Handbook
+7618.570	25	#Xe II; NIST Handbook
+7642.020	50	#Xe I; NIST Handbook
+7643.910	10	#Xe I; NIST Handbook
+7670.660	70	#Xe II; NIST Handbook
+7787.040	20	#Xe II; NIST Handbook
+7802.650	10	#Xe I; NIST Handbook
+7881.320	10	#Xe I; NIST Handbook
+7887.400	30	#Xe I; NIST Handbook
+7967.340	50	#Xe I; NIST Handbook
+8029.670	10	#Xe I; NIST Handbook
+8057.260	20	#Xe I; NIST Handbook
+8061.340	15	#Xe I; NIST Handbook
+8101.980	10	#Xe I; NIST Handbook
+8151.800	50	#Xe II; NIST Handbook
+8171.020	10	#Xe I; NIST Handbook
+8206.340	70	#Xe I; NIST Handbook
+8231.635	1000	#Xe I; NIST Handbook

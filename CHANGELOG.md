@@ -203,6 +203,15 @@ the matching section here. New options are listed with their default.
 - `-gpu N` sets `CUDA_VISIBLE_DEVICES` (CuPy ignores `CUDA_DEVICE`). (Sept 11)
 - `numpy>=2.0` pin reverted to `numpy>=1.0` (conflicted with scipy 1.11). (Sept 11)
 - Templates and line lists shipped in `package_data`. (2.3.37)
+- New `makeLineList.py` (installed script): a line list for any spectra and wavelength range from the NIST Atomic
+  Spectra Database (vacuum queried, converted to air; missing intensities estimated from g*A; per-spectrum scales by
+  hand or fit to intensities measured by wavelengthCalibrate; blend flags; cached queries). (2.4.5)
+
+### Line lists (data/linelists)
+- New `Xenon_optical_air.dat`: the NIST Handbook Xe list plus the strong blue Xe I lines it lacks (4501-4697 A, the
+  brightest lines of a xenon arc); intensities measured from a calibrated GTC/OSIRIS R2500U Xe arc (3446-4606 A), NIST
+  ASD values scaled to them elsewhere, g*A estimates for 4624/4671/4697. With it avrajit-osiris calibrates on the first
+  match (0.06 px RMS). (2.4.5)
 
 ---
 
