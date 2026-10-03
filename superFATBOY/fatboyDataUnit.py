@@ -136,11 +136,11 @@ class fatboyDataUnit:
         for key in list(self._properties):
             if (isinstance(self._properties[key], str) and self._properties[key] == "memory_managed"):
                 #data tag that has been backed up to disk for memory management purposes
-                infile = "temp-fatboy/property_"+key+"_"+self.getFullId()
+                infile = self.getTempdir()+"/property_"+key+"_"+self.getFullId()
                 if (os.access(infile, os.F_OK)):
                     os.unlink(infile)
         if (self.hasProperty('memory_managed') and self.hasProperty('origFilename')):
-            if (self.filename == "temp-fatboy/current_"+self.getFullId()):
+            if (self.filename == self.getTempdir()+"/current_"+self.getFullId()):
                 os.unlink(self.filename)
                 self.filename = self.getProperty('origFilename')
                 self.removeProperty('origFilename')
@@ -281,7 +281,7 @@ class fatboyDataUnit:
             image.close()
             if (self.hasProperty('memory_managed') and self.hasProperty('origFilename')):
                 #This was restored from disk
-                if (self.filename == "temp-fatboy/current_"+self.getFullId()):
+                if (self.filename == self.getTempdir()+"/current_"+self.getFullId()):
                     os.unlink(self.filename)
                     self.filename = self.getProperty('origFilename')
                     self.removeProperty('origFilename')
@@ -423,7 +423,7 @@ class fatboyDataUnit:
         if (key in self._properties):
             if (isinstance(self._properties[key], str) and self._properties[key] == "memory_managed"):
                 #data tag that has been backed up to disk for memory management purposes
-                infile = "temp-fatboy/property_"+key+"_"+self.getFullId()
+                infile = self.getTempdir()+"/property_"+key+"_"+self.getFullId()
                 if (os.access(infile, os.F_OK)):
                     image = pyfits.open(infile)
                     temp = np.array(image[0].data)
@@ -686,7 +686,7 @@ class fatboyDataUnit:
         if (key in self._properties):
             if (isinstance(self._properties[key], str) and self._properties[key] == "memory_managed"):
                 #data tag that has been backed up to disk for memory management purposes
-                infile = "temp-fatboy/property_"+key+"_"+self.getFullId()
+                infile = self.getTempdir()+"/property_"+key+"_"+self.getFullId()
                 if (os.access(infile, os.F_OK)):
                     os.unlink(infile)
             del self._properties[key]
@@ -843,6 +843,13 @@ class fatboyDataUnit:
             value = int(value)
         self._properties[key] = value
     #end setProperty
+
+    ## Temp dir of the database this FDU belongs to (where data and properties are paged out to free memory)
+    def getTempdir(self):
+        if (self._fdb is not None):
+            return self._fdb._tempdir
+        return "temp-fatboy"
+    #end getTempdir
 
     ## set relative offset arcsec boolean
     def setRelOffset(self, value):
@@ -1084,7 +1091,7 @@ class fatboyDataUnit:
             if (isinstance(self._properties[key], np.ndarray)):
                 #Keep smaller arrays in memory, only need to free up memory from large arrays
                 if (self._properties[key].size > 512*512 and self._properties[key].dtype != bool):
-                    outfile = "temp-fatboy/property_"+key+"_"+self.getFullId()
+                    outfile = self.getTempdir()+"/property_"+key+"_"+self.getFullId()
                     if (os.access(outfile, os.F_OK)):
                         #Property could have changed -- e.g. cleanFrame 7/20/21
                         os.unlink(outfile)
@@ -1197,7 +1204,7 @@ class fatboyDataUnit:
         if (os.access(outfile, os.F_OK)):
             os.unlink(outfile)
         self.writeTo(outfile)
-        if (self.filename != "temp-fatboy/current_"+self.getFullId()):
+        if (self.filename != self.getTempdir()+"/current_"+self.getFullId()):
             self.setProperty('origFilename', self.filename)
         self.setProperty('memory_managed', True)
         self.filename = outfile

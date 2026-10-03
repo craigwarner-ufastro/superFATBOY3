@@ -221,6 +221,12 @@ can stop that but costs 10-20% flux. Rectification straightness and wavelength s
 four runs; `new` == `main` (findSlitlets byte-identical, spectra within 1-3%). Matching spectra between runs needs
 content correlation - slit labels shift. Wavecal uses the (non-flat-divided) clean sky, so flat options don't affect it.
 
+**Temp dir (v2.4.1)**: two runs from the same directory used to share (and delete) `temp-fatboy`; now locked per
+run (`setupTempdir`, `fatboy.lock`), the second run gets `temp-fatboy-<pid>`. Tested with two concurrent findSlitlets
+runs forced to page data out (`memory_image_limit`=5): identical outputs, both dirs cleaned. Parallel test runs from
+one directory no longer need staggering. **Flexure vs bleeding** was checked by measuring lower and upper half-max
+edges separately (rigid shift = both move together; bleeding = width grows, worse in bright-line columns).
+
 ## Calib star, LA Cosmic, 3-d drizzle, undefined names (2026-10-02, v2.3.43-44)
 
 - **Calib star (LUCI A1689)** needed `<calib type="standard">` in the XML (it was an `<object>`), plus:
@@ -309,7 +315,7 @@ Driven by `caden_luci_fs_test.xml` (LUCI MOS, 25 region-file slitlets, several p
   region file.
 - Fixed a crash from the 2026-09-11 hardening: the degraded-slitlet QA write did `del qaData`, then the normal slitmask QA write
   used it -> `UnboundLocalError` whenever any slitlet fell back and `write_calib_output=yes`.
-- Gotcha: launching several runs from the same directory at once can race on creating `temp-fatboy/` (FileExistsError) - stagger.
+- Gotcha (fixed in v2.4.1): launching several runs from the same directory used to race on `temp-fatboy/` - each run now locks its own temp dir.
 - v2.3.39 follow-ups: (a) `local_minimum` searched the whole 21px cut, so where LUCI's 587 packed boundary turns into a
   plain step between two lit slits (x<440) argmin landed on random points of the fainter plateau and the trace drifted
   3-18px into the next slit. Once a point is accepted since the last reset ("anchored"), it now searches only

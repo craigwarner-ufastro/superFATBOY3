@@ -36,11 +36,11 @@ the matching section here. New options are listed with their default.
 - **wavelengthCalibrate `match3BrightestLines`**: depends on the brightness ranking of the brightest
   lines; LUCI slit 9 fails when padding swaps lines 5-7 (heights within 3%, 1-d cuts correlate 0.999).
   The blind (scale, zero-point) grid search from the wavecal audit is the natural fallback.
-- **Flexure between flats and science**: LUCI science slits sit 1.1-1.5 px below the flats; a per-object
-  slitmask shift measured from the slit edges is not implemented (`padding` covers isolated edges only).
-- **Temp dir**: the `tempdir` param is read before the XML is parsed (always `temp-fatboy`),
-  fatboyDataUnit hard-codes `temp-fatboy`, and startup deletes an existing temp dir - two runs from one
-  directory collide.
+- **Flexure between flats and science**: LUCI science slits sit 1.15-1.31 px below the flats (both edges
+  move together, width unchanged, same in inter-line and bright-OH columns - a rigid shift, not bleeding;
+  the arcs match the flats to 0.07 px since both were taken at the end at the same rotator angle, 14 deg
+  from the science). A per-object slitmask shift measured from the science frame's sky-lit slit edges is
+  not implemented (`padding` covers isolated edges only).
 - **removeCosmicRaysSpec / badPixelMaskSpec**: algorithm audits not started (LA Cosmic reviewed, below).
 
 ---
@@ -55,6 +55,12 @@ the matching section here. New options are listed with their default.
 - Postcondition check: a process returning success but leaving no readable data disables the frame.
 - `addNewSlitmask()` takes optional `tagname` / `objectTag` (object-tagged calibs). (2.3.43)
 - `hasMasterCalib()`: `section` was used but not a parameter. (2.3.43)
+- Temp dir: the `tempdir` param was read before the XML was parsed, so it was always `temp-fatboy`, and
+  startup deleted an existing temp dir - a second run from the same directory wiped the first run's
+  paged-out data. Now set after parsing, with a `fatboy.lock` (host, pid): a dir held by a live run is left
+  alone and this run uses `<tempdir>-<pid>`; a stale one is cleared and reused; `cleanUp()` removes only
+  its own. fatboyDataUnit uses the database's temp dir (`getTempdir()`) instead of hard-coding
+  `temp-fatboy`. `quick_start_file` reads/appends are file-locked. (2.4.1)
 
 ### fatboyProcess
 - `recursivelyExecute()` catches exceptions and honors a `False` return, disabling only the failed

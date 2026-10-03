@@ -299,10 +299,10 @@ The important ones (the full list with defaults is in the [options reference](op
 | `gpumode` | `yes` | `yes` uses the GPU (CuPy); `no` runs on the CPU. |
 | `overwrite_files` | `no` | `no` reuses output files already on disk; `yes` recomputes and overwrites. |
 | `memory_image_limit` | none | Roughly 10 times your free RAM in GB. Higher means fewer intermediate frames written to disk. |
-| `quick_start_file` | none | A file where superFATBOY caches per-file shapes and medians so later runs start faster. |
+| `quick_start_file` | none | A file where superFATBOY caches per-file shapes and medians so later runs start faster. File-locked, so runs sharing it can't interleave lines. |
 | `verbosity` | `normal` | `brief`, `normal` or `verbose` |
 | `logdir` | `flogs` | Directory for log files |
-| `tempdir` | `temp-fatboy` | Scratch directory, removed at the end of a run |
+| `tempdir` | `temp-fatboy` | Scratch directory (relative to where you start the run), removed at the end of a run. A `fatboy.lock` file inside records the host and pid of the run using it, so two datasets started from the same directory don't collide: if the directory is held by another live run, the second run uses `<tempdir>-<pid>` instead (with a WARNING); one left behind by a finished or crashed run is cleared and reused. |
 | `interactive_on_error` | `no` | `yes` pauses and waits for ENTER after an error (useful at a terminal, fatal when unattended) |
 | `max_init_failures` | `3` | Abort if more than this many input files fail to read |
 | `min_frame_value`, `max_frame_value` | none | Reject frames whose median is outside this range (bad or saturated frames) |

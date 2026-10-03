@@ -10,7 +10,7 @@ from .fatboyProcess import *
 from .fatboyQuery import *
 import xml.dom.minidom
 from xml.dom.minidom import Node
-import importlib, re, shutil, sys, traceback
+import fcntl, importlib, re, shutil, socket, sys, traceback
 from . import gpu_imcombine, imcombine, gpu_arraymedian
 from .datatypeExtensions import *
 from .datatypeExtensions.fatboySpectrum import fatboySpectrum
@@ -41,6 +41,8 @@ class fatboyDatabase:
     _version = superFATBOY.__version__
     _build = superFATBOY.__build__
     _tempdir = "temp-fatboy" #Default in in CWD
+    _tempdirLock = "fatboy.lock" #lock file in temp dir: "<host> <pid>" of the run using it
+    _ownsTempdir = False
 
     ## Constants
     MODE_IMAGE = 0
@@ -245,12 +247,71 @@ class fatboyDatabase:
             self._log.writeLog(__name__, "Backed up "+str(freed)+" images to disk temporarily to free up memory space.")
     #end checkMemoryManagement
 
-    #clean up - remove temp-fatboy dir
+    #clean up - remove this run's temp dir (never one another run is using)
     def cleanUp(self):
-        #clean up any this run
-        if (os.access(self._tempdir, os.F_OK)):
+        if (self._ownsTempdir and os.access(self._tempdir, os.F_OK)):
             shutil.rmtree(self._tempdir)
+            self._ownsTempdir = False
     #end cleanUp
+
+    #Return (host, pid) from the lock file in a temp dir, or None
+    def readTempdirLock(self, tempdir):
+        try:
+            tokens = open(tempdir+"/"+self._tempdirLock).read().split()
+            return (tokens[0], int(tokens[1]))
+        except Exception:
+            return None
+    #end readTempdirLock
+
+    #True if the temp dir is held by another run that is still alive.  A lock from another host can't be
+    #checked, so it counts as in use.
+    def tempdirInUse(self, tempdir):
+        lock = self.readTempdirLock(tempdir)
+        if (lock is None):
+            return False
+        (host, pid) = lock
+        if (host != socket.gethostname()):
+            return True
+        if (pid == os.getpid()):
+            return False
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+    #end tempdirInUse
+
+    #Claim the temp dir for this run.  One left by a finished or crashed run is cleared and reused; one in use
+    #by another live run (e.g. a second dataset started from the same directory) is left alone and this run
+    #uses <tempdir>-<pid> instead.
+    def setupTempdir(self):
+        if (self.getParam('tempdir') is not None):
+            self._tempdir = str(self.getParam('tempdir'))
+        for attempt in range(2):
+            if (self.tempdirInUse(self._tempdir)):
+                newdir = self._tempdir+"-"+str(os.getpid())
+                print("fatboyDatabase::setupTempdir> WARNING: temp dir "+self._tempdir+" is in use by another run "+str(self.readTempdirLock(self._tempdir))+".  Using "+newdir+" instead.")
+                self._log.writeLog(__name__, "temp dir "+self._tempdir+" is in use by another run "+str(self.readTempdirLock(self._tempdir))+".  Using "+newdir+" instead.", type=fatboyLog.WARNING)
+                self._tempdir = newdir
+            #clean up any previous run
+            if (os.access(self._tempdir, os.F_OK)):
+                shutil.rmtree(self._tempdir, ignore_errors=True)
+            os.makedirs(self._tempdir, 0o755, exist_ok=True)
+            #Create the lock atomically; if another run starting at the same moment got there first, go around again
+            try:
+                fd = os.open(self._tempdir+"/"+self._tempdirLock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                os.write(fd, (socket.gethostname()+" "+str(os.getpid())+"\n").encode())
+                os.close(fd)
+                self._ownsTempdir = True
+                return
+            except FileExistsError:
+                continue
+        print("fatboyDatabase::setupTempdir> ERROR: could not claim a temp dir ("+self._tempdir+")!")
+        self._log.writeLog(__name__, "could not claim a temp dir ("+self._tempdir+")!", type=fatboyLog.ERROR)
+        sys.exit(-1)
+    #end setupTempdir
 
     ## decrement memory count.  called from disable
     def decrementMemoryCount(self):
@@ -1061,17 +1122,11 @@ class fatboyDatabase:
 
     ## Initialization method
     def initialize(self):
-        if (self.getParam('tempdir') is not None):
-            self._tempdir = self.getParam('tempdir')
-        #clean up any previous runs
-        if (os.access(self._tempdir, os.F_OK)):
-            shutil.rmtree(self._tempdir)
-        #remake temp-fatboy
-        if (not os.access(self._tempdir, os.F_OK)):
-            os.makedirs(self._tempdir,0o755)
         self.parseXML()
         self.setDefaultParams() #set default param values
         self.autoDetectNumericalParams() #detect ints and floats
+        #Set up temp dir only now: the tempdir param is not known until the XML is parsed
+        self.setupTempdir()
         #set nx parameter in imcombine and gpu_imcombine based on memory_image_limit
         nx = 64
         if (self.getParam('memory_image_limit') is not None):
@@ -1396,7 +1451,11 @@ class fatboyDatabase:
         qsDict = dict()
         if (not os.access(self._params['quick_start_file'], os.F_OK)):
             return qsDict
-        qslines = readFileIntoList(self._params['quick_start_file'])
+        #Shared lock: another run from the same directory may be appending to this file
+        with open(self._params['quick_start_file']) as qslock:
+            fcntl.flock(qslock, fcntl.LOCK_SH)
+            qslines = readFileIntoList(self._params['quick_start_file'])
+            fcntl.flock(qslock, fcntl.LOCK_UN)
         for line in qslines:
             #Check for bad data
             qstokens = line.split()
@@ -1568,6 +1627,8 @@ class fatboyDatabase:
     def writeQuickStart(self, qsDict):
         try:
             qsfile = open(self._params['quick_start_file'], 'a')
+            #Exclusive lock so two runs from the same directory don't interleave lines; released on close
+            fcntl.flock(qsfile, fcntl.LOCK_EX)
         except Exception as ex:
             print("fatboyDatabase::writeQuickStart> Error: could not open file "+self._params['quick_start_file']+" for writing!")
             self._log.writeLog(__name__, "could not open file "+self._params['quick_start_file']+" for writing!", type=fatboyLog.ERROR)
