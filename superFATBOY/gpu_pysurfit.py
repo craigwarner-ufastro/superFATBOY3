@@ -140,7 +140,7 @@ def get_mod():
         }
         }
         """
-        mod = cp.RawModule(code=code)
+        mod = cp.RawModule(code=code, options=("--fmad=false",))
     return mod
 #end get_mod()
 

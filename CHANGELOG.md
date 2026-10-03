@@ -20,6 +20,7 @@ the matching section here. New options are listed with their default.
 | specBench regression, v2.3.44 vs v2.3.42 | CPU | All 571 output files identical (NaN-aware), apart from the renamed per-object rectified slitmask |
 | Median fixes, v2.3.45 vs v2.3.44 | specBench CPU, oriBench GPU, LUCI GPU | oriBench: alignment shifts identical (drizzled pixels differ at 1e-7). specBench: 559/571 identical; 6 of 23 extracted spectra rescaled by 0.007-0.23% and 2 standard-star pixels changed - both from the single-value median that used to return 0. LUCI: GPU clean sky now the lower quartile and identical to CPU; wavelength solutions moved 0.09 A median (0.02 px), fit RMS 0.473 -> 0.452 A |
 | Gap-aware `padding`, v2.4.0 | MIRADAS SOS + MOS order 20 (findSlitlets), LUCI auto/region GPU | MIRADAS slitmasks byte-identical to v2.3.47 with `padding`=2. LUCI auto with `padding`=3: 16 continua traced (was 10), 17 spectra extracted (was 13) incl. the brightest objects, fluxes 0.95-1.0 of the traceSlitlets run (was 0.62-0.96); wavecal median sigma 0.454 -> 0.491 A |
+| GPU == CPU, v2.4.3 | all 9 verified configs, GPU and CPU (run one at a time) | No tracebacks; same ERRORs as before. LUCI byte-identical GPU vs CPU (107/107 files), MIRADAS SOS 107/108, SOL 94/111, MOS 75/91 (left: bad pixel mask GPU vs CPU); specBench (linearity/dark onward), oriBench (imaging) and longslit (fitted-distortion drizzle) still differ at the rounding level. Every dataset calibrates the same number of slitlets as its previous verified run, median wavelength sigma within noise |
 | MEGARA, FourStar, SINFONI, others | - | Not yet run through the refactored pipeline |
 
 ## Open issues
@@ -33,6 +34,12 @@ the matching section here. New options are listed with their default.
   `identity` (validation favors `nearest_neighbor_slits`); moment-centroid rescue not yet ported to
   skyline tracing; specBench science-frame continuum trace still loses 15-30% of points.
 - **miradasCollapseSpaxels**: exact-value peak finding is fragile to float reduction order.
+- **GPU vs CPU still differ** in: the bad pixel mask (MIRADAS), linearity/dark (specBench), the imaging chain
+  (oriBench) and drizzle with a fitted distortion (below).
+- **GPU drizzle with a fitted distortion (`geomDist`, longslit rectification)**: positions come from
+  `calcTransOpt` in float32 on the GPU and numpy float64 on the CPU, so those runs can still differ at the
+  rounding level. Transforms given as arrays (MOS) are bit-identical. The 3-d GPU drizzle (SINFONI) still
+  has the host-buffer problem noted under gpu_drihizzle.
 - **wavelengthCalibrate `match3BrightestLines`**: depends on the brightness ranking of the brightest
   lines; LUCI slit 9 fails when padding swaps lines 5-7 (heights within 3%, 1-d cuts correlate 0.999).
   The blind (scale, zero-point) grid search from the wavecal audit is the natural fallback.
@@ -64,6 +71,15 @@ the matching section here. New options are listed with their default.
 - `recursivelyExecute()` catches exceptions and honors a `False` return, disabling only the failed
   calibration frame instead of crashing the run (used by ~23 calibration processes). (Sept 11)
 
+### GPU kernels (all CuPy RawModules)
+- Compiled with `--fmad=false`: the default fused multiply-add contraction rounds `a*b+c` differently from
+  numpy (e.g. noisemap `sqrt(a*a+b*b)` differed from the CPU in the last bit). (2.4.3)
+
+### Noisemaps (darkSubtract, biasSubtract, createMasterArclamps, flatDivideSpec, shiftAdd, megaraSkySubtract)
+- CPU master-calib noisemaps used `np.sqrt(master/ncomb)` where the GPU kernel uses `sqrt(abs(...))`, so
+  negative master-dark pixels became NaN on the CPU only (76,000 NaN pixels in a LUCI dark-subtracted
+  noisemap, carried on through rectification). Now `np.sqrt(np.abs(...))`, 8 sites; also in main. (2.4.3)
+
 ### fatboyDataUnit / datatypes
 - `initialize()`: when NAXIS1/NAXIS2 are missing from the header the shape is now read from the data
   as intended (the check tested an undefined name, so such files were disabled as "misformatted").
@@ -79,6 +95,13 @@ the matching section here. New options are listed with their default.
   are disabled with an ERROR (unchanged behavior, documented here).
 
 ### fatboyLibs
+- `medianfilterCPU`: the first and last `boxsize` points used a 2*boxsize-point (even) window instead of
+  2*boxsize+1 like the interior and `gpumedianfilter`, and the output was float64 where the GPU gives
+  float32. Now identical to the GPU on real and random data (up to 2.45 counts different at the ends of a
+  LUCI arclamp cut before). Also in main. (2.4.3)
+- `medianfilter2dCPU` returns float32 for float32 input, like `gpumedianfilter2d` (values were already
+  identical; the float64 result made later means/comparisons in rectify's skyline tracer take different
+  branches on CPU and GPU - 5 points accepted differently on LUCI). (2.4.3)
 - **GPU results discarded** (PyCUDA `drv.InOut` semantics lost in the CuPy port): `cp.empty(array)`
   family fixed in ~18 sites (Sept 15-16); `gpuInOut()` / `gpuSyncBack()` helpers added and used for every
   in-place kernel argument after auditing all 132 `drv.InOut`/`drv.Out` uses in `main`:
@@ -107,6 +130,11 @@ the matching section here. New options are listed with their default.
   CPU C kernels; now moved to the host and the result returned as CuPy. (2.3.45)
 
 ### fatboyclib (C extension) - needs a rebuild (`setup.py install`)
+- 1-d `median()`: when no values were left after `nonzero`, thresholds, sigma clipping or nlow/nhigh, it
+  returned `quickselect` on an uninitialized buffer (random values like 6.9e-310, different every run).
+  Now returns 0, as median2d/median3d do since 2.3.45. Rectify's skyline tracer compares such medians
+  for fully masked boxes, so this made CPU and GPU runs (and two CPU runs) accept different points. Also
+  in main. (2.4.3)
 - Same even/odd bug as gpu_arraymedian in `median2d`/`median3d` with `nlow`/`nhigh` (72 sites; also in
   main). (2.3.45)
 - A guard `k == 0` returned 0 whenever the kept values started at index 0 - e.g. `nhigh = n-1` (the
@@ -121,6 +149,20 @@ the matching section here. New options are listed with their default.
   converted the result back to float32, so rectified slitmasks (`rct_slitmask_*.fits`) were written
   as float and reruns read them back as float32 (the `nslits` crash). Values were already exact
   integers (atomicMax), so only the dtype changes. (2.3.47)
+- `uniformKernel` (slitmasks) now matches the CPU kernel exactly: `floorf` instead of truncation, no splat
+  to the next column/row when every position is an exact integer (the GPU widened every slitlet by a
+  row and column for an integer transform - 41,697 extra pixels on LUCI with an identity transform), and
+  each of the 4 writes is bounds-checked on its own (a pixel at the last column used to be dropped). Also in
+  main. (2.4.3)
+- `turbo` kernel with `dropsize < 1`: the overlap weights were not clipped to [0, 1] (negative weights,
+  flux moved to the wrong pixel); 20% of pixels differed from the CPU at dropsize 0.5. All four 2-d/3-d
+  turbo kernels fixed; also in main. Not hit by any current config (all use dropsize 1). (2.4.3)
+- GPU 2-d drizzle is now deterministic and bit-identical to the CPU for transforms given as arrays (MOS
+  rectification): sums accumulate in double (exact for the few terms per pixel, so independent of the order
+  the atomics land in - float atomics changed 25 pixels from one run to the next and 77,000 vs the CPU on a
+  LUCI arclamp), positions are handled in double (offsetting a float position by the output origin rounded
+  it), and data are scaled by inmask*scalefac/exptime in double like the CPU. A double atomicAdd fallback
+  covers GPUs below compute capability 6.0. The 3-d kernels are unchanged. (2.4.3)
 - Final weighting for `weight=exptime, outunits=counts` restored to main's (raw sum). The rewrite
   divided by the exposure map, which rescaled every rectified frame and made rectify's point_replace
   produce garbage pixels at slit edges. (2.3.41)
@@ -128,6 +170,10 @@ the matching section here. New options are listed with their default.
   argument corrupted the kernel arguments; now matches the CPU version. (2.3.43)
 
 ### drihizzle (CPU drizzle)
+- `turbo` with `dropsize < 1`: only one side of each overlap weight was clipped (`np.minimum(..,1)` /
+  `np.maximum(..,0)`), so a drop near the far side of a pixel got weights like -0.3 and 1.3. Both sides now
+  clipped to [0, 1], 2-d and 3-d; also in main. (2.4.3)
+- 2-d drizzle accumulates in double and rounds to float32 once before weighting, the same as the GPU. (2.4.3)
 - `unique1d_wrap()` restored to call `np.unique1d` for numpy < 1.5 (the Gemini refactor had replaced
   every branch with `np.unique`). (2.3.45)
 - `drihizzle3d`: float32 rounding of output coordinates could map two inputs to one output pixel, and
@@ -184,6 +230,8 @@ the matching section here. New options are listed with their default.
   neighbors), and applies to `traceSlitlets`/`tracePeakLocalMax` as well as `traceOrders`. Motivated by
   LUCI: science frames sit ~1.3 px below the flats, so tight auto-detected edges clipped the negative
   nodded image (10 of 16 continua traced, brightest objects not extracted). (2.4.0)
+- traceSlitlets QA image is generated on the CPU in both modes (the GPU kernel used float32 positions and its
+  overlapping marks raced, so the GPU and CPU QA images differed). (2.4.3)
 - New `flexure_correction` (`none` default | `shift` | `gradient`) and `flexure_max_shift` (5): measure the
   flat -> object shift from the slitlet edges (derivative cross-correlation, 9 columns, all of the object's
   frames, clipped) and give the object its own slitmask (moved by flat shift - (mask - flat center offset), so
@@ -192,6 +240,8 @@ the matching section here. New options are listed with their default.
   flat-divided frame 3.7x -> 1.2x the in-slit noise. (2.4.2)
 
 ### rectify
+- MOS rectification mask (`crMask`) built from host copies of `xtrans_rect`/`ytrans_rect`: one could be CuPy and
+  the other numpy (use_slitpos), crashing specBench on the GPU. (2.4.3)
 - Runaway continuum fits guarded by `rectify_max_transform_factor` (2.0); untransformed slits logged
   as ERROR. (Sept 11)
 - MOS/longslit continuum and skyline trace audits: per-datapoint stats files, local-significance and
@@ -219,6 +269,9 @@ the matching section here. New options are listed with their default.
   in length (LUCI A1689 standard, different mask); now skipped with a warning. (2.4.0)
 
 ### doubleSubtract
+- CPU path never blanked pixels outside the double-subtracted slitmask: `getData(tag="slitmask")` returns
+  the slitmask calib object, so `data[object == 0] = 0` selected nothing. Now uses the calib's data, as the
+  GPU kernel does (920,000 stray nonzero pixels per LUCI frame on CPU). Also in main. (2.4.3)
 - New `min_negative_flux_fraction` (0.1): skip double subtraction when the frame has no negative
   trace (sky frame with the target off the slit, e.g. a telluric standard). (2.3.43)
 
@@ -294,6 +347,8 @@ the matching section here. New options are listed with their default.
 - Undefined `nslits` fixed (by Craig). (2.3.44)
 
 ### MIRADAS / SINFONI processes
+- miradasCharacterizePSF: `nslits` fallback called `.max()` on the slitmask calib object (AttributeError if
+  reached). (2.4.3)
 - Missing `fatboySpecCalib` / `fatboyDataUnit` imports (paths taken when calibs come from XML).
   (2.3.43)
 

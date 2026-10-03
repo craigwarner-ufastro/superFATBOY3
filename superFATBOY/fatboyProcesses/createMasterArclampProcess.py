@@ -113,7 +113,7 @@ class createMasterArclampProcess(fatboyProcess):
             if (self._fdb.getGPUMode()):
                 nm = createNoisemap(masterLamp.getData(), ncomb)
             else:
-                nm = np.sqrt(masterLamp.getData()/ncomb)
+                nm = np.sqrt(np.abs(masterLamp.getData()/ncomb))
             masterLamp.tagDataAs("noisemap", nm)
         #Set properties here
         masterLamp.setType("master_arclamp", True)

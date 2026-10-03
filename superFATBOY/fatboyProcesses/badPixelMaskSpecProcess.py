@@ -597,7 +597,7 @@ class BadPixelMaskSpecProcess(fatboyProcess):
             return;
           }
           }
-          """)
+          """, options=("--fmad=false",))
         return bpm_mod
     #end get_fatboy_mod
 

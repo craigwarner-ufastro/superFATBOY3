@@ -667,7 +667,7 @@ class megaraSkySubtractProcess(fatboyProcess):
             if (self._fdb.getGPUMode()):
                 nm = createNoisemap(masterSky.getData(), ncomb)
             else:
-                nm = np.sqrt(masterSky.getData()/ncomb)
+                nm = np.sqrt(np.abs(masterSky.getData()/ncomb))
             masterSky.tagDataAs("noisemap", nm)
         #Get this FDU's noisemap
         nm = fdu.getData(tag="noisemap")

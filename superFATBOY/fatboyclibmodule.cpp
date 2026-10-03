@@ -2316,11 +2316,16 @@ static PyObject * median(PyObject *self, PyObject *args, PyObject *keywds) {
         }
       }
     }
-    k = (n-nhigh-nlow)/2+nlow;
-    if ((n-nhigh-nlow) % 2 == 1 || !even) {
-      med = (double)quickselect(data, n, k);
+    //No values left after nonzero/threshold/clip/nlow/nhigh: 0, as median2d/median3d (quickselect would read an uninitialized buffer)
+    if (n-nhigh-nlow <= 0) {
+      med = 0;
     } else {
-      med = (double)(quickselect(data, n, k) + (double)quickselect(data, n, k-1))/2;
+      k = (n-nhigh-nlow)/2+nlow;
+      if ((n-nhigh-nlow) % 2 == 1 || !even) {
+        med = (double)quickselect(data, n, k);
+      } else {
+        med = (double)(quickselect(data, n, k) + (double)quickselect(data, n, k-1))/2;
+      }
     }
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX || sigclip) delete data; 
   } else if (array->descr->type_num == NPY_DOUBLE) {
@@ -2399,11 +2404,16 @@ static PyObject * median(PyObject *self, PyObject *args, PyObject *keywds) {
         }
       }
     }
-    k = (n-nhigh-nlow)/2+nlow;
-    if ((n-nhigh-nlow) % 2 == 1 || !even) {
-      med = (double)quickselect(data, n, k);
+    //No values left after nonzero/threshold/clip/nlow/nhigh: 0, as median2d/median3d (quickselect would read an uninitialized buffer)
+    if (n-nhigh-nlow <= 0) {
+      med = 0;
     } else {
-      med = (double)(quickselect(data, n, k) + (double)quickselect(data, n, k-1))/2;
+      k = (n-nhigh-nlow)/2+nlow;
+      if ((n-nhigh-nlow) % 2 == 1 || !even) {
+        med = (double)quickselect(data, n, k);
+      } else {
+        med = (double)(quickselect(data, n, k) + (double)quickselect(data, n, k-1))/2;
+      }
     }
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX || sigclip) delete data;
   } else if (array->descr->type_num == NPY_INT32) {
@@ -2482,11 +2492,16 @@ static PyObject * median(PyObject *self, PyObject *args, PyObject *keywds) {
         }
       }
     }
-    k = (n-nhigh-nlow)/2+nlow;
-    if ((n-nhigh-nlow) % 2 == 1 || !even) {
-      med = (double)quickselect(data, n, k);
+    //No values left after nonzero/threshold/clip/nlow/nhigh: 0, as median2d/median3d (quickselect would read an uninitialized buffer)
+    if (n-nhigh-nlow <= 0) {
+      med = 0;
     } else {
-      med = (double)(quickselect(data, n, k) + (double)quickselect(data, n, k-1))/2;
+      k = (n-nhigh-nlow)/2+nlow;
+      if ((n-nhigh-nlow) % 2 == 1 || !even) {
+        med = (double)quickselect(data, n, k);
+      } else {
+        med = (double)(quickselect(data, n, k) + (double)quickselect(data, n, k-1))/2;
+      }
     }
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX || sigclip) delete data;
   } else if (array->descr->type_num == NPY_INT64) {
@@ -2565,11 +2580,16 @@ static PyObject * median(PyObject *self, PyObject *args, PyObject *keywds) {
         }
       }
     }
-    k = (n-nhigh-nlow)/2+nlow;
-    if ((n-nhigh-nlow) % 2 == 1 || !even) {
-      med = (double)quickselect(data, n, k);
+    //No values left after nonzero/threshold/clip/nlow/nhigh: 0, as median2d/median3d (quickselect would read an uninitialized buffer)
+    if (n-nhigh-nlow <= 0) {
+      med = 0;
     } else {
-      med = (double)(quickselect(data, n, k) + quickselect(data, n, k-1))/2;
+      k = (n-nhigh-nlow)/2+nlow;
+      if ((n-nhigh-nlow) % 2 == 1 || !even) {
+        med = (double)quickselect(data, n, k);
+      } else {
+        med = (double)(quickselect(data, n, k) + quickselect(data, n, k-1))/2;
+      }
     }
     if (nonzero || lthresh != INT_MIN || hthresh != INT_MAX || sigclip) delete data;
   } else {

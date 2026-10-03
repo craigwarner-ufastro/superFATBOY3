@@ -294,7 +294,7 @@ class miradasCharacterizePSFProcess(fatboyProcess):
             nslits = fdu.getProperty("nslits")
         else:
             if (fdu.hasProperty('slitmask')):
-                nslits = int(fdu.getData(tag="slitmask").max())
+                nslits = int(fdu.getProperty("slitmask").getData(force_cpu=True).max())
                 fdu.setProperty("nslits", nslits)
             elif ('slitmask' in calibs):
                 nslits = int(calibs['slitmask'].getData().max())

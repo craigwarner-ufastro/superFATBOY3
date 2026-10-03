@@ -4830,7 +4830,7 @@ extern "C" {
             output[i] = sum/divisor;
           }
 }
-         """)
+         """, options=("--fmad=false",))
 
         except Exception as ex:
             print("gpu_arraymedian> WARNING: CUDA median libs not installed!")

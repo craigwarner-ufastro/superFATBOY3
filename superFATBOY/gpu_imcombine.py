@@ -89,7 +89,7 @@ def get_mod():
           data[i] -= factor[i%stride];
         }
         }
-       """)
+       """, options=("--fmad=false",))
     return mod
 #end get_mod()
 

@@ -67,7 +67,7 @@ class biasSubtractProcess(fatboyProcess):
                 if (self._fdb.getGPUMode()):
                     nm = createNoisemap(masterBias.getData(), ncomb)
                 else:
-                    nm = np.sqrt(masterBias.getData()/ncomb)
+                    nm = np.sqrt(np.abs(masterBias.getData()/ncomb))
                 masterBias.tagDataAs("noisemap", nm)
                 masterBias.writeTo(nmfile, tag="noisemap")
 
@@ -230,7 +230,7 @@ class biasSubtractProcess(fatboyProcess):
             if (self._fdb.getGPUMode()):
                 nm = createNoisemap(masterBias.getData(), ncomb)
             else:
-                nm = np.sqrt(masterBias.getData()/ncomb)
+                nm = np.sqrt(np.abs(masterBias.getData()/ncomb))
             masterBias.tagDataAs("noisemap", nm)
         #Get this FDU's noisemap
         nm = fdu.getData(tag="noisemap")

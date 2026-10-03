@@ -179,7 +179,7 @@ class doubleSubtractProcess(fatboyProcess):
               if (doNM) nmOut[i] = sqrt(nmOut[i]);
             }
           }
-          }""")
+          }""", options=("--fmad=false",))
         return dbs_mod
     #end get_dbs_mod
 
@@ -331,6 +331,14 @@ class doubleSubtractProcess(fatboyProcess):
                     fdu.setSlitmask(data, pname=self._pname)
                     del overlap
 
+            #Slitmask pixel data for blanking: the 'slitmask' property is a calib, so getData(tag="slitmask")
+            #returned the calib object itself and data[object == 0] = 0 blanked nothing (also in main)
+            smData = None
+            if (fdu._specmode != fdu.FDU_TYPE_LONGSLIT and fdu.hasProperty('slitmask')):
+                smData = fdu.getProperty('slitmask')
+                if (hasattr(smData, 'getData')):
+                    smData = smData.getData(force_cpu=True)
+
             #Perform double subtraction
             pos = fdu.getData().copy()
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
@@ -341,9 +349,9 @@ class doubleSubtractProcess(fatboyProcess):
                 data = np.zeros((xsize, ysize + abs(shift)), dtype=np.float32)
                 data[:, posOffset:posOffset + ysize] = pos
                 data[:, negOffset:negOffset + ysize] -= pos
-            if (fdu._specmode != fdu.FDU_TYPE_LONGSLIT and fdu.hasProperty('slitmask')):
+            if (smData is not None):
                 #Blank out non-overlap regions for mutli object data
-                data[fdu.getData(tag="slitmask") == 0] = 0
+                data[smData == 0] = 0
             fdu.updateData(data)
 
             if (fdu.hasProperty("cleanFrame")):
@@ -357,9 +365,9 @@ class doubleSubtractProcess(fatboyProcess):
                     data = np.zeros((xsize, ysize + abs(shift)), dtype=np.float32)
                     data[:, posOffset:posOffset + ysize] = pos
                     data[:, negOffset:negOffset + ysize] -= pos
-                if (fdu._specmode != fdu.FDU_TYPE_LONGSLIT and fdu.hasProperty('slitmask')):
+                if (smData is not None):
                     #Blank out non-overlap regions for mutli object data
-                    data[fdu.getData(tag="slitmask") == 0] = 0
+                    data[smData == 0] = 0
                 #Update "cleanFrame" data tag
                 fdu.tagDataAs("cleanFrame", data=data)
 
@@ -374,9 +382,9 @@ class doubleSubtractProcess(fatboyProcess):
                     data = np.zeros((xsize, ysize + abs(shift)), dtype=np.float32)
                     data[:, posOffset:posOffset + ysize] = pos
                     data[:, negOffset:negOffset + ysize] += pos
-                if (fdu._specmode != fdu.FDU_TYPE_LONGSLIT and fdu.hasProperty('slitmask')):
+                if (smData is not None):
                     #Blank out non-overlap regions for mutli object data
-                    data[fdu.getData(tag="slitmask") == 0] = 0
+                    data[smData == 0] = 0
                 #Update "exposure_map" data tag
                 fdu.tagDataAs("exposure_map", data=data)
 
@@ -392,9 +400,9 @@ class doubleSubtractProcess(fatboyProcess):
                     data[:, posOffset:posOffset + ysize] = pos**2
                     data[:, negOffset:negOffset + ysize] += pos**2
                 data = np.sqrt(data).astype(np.float32)
-                if (fdu._specmode != fdu.FDU_TYPE_LONGSLIT and fdu.hasProperty('slitmask')):
+                if (smData is not None):
                     #Blank out non-overlap regions for mutli object data
-                    data[fdu.getData(tag="slitmask") == 0] = 0
+                    data[smData == 0] = 0
                 #Update "noisemap" data tag
                 fdu.tagDataAs("noisemap", data=data)
             #DO BELOW fdu.exptime *= 2

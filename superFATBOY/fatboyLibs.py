@@ -1156,7 +1156,7 @@ extern "C" {
         if (data[i] == val) atomicExch(&idx[0], i);
       }
 }
-    """)
+    """, options=("--fmad=false",))
     return fatboy_mod
 #end get_fatboy_mod
 
@@ -3835,11 +3835,13 @@ def medfilt2d(data, width, outfile=None, zlo=0, zhi=0, mef=0, log=None):
 #end medfilt2d
 
 def medianfilterCPU(cut, boxsize=25, nhigh=0):
-    tempcut = np.zeros(len(cut))
-    tempcut[:boxsize] = cut[:boxsize] - arraymedian(cut[:2*boxsize], kernel=fatboyclib.median, nhigh=nhigh)
+    #Subtract a running median over 2*boxsize+1 points; at each end the window is the first/last 2*boxsize+1
+    #points, as in gpumedianfilter.  Output keeps float32 input as float32, also as on the GPU.
+    tempcut = np.zeros(len(cut), dtype=np.result_type(np.asarray(cut).dtype, np.float32))
+    tempcut[:boxsize] = cut[:boxsize] - arraymedian(cut[:2*boxsize+1], kernel=fatboyclib.median, nhigh=nhigh)
     for j in range(boxsize, len(cut)-boxsize):
         tempcut[j] = cut[j] - arraymedian(cut[j-boxsize:j+boxsize+1], kernel=fatboyclib.median, nhigh=nhigh)
-    tempcut[-boxsize:] = cut[-boxsize:] - arraymedian(cut[-2*boxsize:], kernel=fatboyclib.median, nhigh=nhigh)
+    tempcut[-boxsize:] = cut[-boxsize:] - arraymedian(cut[-(2*boxsize+1):], kernel=fatboyclib.median, nhigh=nhigh)
     return tempcut
 #end medianfilterCPU
 
@@ -3850,7 +3852,9 @@ def medianfilter2dCPU(data, axis="X", boxsize=51, nhigh=0):
     elif (boxsize % 2 == 0):
         boxsize += 1
         print("Boxsize must be odd!  Using "+str(boxsize))
-    temp = np.zeros(data.shape)
+    #float32 input gives float32 output, as gpumedianfilter2d does (the values are identical either way, but
+    #later sums and comparisons in float64 vs float32 made CPU and GPU runs take different branches)
+    temp = np.zeros(data.shape, dtype=np.result_type(np.asarray(data).dtype, np.float32))
     bshalf = boxsize//2
     bshalfplus = bshalf+1
     if (axis == "Y"):

@@ -575,8 +575,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
 
             #Create new image np.array only the first time through
             #Take into account max shifts
-            newdata = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.float32)
-            expmap = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.float32)
+            newdata = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.float64)
+            expmap = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.float64)
             if (doPix):
                 pixmap = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.int32)
 
@@ -611,8 +611,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     ymax = max(max(ysh)+ymax-ymin, outysh+outimage[mef].data.shape[0])
                     x_range = int(math.ceil(xmax-xshmin))
                     y_range = int(math.ceil(ymax-yshmin))
-                    newdata = np.zeros((y_range, x_range), np.float32)
-                    expmap = np.zeros((y_range, x_range), np.float32)
+                    newdata = np.zeros((y_range, x_range), np.float64)
+                    expmap = np.zeros((y_range, x_range), np.float64)
                     if (doPix):
                         pixmap = np.zeros((y_range, x_range), np.int32)
                     if (outxsh != xshmin):
@@ -644,8 +644,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     outpix[mef].data = pixmap.astype(np.int32)
             else:
                 #Create output arrays
-                imagedata = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.float32)
-                expdata = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.float32)
+                imagedata = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.float64)
+                expdata = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.float64)
                 if (doPix):
                     pixdata = np.zeros((ymax-ymin+yshrange, xmax-xmin+xshrange), np.int32)
 
@@ -724,10 +724,10 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
 
                 #linearly interpolate
                 if (dropsize < 1):
-                    fy1 = np.minimum(((1.0+dropsize)/2-fracyu)*(1./dropsize),1)
-                    fx1 = np.minimum(((1.0+dropsize)/2-fracxu)*(1./dropsize),1)
-                    fracyu = np.maximum((fracyu-(1.0-dropsize)/2)*(1./dropsize),0)
-                    fracxu = np.maximum((fracxu-(1.0-dropsize)/2)*(1./dropsize),0)
+                    fy1 = np.clip(((1.0+dropsize)/2-fracyu)*(1./dropsize),0,1)
+                    fx1 = np.clip(((1.0+dropsize)/2-fracxu)*(1./dropsize),0,1)
+                    fracyu = np.clip((fracyu-(1.0-dropsize)/2)*(1./dropsize),0,1)
+                    fracxu = np.clip((fracxu-(1.0-dropsize)/2)*(1./dropsize),0,1)
                     newdata[intyu, intxu] += d2u*fy1*fx1
                     newdata[intyu, intxu+1] += d2u*fy1*fracxu
                     newdata[intyu+1, intxu] += d2u*fracyu*fx1
@@ -1317,7 +1317,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             #Get rid of extraneous extensions in data like CIRCE/Newfirm
             prepMefForWriting(temp, mef)
             temp.writeto(imgdir+'drihiz_'+shortfn, output_verify='silentfix')
-            temp[mef].data = expmap
+            temp[mef].data = expmap.astype(np.float32)
             temp.writeto(imgdir+'expmap_'+shortfn, output_verify='silentfix')
             temp.close()
             if (_verbosity == fatboyLog.VERBOSE):
@@ -1371,6 +1371,12 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
     if (outExists):
         imagedata = outimage[mef].data
         expdata = outexp[mef].data
+
+    #Sums were accumulated in double (exact, so independent of order - the GPU does the same); round once here
+    if (imagedata.dtype == np.float64):
+        imagedata = imagedata.astype(np.float32)
+    if (expdata.dtype == np.float64):
+        expdata = expdata.astype(np.float32)
 
     #Apply weighting
     if (weight == 'exptime' and kernel != 'uniform'):
@@ -2192,12 +2198,12 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
 
                 #linearly interpolate
                 if (dropsize < 1):
-                    fz1 = np.minimum(((1.0+dropsize)/2-fraczu)*(1./dropsize),1)
-                    fy1 = np.minimum(((1.0+dropsize)/2-fracyu)*(1./dropsize),1)
-                    fx1 = np.minimum(((1.0+dropsize)/2-fracxu)*(1./dropsize),1)
-                    fraczu = np.maximum((fraczu-(1.0-dropsize)/2)*(1./dropsize),0)
-                    fracyu = np.maximum((fracyu-(1.0-dropsize)/2)*(1./dropsize),0)
-                    fracxu = np.maximum((fracxu-(1.0-dropsize)/2)*(1./dropsize),0)
+                    fz1 = np.clip(((1.0+dropsize)/2-fraczu)*(1./dropsize),0,1)
+                    fy1 = np.clip(((1.0+dropsize)/2-fracyu)*(1./dropsize),0,1)
+                    fx1 = np.clip(((1.0+dropsize)/2-fracxu)*(1./dropsize),0,1)
+                    fraczu = np.clip((fraczu-(1.0-dropsize)/2)*(1./dropsize),0,1)
+                    fracyu = np.clip((fracyu-(1.0-dropsize)/2)*(1./dropsize),0,1)
+                    fracxu = np.clip((fracxu-(1.0-dropsize)/2)*(1./dropsize),0,1)
 
                     newdata[intzu, intyu, intxu] += d2u*fz1*fy1*fx1
                     newdata[intzu, intyu, intxu+1] += d2u*fz1*fy1*fracxu

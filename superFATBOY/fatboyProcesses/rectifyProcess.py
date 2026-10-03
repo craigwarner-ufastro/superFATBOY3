@@ -3512,8 +3512,9 @@ class rectifyProcess(fatboyProcess):
         if (not self._fdb.getGPUMode()):
             drihizzle_method = drihizzle.drihizzle
 
-        #inmask = 0 in between slitlets
-        crMask = (calibs['xtrans_rect'].getData() != 0)*(calibs['ytrans_rect'].getData() != 0)
+        #inmask = 0 in between slitlets.  Built on the host: the two transforms can come back as one numpy and
+        #one CuPy array depending on which path built each (trace, identity fallback, cached calib)
+        crMask = (calibs['xtrans_rect'].getData(force_cpu=True) != 0)*(calibs['ytrans_rect'].getData(force_cpu=True) != 0)
         #inmask *= fdu.crMask if cosmic ray method = mask
         if (fdu.hasProperty("crmask")):
             crMask *= fdu.getProperty("crmask") #crmask is good pixel mask

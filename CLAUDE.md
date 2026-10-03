@@ -221,6 +221,17 @@ can stop that but costs 10-20% flux. Rectification straightness and wavelength s
 four runs; `new` == `main` (findSlitlets byte-identical, spectra within 1-3%). Matching spectra between runs needs
 content correlation - slit labels shift. Wavecal uses the (non-flat-divided) clean sky, so flat options don't affect it.
 
+**GPU == CPU (v2.4.3).** LUCI now gives byte-identical output in both modes (107/107 files). What it took, in the
+order found - use the same method (rerun both modes, diff every FITS, then bisect with offline replays of the step):
+(1) gpu_drihizzle uniform kernel ignored the CPU's integer-shift case and dropped edge pixels; (2) turbo `dropsize<1`
+weights unclipped (GPU) / half-clipped (CPU); (3) **float atomics made the GPU drizzle non-deterministic** - now double
+accumulation on both sides, positions in double, data scaling as the CPU; (4) `medianfilterCPU` used a 50-point window
+at the ends and float64 output, `medianfilter2dCPU` float64 output (dtype alone changed later comparisons); (5) the C
+1-d `median()` returned uninitialized memory when nothing was left after `nonzero`/thresholds (random per run);
+(6) CPU noisemaps `np.sqrt(master)` without abs -> NaN; (7) CPU doubleSubtract never blanked outside the slitmask
+(`getData(tag="slitmask")` returns the calib object); (8) all RawModules compiled with `--fmad=false`. Most were also in
+main. Still not covered: drizzle with a fitted `geomDist` (calcTransOpt float32 on GPU), the 3-d GPU drizzle.
+
 **Flexure correction (v2.4.2)** - `findSlitlets` option `flexure_correction` (`none`|`shift`|`gradient`, `linear`=`shift`):
 per object, `measureFlexure` cross-correlates d/dy of the master flat vs each of the object's frames slit by slit at 9
 columns (sky-lit edges), MAD-clips, and `maskFlatCenterOffsets` gives (mask - flat center) on isolated slits; the object

@@ -570,7 +570,7 @@ class shiftAddProcess(fatboyProcess):
             if (self._fdb.getGPUMode()):
                 nm = createNoisemap(masterFlat.getData(), ncomb)
             else:
-                nm = np.sqrt(masterFlat.getData()/ncomb)
+                nm = np.sqrt(np.abs(masterFlat.getData()/ncomb))
             masterFlat.tagDataAs("noisemap", nm)
         # Get this FDU's noisemap
         nm = fdu.getData(tag="noisemap")

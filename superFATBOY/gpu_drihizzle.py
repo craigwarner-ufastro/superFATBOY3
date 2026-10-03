@@ -38,6 +38,20 @@ def get_mod():
         # Using extern "C" for CuPy RawModule to avoid name mangling
         code = r'''
         extern "C" {
+        //Drizzled sums accumulate in double: each output pixel gets only a few float terms, so the double sum is
+        //exact and does not depend on the order the atomics land in (float atomics made the result change from
+        //run to run and differ from the CPU).
+        #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
+        __device__ double atomicAdd(double *address, double val) {
+          unsigned long long int *addr = (unsigned long long int *)address;
+          unsigned long long int old = *addr, assumed;
+          do {
+            assumed = old;
+            old = atomicCAS(addr, assumed, __double_as_longlong(val + __longlong_as_double(assumed)));
+          } while (assumed != old);
+          return __longlong_as_double(old);
+        }
+        #endif
         __global__ void calcXin(float *xin, int nx, float offset) {
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           xin[i] = (i%nx) + offset;
@@ -102,64 +116,69 @@ def get_mod():
           if (divisor[i] != 0) dividend[i] /= divisor[i];
         }
 
-        __global__ void pointKernel(float *newdata, float *expmap, float *data, float *tmpexp, float *xout, float *yout, float xsh, float ysh, int xsize, int size)
+                //Drizzle kernels take positions in double, as the CPU drihizzle does: offsetting a float position by the
+        //output origin rounds it, which moved fractional positions by an ulp and changed the weights.
+__global__ void pointKernel(double *newdata, double *expmap, float *data, float *tmpexp, double *xout, double *yout, double xsh, double ysh, int xsize, int size)
         {
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) return;
-          int intx = (int)(xout[i]+xsh+0.5);
-          int inty = (int)(yout[i]+ysh+0.5);
+          int intx = (int)floor(xout[i]+xsh+0.5);
+          int inty = (int)floor(yout[i]+ysh+0.5);
           int idx = intx+xsize*inty;
           atomicAdd(&newdata[idx], data[i]);
           atomicAdd(&expmap[idx], tmpexp[i]);
         }
 
-        __global__ void pointKernelPix(float *newdata, float *expmap, int *pixmap, float *data, float *tmpexp, float *xout, float *yout, float xsh, float ysh, int xsize, int size)
+        __global__ void pointKernelPix(double *newdata, double *expmap, int *pixmap, float *data, float *tmpexp, double *xout, double *yout, double xsh, double ysh, int xsize, int size)
         {
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) return;
-          int intx = (int)(xout[i]+xsh+0.5);
-          int inty = (int)(yout[i]+ysh+0.5);
+          int intx = (int)floor(xout[i]+xsh+0.5);
+          int inty = (int)floor(yout[i]+ysh+0.5);
           int idx = intx+xsize*inty;
           atomicAdd(&newdata[idx], data[i]);
           atomicAdd(&expmap[idx], tmpexp[i]);
-          atomicAdd(&pixmap[idx], 1);
+          if (tmpexp[i] != 0) atomicAdd(&pixmap[idx], 1);
         }
 
-        __global__ void uniformKernel(int *newdata, int *data, float *xout, float *yout, int *mask, int nxsize, int nysize, int nsize)
+        __global__ void uniformKernel(int *newdata, int *data, double *xout, double *yout, int *mask, int nxsize, int nysize, int xint, int yint, int nsize)
         {
+          //Same as the CPU uniform kernel: splat to the 2x2 footprint, but not to the +1 column (row) when every
+          //x (y) position is an exact integer (xint, yint), so an integer transform does not widen each slitlet.
+          //Each write is bounds-checked on its own so a pixel at the last column/row still lands.
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= nsize) return;
-          int intx = (int)(xout[i]);
-          int inty = (int)(yout[i]);
-          //Bounds check both x and y for the base pixel AND its +1 neighbor in each
-          //direction (this kernel splats a 2x2 footprint) -- without this, a pixel
-          //landing in the last valid column or row wraps its +1 neighbor write into
-          //column/row 0 of the next row, corrupting unrelated pixels there.
-          if (intx < 0 || intx+1 >= nxsize || inty < 0 || inty+1 >= nysize) return;
+          int intx = (int)floor(xout[i]);
+          int inty = (int)floor(yout[i]);
+          if (intx < 0 || inty < 0 || intx >= nxsize || inty >= nysize) return;
           int idx = intx+nxsize*inty;
+          int val = data[i]*mask[i];
+          bool doX = (!xint && intx+1 < nxsize);
+          bool doY = (!yint && inty+1 < nysize);
 
-          atomicMax(&newdata[idx], data[i]*mask[i]);
-          atomicMax(&newdata[idx+1], data[i]*mask[i]);
-          atomicMax(&newdata[idx+nxsize], data[i]*mask[i]);
-          atomicMax(&newdata[idx+nxsize+1], data[i]*mask[i]);
+          atomicMax(&newdata[idx], val);
+          if (doX) atomicMax(&newdata[idx+1], val);
+          if (doY) atomicMax(&newdata[idx+nxsize], val);
+          if (doX && doY) atomicMax(&newdata[idx+nxsize+1], val);
         }
 
-        __global__ void turboKernel(float *newdata, float *expmap, float *data, float *tmpexp, float *xout, float *yout, float xsh, float ysh, int xsize, int size, float dropsize)
+        __global__ void turboKernel(double *newdata, double *expmap, float *data, float *tmpexp, double *xout, double *yout, double xsh, double ysh, int xsize, int size, float dropsize)
         {
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) return;
-          int intx = (int)(xout[i]+xsh);
-          int inty = (int)(yout[i]+ysh);
-          float fracx = xout[i]+xsh-intx;
-          float fracy = yout[i]+ysh-inty;
+          int intx = (int)floor(xout[i]+xsh);
+          int inty = (int)floor(yout[i]+ysh);
+          float fracx = (float)(xout[i]+xsh-intx);
+          float fracy = (float)(yout[i]+ysh-inty);
           int idx = intx+xsize*inty;
 
           if (dropsize < 1) {
+            //Overlap of a drop of size dropsize with each of the two pixels it can touch, clipped to [0,1]
             float idrop = 1.f/dropsize;
-            float fx1 = ((1.f+dropsize)/2-fracx)*idrop;
-            float fy1 = ((1.f+dropsize)/2-fracy)*idrop;
-            fracx = (fracx-(1.f-dropsize)/2)*idrop;
-            fracy = (fracy-(1.f-dropsize)/2)*idrop;
+            float fx1 = fminf(fmaxf(((1.f+dropsize)/2-fracx)*idrop, 0.f), 1.f);
+            float fy1 = fminf(fmaxf(((1.f+dropsize)/2-fracy)*idrop, 0.f), 1.f);
+            fracx = fminf(fmaxf((fracx-(1.f-dropsize)/2)*idrop, 0.f), 1.f);
+            fracy = fminf(fmaxf((fracy-(1.f-dropsize)/2)*idrop, 0.f), 1.f);
 
             atomicAdd(&newdata[idx], data[i]*fy1*fx1);
             atomicAdd(&newdata[idx+1], data[i]*fy1*fracx);
@@ -184,22 +203,23 @@ def get_mod():
           }
         }
 
-        __global__ void turboKernelPix(float *newdata, float *expmap, int *pixmap, float *data, float *tmpexp, float *xout, float *yout, float xsh, float ysh, int xsize, int size, float dropsize)
+        __global__ void turboKernelPix(double *newdata, double *expmap, int *pixmap, float *data, float *tmpexp, double *xout, double *yout, double xsh, double ysh, int xsize, int size, float dropsize)
         {
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) return;
-          int intx = (int)(xout[i]+xsh);
-          int inty = (int)(yout[i]+ysh);
-          float fracx = xout[i]+xsh-intx;
-          float fracy = yout[i]+ysh-inty;
+          int intx = (int)floor(xout[i]+xsh);
+          int inty = (int)floor(yout[i]+ysh);
+          float fracx = (float)(xout[i]+xsh-intx);
+          float fracy = (float)(yout[i]+ysh-inty);
           int idx = intx+xsize*inty;
 
           if (dropsize < 1) {
+            //Overlap of a drop of size dropsize with each of the two pixels it can touch, clipped to [0,1]
             float idrop = 1.f/dropsize;
-            float fx1 = ((1.f+dropsize)/2-fracx)*idrop;
-            float fy1 = ((1.f+dropsize)/2-fracy)*idrop;
-            fracx = (fracx-(1.f-dropsize)/2)*idrop;
-            fracy = (fracy-(1.f-dropsize)/2)*idrop;
+            float fx1 = fminf(fmaxf(((1.f+dropsize)/2-fracx)*idrop, 0.f), 1.f);
+            float fy1 = fminf(fmaxf(((1.f+dropsize)/2-fracy)*idrop, 0.f), 1.f);
+            fracx = fminf(fmaxf((fracx-(1.f-dropsize)/2)*idrop, 0.f), 1.f);
+            fracy = fminf(fmaxf((fracy-(1.f-dropsize)/2)*idrop, 0.f), 1.f);
 
             atomicAdd(&newdata[idx], data[i]*fy1*fx1);
             atomicAdd(&newdata[idx+1], data[i]*fy1*fracx);
@@ -211,10 +231,10 @@ def get_mod():
             atomicAdd(&expmap[idx+xsize], tmpexp[i]*fracy*fx1);
             atomicAdd(&expmap[idx+xsize+1], tmpexp[i]*fracy*fracx);
 
-            atomicAdd(&pixmap[idx], 1);
-            atomicAdd(&pixmap[idx+1], 1);
-            atomicAdd(&pixmap[idx+xsize], 1);
-            atomicAdd(&pixmap[idx+xsize+1], 1);
+            if (tmpexp[i] != 0) atomicAdd(&pixmap[idx], 1);
+            if (tmpexp[i] != 0) atomicAdd(&pixmap[idx+1], 1);
+            if (tmpexp[i] != 0) atomicAdd(&pixmap[idx+xsize], 1);
+            if (tmpexp[i] != 0) atomicAdd(&pixmap[idx+xsize+1], 1);
           } else {
             //dropsize = 1
             atomicAdd(&newdata[idx], data[i]*(1.f-fracy)*(1.f-fracx));
@@ -227,22 +247,22 @@ def get_mod():
             atomicAdd(&expmap[idx+xsize], tmpexp[i]*fracy*(1.f-fracx));
             atomicAdd(&expmap[idx+xsize+1], tmpexp[i]*fracy*fracx);
 
-            atomicAdd(&pixmap[idx], 1);
-            atomicAdd(&pixmap[idx+1], 1);
-            atomicAdd(&pixmap[idx+xsize], 1);
-            atomicAdd(&pixmap[idx+xsize+1], 1);
+            if (tmpexp[i] != 0) atomicAdd(&pixmap[idx], 1);
+            if (tmpexp[i] != 0) atomicAdd(&pixmap[idx+1], 1);
+            if (tmpexp[i] != 0) atomicAdd(&pixmap[idx+xsize], 1);
+            if (tmpexp[i] != 0) atomicAdd(&pixmap[idx+xsize+1], 1);
           }
         }
 
-        __global__ void tophatKernel(float *newdata, float *expmap, float *data, float *tmpexp, float *xout, float *yout, float xsh, float ysh, int xsize, int size, float dropsize)
+        __global__ void tophatKernel(double *newdata, double *expmap, float *data, float *tmpexp, double *xout, double *yout, double xsh, double ysh, int xsize, int size, float dropsize)
         {
           //Flux spread equally among pixels whose centers lie inside circle with r = dropsize/2
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) return;
-          int intx = (int)(xout[i]+xsh);
-          int inty = (int)(yout[i]+ysh);
-          float ox2 = xout[i]+xsh;
-          float oy2 = yout[i]+ysh;
+          int intx = (int)floor(xout[i]+xsh);
+          int inty = (int)floor(yout[i]+ysh);
+          float ox2 = (float)(xout[i]+xsh);
+          float oy2 = (float)(yout[i]+ysh);
           int idx = intx+xsize*inty;
           const int rnddrop = (int)(rintf(dropsize/2.f));
           const int ceildrop = (int)(ceilf(dropsize/2.f));
@@ -278,15 +298,15 @@ def get_mod():
           }
         }
 
-        __global__ void tophatKernelPix(float *newdata, float *expmap, int *pixmap, float *data, float *tmpexp, float *xout, float *yout, float xsh, float ysh, int xsize, int size, float dropsize)
+        __global__ void tophatKernelPix(double *newdata, double *expmap, int *pixmap, float *data, float *tmpexp, double *xout, double *yout, double xsh, double ysh, int xsize, int size, float dropsize)
         {
           //Flux spread equally among pixels whose centers lie inside circle with r = dropsize/2
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) return;
-          int intx = (int)(xout[i]+xsh);
-          int inty = (int)(yout[i]+ysh);
-          float ox2 = xout[i]+xsh;
-          float oy2 = yout[i]+ysh;
+          int intx = (int)floor(xout[i]+xsh);
+          int inty = (int)floor(yout[i]+ysh);
+          float ox2 = (float)(xout[i]+xsh);
+          float oy2 = (float)(yout[i]+ysh);
           int idx = intx+xsize*inty;
           const int rnddrop = (int)(rintf(dropsize/2.f));
           const int ceildrop = (int)(ceilf(dropsize/2.f));
@@ -317,22 +337,22 @@ def get_mod():
               if (sqrt(rx*rx+ry*ry) <= dropsize/2.f) {
                 atomicAdd(&newdata[idx+jx+xsize*jy], data[i]);
                 atomicAdd(&expmap[idx+jx+xsize*jy], tmpexp[i]);
-                atomicAdd(&pixmap[idx+jx+xsize*jy], 1);
+                if (tmpexp[i] != 0) atomicAdd(&pixmap[idx+jx+xsize*jy], 1);
               }
             }
           }
         }
 
-        __global__ void gaussianKernel(float *newdata, float *expmap, float *data, float *tmpexp, float *xout, float *yout, float xsh, float ysh, int xsize, int size, float dropsize)
+        __global__ void gaussianKernel(double *newdata, double *expmap, float *data, float *tmpexp, double *xout, double *yout, double xsh, double ysh, int xsize, int size, float dropsize)
         {
           //Flux weighted by 2-D gaussian with FWHM dropsize
           //Cutoff at 2.5 sigma for time considerations (same as in IRAFs drizzle)
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) return;
-          int intx = (int)(xout[i]+xsh);
-          int inty = (int)(yout[i]+ysh);
-          float ox2 = xout[i]+xsh;
-          float oy2 = yout[i]+ysh;
+          int intx = (int)floor(xout[i]+xsh);
+          int inty = (int)floor(yout[i]+ysh);
+          float ox2 = (float)(xout[i]+xsh);
+          float oy2 = (float)(yout[i]+ysh);
           int idx = intx+xsize*inty;
           const int rndsig = (int)(rintf(dropsize*2.5/2.3548));
           const int ceilsig = (int)(ceilf(dropsize*2.5/2.3548));
@@ -368,16 +388,16 @@ def get_mod():
           }
         }
 
-        __global__ void gaussianKernelPix(float *newdata, float *expmap, int *pixmap, float *data, float *tmpexp, float *xout, float *yout, float xsh, float ysh, int xsize, int size, float dropsize)
+        __global__ void gaussianKernelPix(double *newdata, double *expmap, int *pixmap, float *data, float *tmpexp, double *xout, double *yout, double xsh, double ysh, int xsize, int size, float dropsize)
         {
           //Flux weighted by 2-D gaussian with FWHM dropsize
           //Cutoff at 2.5 sigma for time considerations (same as in IRAFs drizzle)
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) return;
-          int intx = (int)(xout[i]+xsh);
-          int inty = (int)(yout[i]+ysh);
-          float ox2 = xout[i]+xsh;
-          float oy2 = yout[i]+ysh;
+          int intx = (int)floor(xout[i]+xsh);
+          int inty = (int)floor(yout[i]+ysh);
+          float ox2 = (float)(xout[i]+xsh);
+          float oy2 = (float)(yout[i]+ysh);
           int idx = intx+xsize*inty;
           const int rndsig = (int)(rintf(dropsize*2.5/2.3548));
           const int ceilsig = (int)(ceilf(dropsize*2.5/2.3548));
@@ -409,12 +429,12 @@ def get_mod():
               gauss = exp(-0.5*(zx*zx+zy*zy));
               atomicAdd(&newdata[idx+jx+xsize*jy], data[i]*gauss);
               atomicAdd(&expmap[idx+jx+xsize*jy], tmpexp[i]*gauss);
-              atomicAdd(&pixmap[idx+jx+xsize*jy], 1);
+              if (tmpexp[i] != 0) atomicAdd(&pixmap[idx+jx+xsize*jy], 1);
             }
           }
         }
 
-        __global__ void fastGaussKernel(float *newdata, float *expmap, float *data, float *tmpexp, float *xout, float *yout, float xsh, float ysh, int xsize, int size, float dropsize, float *gausslut, int gausscen)
+        __global__ void fastGaussKernel(double *newdata, double *expmap, float *data, float *tmpexp, double *xout, double *yout, double xsh, double ysh, int xsize, int size, float dropsize, float *gausslut, int gausscen)
         {
           //Flux weighted by 2-D gaussian with FWHM dropsize
           //Cutoff at 2.5 sigma for time considerations same as in IRAFs drizzle
@@ -423,10 +443,10 @@ def get_mod():
           //25% increase in speed versus gaussian with nearly identical results
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) return;
-          int intx = (int)(xout[i]+xsh);
-          int inty = (int)(yout[i]+ysh);
-          float ox2 = xout[i]+xsh;
-          float oy2 = yout[i]+ysh;
+          int intx = (int)floor(xout[i]+xsh);
+          int inty = (int)floor(yout[i]+ysh);
+          float ox2 = (float)(xout[i]+xsh);
+          float oy2 = (float)(yout[i]+ysh);
           int idx = intx+xsize*inty;
           const int rndsig = (int)(rintf(dropsize*2.5/2.3548));
           const int ceilsig = (int)(ceilf(dropsize*2.5/2.3548));
@@ -460,7 +480,7 @@ def get_mod():
           }
         }
 
-        __global__ void fastGaussKernelPix(float *newdata, float *expmap, int *pixmap, float *data, float *tmpexp, float *xout, float *yout, float xsh, float ysh, int xsize, int size, float dropsize, float *gausslut, int gausscen)
+        __global__ void fastGaussKernelPix(double *newdata, double *expmap, int *pixmap, float *data, float *tmpexp, double *xout, double *yout, double xsh, double ysh, int xsize, int size, float dropsize, float *gausslut, int gausscen)
         {
           //Flux weighted by 2-D gaussian with FWHM dropsize
           //Cutoff at 2.5 sigma for time considerations same as in IRAFs drizzle
@@ -469,10 +489,10 @@ def get_mod():
           //25% increase in speed versus gaussian with nearly identical results
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) return;
-          int intx = (int)(xout[i]+xsh);
-          int inty = (int)(yout[i]+ysh);
-          float ox2 = xout[i]+xsh;
-          float oy2 = yout[i]+ysh;
+          int intx = (int)floor(xout[i]+xsh);
+          int inty = (int)floor(yout[i]+ysh);
+          float ox2 = (float)(xout[i]+xsh);
+          float oy2 = (float)(yout[i]+ysh);
           int idx = intx+xsize*inty;
           const int rndsig = (int)(rintf(dropsize*2.5/2.3548));
           const int ceilsig = (int)(ceilf(dropsize*2.5/2.3548));
@@ -502,12 +522,12 @@ def get_mod():
               gauss = gausslut[indx+jx*1000]*gausslut[indy+jy*1000];
               atomicAdd(&newdata[idx+jx+xsize*jy], data[i]*gauss);
               atomicAdd(&expmap[idx+jx+xsize*jy], tmpexp[i]*gauss);
-              atomicAdd(&pixmap[idx+jx+xsize*jy], 1);
+              if (tmpexp[i] != 0) atomicAdd(&pixmap[idx+jx+xsize*jy], 1);
             }
           }
         }
 
-        __global__ void lanczosKernel(float *newdata, float *expmap, float *data, float *tmpexp, float *xout, float *yout, float xsh, float ysh, int xsize, int size, float dropsize, float *lanclut, int lanccen)
+        __global__ void lanczosKernel(double *newdata, double *expmap, float *data, float *tmpexp, double *xout, double *yout, double xsh, double ysh, int xsize, int size, float dropsize, float *lanclut, int lanccen)
         {
           //Flux weighted by 2-D lanczos sinc function with width
           //determined by dropsize.
@@ -517,10 +537,10 @@ def get_mod():
 
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) return;
-          int intx = (int)(xout[i]+xsh);
-          int inty = (int)(yout[i]+ysh);
-          float ox2 = xout[i]+xsh;
-          float oy2 = yout[i]+ysh;
+          int intx = (int)floor(xout[i]+xsh);
+          int inty = (int)floor(yout[i]+ysh);
+          float ox2 = (float)(xout[i]+xsh);
+          float oy2 = (float)(yout[i]+ysh);
           int idx = intx+xsize*inty;
           const int rnddrop = (int)(rintf(dropsize));
           const int ceildrop = (int)(ceilf(dropsize));
@@ -554,7 +574,7 @@ def get_mod():
           }
         }
 
-        __global__ void lanczosKernelPix(float *newdata, float *expmap, int *pixmap, float *data, float *tmpexp, float *xout, float *yout, float xsh, float ysh, int xsize, int size, float dropsize, float *lanclut, int lanccen)
+        __global__ void lanczosKernelPix(double *newdata, double *expmap, int *pixmap, float *data, float *tmpexp, double *xout, double *yout, double xsh, double ysh, int xsize, int size, float dropsize, float *lanclut, int lanccen)
         {
           //Flux weighted by 2-D lanczos sinc function with width
           //determined by dropsize.
@@ -564,10 +584,10 @@ def get_mod():
 
           const int i = blockDim.x*blockIdx.x + threadIdx.x;
           if (i >= size) return;
-          int intx = (int)(xout[i]+xsh);
-          int inty = (int)(yout[i]+ysh);
-          float ox2 = xout[i]+xsh;
-          float oy2 = yout[i]+ysh;
+          int intx = (int)floor(xout[i]+xsh);
+          int inty = (int)floor(yout[i]+ysh);
+          float ox2 = (float)(xout[i]+xsh);
+          float oy2 = (float)(yout[i]+ysh);
           int idx = intx+xsize*inty;
           const int rnddrop = (int)(rintf(dropsize));
           const int ceildrop = (int)(ceilf(dropsize));
@@ -597,7 +617,7 @@ def get_mod():
               lanc = lanclut[indx+jx*1000]*lanclut[indy+jy*1000];
               atomicAdd(&newdata[idx+jx+xsize*jy], data[i]*lanc);
               atomicAdd(&expmap[idx+jx+xsize*jy], tmpexp[i]*lanc);
-              atomicAdd(&pixmap[idx+jx+xsize*jy], 1);
+              if (tmpexp[i] != 0) atomicAdd(&pixmap[idx+jx+xsize*jy], 1);
             }
           }
         }
@@ -688,13 +708,14 @@ def get_mod():
           int idx = intx+xsize*inty+xsize*ysize*intz;
 
           if (dropsize < 1) {
+            //Overlap of a drop of size dropsize with each of the two pixels it can touch, clipped to [0,1]
             float idrop = 1.f/dropsize;
-            float fx1 = ((1.f+dropsize)/2-fracx)*idrop;
-            float fy1 = ((1.f+dropsize)/2-fracy)*idrop;
-            float fz1 = ((1.f+dropsize)/2-fracz)*idrop;
-            fracx = (fracx-(1.f-dropsize)/2)*idrop;
-            fracy = (fracy-(1.f-dropsize)/2)*idrop;
-            fracz = (fracz-(1.f-dropsize)/2)*idrop;
+            float fx1 = fminf(fmaxf(((1.f+dropsize)/2-fracx)*idrop, 0.f), 1.f);
+            float fy1 = fminf(fmaxf(((1.f+dropsize)/2-fracy)*idrop, 0.f), 1.f);
+            float fz1 = fminf(fmaxf(((1.f+dropsize)/2-fracz)*idrop, 0.f), 1.f);
+            fracx = fminf(fmaxf((fracx-(1.f-dropsize)/2)*idrop, 0.f), 1.f);
+            fracy = fminf(fmaxf((fracy-(1.f-dropsize)/2)*idrop, 0.f), 1.f);
+            fracz = fminf(fmaxf((fracz-(1.f-dropsize)/2)*idrop, 0.f), 1.f);
 
             atomicAdd(&newdata[idx], data[i]*fz1*fy1*fx1);
             atomicAdd(&newdata[idx+1], data[i]*fz1*fy1*fracx);
@@ -752,13 +773,14 @@ def get_mod():
           int idx = intx+xsize*inty+xsize*ysize*intz;
 
           if (dropsize < 1) {
+            //Overlap of a drop of size dropsize with each of the two pixels it can touch, clipped to [0,1]
             float idrop = 1.f/dropsize;
-            float fx1 = ((1.f+dropsize)/2-fracx)*idrop;
-            float fy1 = ((1.f+dropsize)/2-fracy)*idrop;
-            float fz1 = ((1.f+dropsize)/2-fracz)*idrop;
-            fracx = (fracx-(1.f-dropsize)/2)*idrop;
-            fracy = (fracy-(1.f-dropsize)/2)*idrop;
-            fracz = (fracz-(1.f-dropsize)/2)*idrop;
+            float fx1 = fminf(fmaxf(((1.f+dropsize)/2-fracx)*idrop, 0.f), 1.f);
+            float fy1 = fminf(fmaxf(((1.f+dropsize)/2-fracy)*idrop, 0.f), 1.f);
+            float fz1 = fminf(fmaxf(((1.f+dropsize)/2-fracz)*idrop, 0.f), 1.f);
+            fracx = fminf(fmaxf((fracx-(1.f-dropsize)/2)*idrop, 0.f), 1.f);
+            fracy = fminf(fmaxf((fracy-(1.f-dropsize)/2)*idrop, 0.f), 1.f);
+            fracz = fminf(fmaxf((fracz-(1.f-dropsize)/2)*idrop, 0.f), 1.f);
 
             atomicAdd(&newdata[idx], data[i]*fz1*fy1*fx1);
             atomicAdd(&newdata[idx+1], data[i]*fz1*fy1*fracx);
@@ -824,7 +846,7 @@ def get_mod():
         }
         }
        '''
-        mod = cp.RawModule(code=code)
+        mod = cp.RawModule(code=code, options=("--fmad=false",))
     return mod
 #end get_mod()
 
@@ -1317,9 +1339,12 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             tt = time.time()
 
             if xtrans is not None:
-                xout = cp.array(xtrans).astype(np.float32)
+                xout = cp.array(xtrans).astype(np.float64)
             if ytrans is not None:
-                yout = cp.array(ytrans).astype(np.float32)
+                yout = cp.array(ytrans).astype(np.float64)
+            # Positions in double from here on, as on the CPU (offsetting by the output origin is then exact)
+            xout = xout.astype(np.float64)
+            yout = yout.astype(np.float64)
 
             # Release memory
             del xin
@@ -1368,8 +1393,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
 
             # Create new image np.array only the first time through
             # Take into account max shifts on GPU
-            newdata = cp.zeros((ymax - ymin + yshrange, xmax - xmin + xshrange), dtype=np.float32)
-            expmap = cp.zeros((ymax - ymin + yshrange, xmax - xmin + xshrange), dtype=np.float32)
+            newdata = cp.zeros((ymax - ymin + yshrange, xmax - xmin + xshrange), dtype=np.float64)
+            expmap = cp.zeros((ymax - ymin + yshrange, xmax - xmin + xshrange), dtype=np.float64)
             if doPix:
                 pixmap = cp.zeros((ymax - ymin + yshrange, xmax - xmin + xshrange), dtype=np.int32)
 
@@ -1388,8 +1413,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 yrefout = float(outimage[0].header['CRPIX2'])
                 # Case existing image is as large or larger than needed
                 if (outxsh <= xshmin and outysh <= yshmin and outimage[mef].data.shape[1] + outxsh >= xmax - xmin + max(xsh) and outimage[mef].data.shape[0] >= ymax - ymin + max(ysh)):
-                    newdata = cp.array(outimage[mef].data).astype(np.float32)
-                    expmap = cp.array(outexp[mef].data).astype(np.float32)
+                    newdata = cp.array(outimage[mef].data).astype(np.float64)
+                    expmap = cp.array(outexp[mef].data).astype(np.float64)
                     if doPix:
                         pixmap = cp.array(outpix[mef].data).astype(np.int32)
                     xsh = np.array(xsh) - outxsh
@@ -1404,8 +1429,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                     ymax = max(max(ysh) + ymax - ymin, outysh + outimage[mef].data.shape[0])
                     x_range = int(math.ceil(xmax - xshmin))
                     y_range = int(math.ceil(ymax - yshmin))
-                    newdata = cp.zeros((y_range, x_range), dtype=np.float32)
-                    expmap = cp.zeros((y_range, x_range), dtype=np.float32)
+                    newdata = cp.zeros((y_range, x_range), dtype=np.float64)
+                    expmap = cp.zeros((y_range, x_range), dtype=np.float64)
                     if doPix:
                         pixmap = cp.zeros((y_range, x_range), dtype=np.int32)
                     if outxsh != xshmin:
@@ -1451,12 +1476,12 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
         inmask_g = cp.array(inmask).astype(np.int32)
 
         # Scale data by inmask and weight factor
-        multArrFloatIntScalar = mod.get_function("multArrFloatIntScalar")
-        multArrFloatIntScalar((blocks,), (block_size,), (data_g, inmask_g, np.float32(scalefac/exptime), np.int32(data.size)))
+        # Same arithmetic as the CPU: data*(inmask*(scalefac/exptime)) in double, rounded once to float32
+        data_g = (data_g * (inmask_g * (scalefac/exptime))).astype(np.float32)
 
         if tmpexp is None:
             # Exposure map should be exposure time * good pixel mask unless a previous exposure map has been loaded for inunits = cps
-            tmpexp_g = (inmask_g * np.float32(scalefac)).astype(np.float32)
+            tmpexp_g = (inmask_g * scalefac).astype(np.float32)
         else:
             tmpexp_g = cp.array(tmpexp).astype(np.float32)
 
@@ -1479,61 +1504,64 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
         if kernel == 'turbo':
             if doPix:
                 turboKernel = mod.get_function("turboKernelPix")
-                turboKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
+                turboKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float64(xsh[j] - xshmin), np.float64(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
             else:
                 turboKernel = mod.get_function("turboKernel")
-                turboKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
+                turboKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float64(xsh[j] - xshmin), np.float64(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
         elif kernel == 'point':
             if doPix:
                 pointKernel = mod.get_function("pointKernelPix")
-                pointKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size)))
+                pointKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float64(xsh[j] - xshmin), np.float64(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size)))
             else:
                 pointKernel = mod.get_function("pointKernel")
-                pointKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size)))
+                pointKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float64(xsh[j] - xshmin), np.float64(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size)))
         elif kernel == 'tophat':
             if doPix:
                 tophatKernel = mod.get_function("tophatKernelPix")
-                tophatKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
+                tophatKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float64(xsh[j] - xshmin), np.float64(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
             else:
                 tophatKernel = mod.get_function("tophatKernel")
-                tophatKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
+                tophatKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float64(xsh[j] - xshmin), np.float64(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
         elif kernel == 'gaussian':
             if doPix:
                 gaussianKernel = mod.get_function("gaussianKernelPix")
-                gaussianKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
+                gaussianKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float64(xsh[j] - xshmin), np.float64(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
             else:
                 gaussianKernel = mod.get_function("gaussianKernel")
-                gaussianKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
+                gaussianKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float64(xsh[j] - xshmin), np.float64(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize)))
         elif kernel == 'fastgauss':
             gausslut_g = cp.array(gausslut).astype(np.float32)
             if doPix:
                 fastGaussKernel = mod.get_function("fastGaussKernelPix")
-                fastGaussKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), gausslut_g, gausscen.astype(np.int32)))
+                fastGaussKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float64(xsh[j] - xshmin), np.float64(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), gausslut_g, gausscen.astype(np.int32)))
             else:
                 fastGaussKernel = mod.get_function("fastGaussKernel")
-                fastGaussKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), gausslut_g, gausscen.astype(np.int32)))
+                fastGaussKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float64(xsh[j] - xshmin), np.float64(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), gausslut_g, gausscen.astype(np.int32)))
         elif kernel == 'lanczos':
             lanclut_g = cp.array(lanclut).astype(np.float32)
             if doPix:
                 lanczosKernel = mod.get_function("lanczosKernelPix")
-                lanczosKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), lanclut_g, lanccen.astype(np.int32)))
+                lanczosKernel((blocks,), (block_size,), (newdata, expmap, pixmap, data_g, tmpexp_g, xout_g, yout_g, np.float64(xsh[j] - xshmin), np.float64(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), lanclut_g, lanccen.astype(np.int32)))
             else:
                 lanczosKernel = mod.get_function("lanczosKernel")
-                lanczosKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float32(xsh[j] - xshmin), np.float32(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), lanclut_g, lanccen.astype(np.int32)))
+                lanczosKernel((blocks,), (block_size,), (newdata, expmap, data_g, tmpexp_g, xout_g, yout_g, np.float64(xsh[j] - xshmin), np.float64(ysh[j] - yshmin), np.int32(xsize), np.int32(data.size), np.float32(dropsize), lanclut_g, lanccen.astype(np.int32)))
         elif kernel == 'uniform':
             #Same as main and CPU drihizzle: uniform kernel (slitmasks) stays int32 through to the output
             data_g = data_g.astype(np.int32)
             newdata = newdata.astype(np.int32)
             nysize = newdata.shape[0]
             uniformKernel = mod.get_function("uniformKernel")
-            uniformKernel((blocks,), (block_size,), (newdata, data_g, xout_g, yout_g, inmask_g, np.int32(xsize), np.int32(nysize), np.int32(data.size)))
+            #As the CPU kernel: no splat to the next column/row if every position is an exact integer
+            xint = int(bool(cp.all(xout_g == cp.floor(xout_g))))
+            yint = int(bool(cp.all(yout_g == cp.floor(yout_g))))
+            uniformKernel((blocks,), (block_size,), (newdata, data_g, xout_g, yout_g, inmask_g, np.int32(xsize), np.int32(nysize), np.int32(xint), np.int32(yint), np.int32(data.size)))
         tt = time.time()
 
         # If requested, update FDUs here
         if updateFDUs and (mode == MODE_FDU or mode == MODE_FDU_DIFFERENCE or mode == MODE_FDU_TAG):
             # Make copies on GPU
             drihizzled_data_g = newdata.astype(np.float32)
-            expmap_data_g = expmap.copy()
+            expmap_data_g = expmap.astype(np.float32)
             divFloatArrays = mod.get_function("divFloatArrays")
             # Apply weighting
             blocks_w = newdata.size // block_size
@@ -1578,7 +1606,7 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                 temp = pyfits.open(frames[j].getFilename())
 
             indiv_data_g = newdata.astype(np.float32)
-            indiv_exp_g = expmap.copy()
+            indiv_exp_g = expmap.astype(np.float32)
             divFloatArrays = mod.get_function("divFloatArrays")
             # Apply weighting
             blocks_w = newdata.size // block_size
@@ -1637,6 +1665,12 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
     if _verbosity == fatboyLog.VERBOSE:
         print("Process indiv frames: ", time.time() - tt, "; Total: ", time.time() - t)
     tt = time.time()
+
+    # Sums were accumulated in double (exact, order-independent, same as the CPU); round once here
+    if newdata.dtype == np.float64:
+        newdata = newdata.astype(np.float32)
+    if expmap.dtype == np.float64:
+        expmap = expmap.astype(np.float32)
 
     divFloatArrays = mod.get_function("divFloatArrays")
     # Apply weighting on GPU

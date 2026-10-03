@@ -50,7 +50,7 @@ class linearityProcess(fatboyProcess):
               }
               }
             """
-            linearity_mod = cp.RawModule(code=code)
+            linearity_mod = cp.RawModule(code=code, options=("--fmad=false",))
         return linearity_mod
     #end get_linearity_mod
 

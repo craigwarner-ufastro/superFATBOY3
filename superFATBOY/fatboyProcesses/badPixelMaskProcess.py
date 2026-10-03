@@ -53,7 +53,7 @@ class badPixelMaskProcess(fatboyProcess):
           }
           return;
         }
-        """)
+        """, options=("--fmad=false",))
 
     # Convenience method so that code doesn't have to be rewritten several times in getCalib
     def createBadPixelMask(self, fdu, sourceFDU):

@@ -2638,33 +2638,30 @@ class findSlitletProcess(fatboyProcess):
 
             #Write out qa file
             if (not os.access(qafile, os.F_OK)):
-                #Generate qa data
-                if (self._fdb.getGPUMode()):
-                    #Use GPU
-                    flatData = generateQAData(flatData, xcoords, ycoords, sylo, syhi, horizontal = (fdu.dispersion == fdu.DISPERSION_HORIZONTAL))
-                else:
-                    #CPU version -- loop over coords first
-                    for j in range(len(xcoords)):
-                        xval = int(xcoords[j]+.5)
-                        qaxs = np.arange(9, dtype=np.int32).reshape((3,3))%3+xval-1
-                        ys = np.arange(9, dtype=np.int32).reshape((3,3))//3
-                        #There will be 18 x nslits x ncoords pixels used to show np.where slitlets were traced out
-                        for i in range(nslits):
-                            yval = int(ycoords[j]+sylo[i]+0.5)
-                            #calculate x and y 3x3 index arrays
-                            qays = ys+yval-1
-                            dist = np.sqrt((ycoords[j]+sylo[i]-qays)**2+(xcoords[j]-qaxs)**2)
-                            if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                                flatData[qays,qaxs] = -50000/((1+dist)**2)
-                            elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                                flatData[qaxs,qays] = -50000/((1+dist)**2)
-                            yval = int(ycoords[j]+syhi[i]+0.5)
-                            qays = ys+yval-1
-                            dist = np.sqrt((ycoords[j]+syhi[i]-qays)**2+(xcoords[j]-qaxs)**2)
-                            if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                                flatData[qays,qaxs] = -50000/((1+dist)**2)
-                            elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                                flatData[qaxs,qays] = -50000/((1+dist)**2)
+                #Generate qa data on the CPU in both modes (cheap; the GPU kernel used float32 positions and
+                #overlapping marks raced, so GPU and CPU QA images differed)
+                #CPU version -- loop over coords first
+                for j in range(len(xcoords)):
+                    xval = int(xcoords[j]+.5)
+                    qaxs = np.arange(9, dtype=np.int32).reshape((3,3))%3+xval-1
+                    ys = np.arange(9, dtype=np.int32).reshape((3,3))//3
+                    #There will be 18 x nslits x ncoords pixels used to show np.where slitlets were traced out
+                    for i in range(nslits):
+                        yval = int(ycoords[j]+sylo[i]+0.5)
+                        #calculate x and y 3x3 index arrays
+                        qays = ys+yval-1
+                        dist = np.sqrt((ycoords[j]+sylo[i]-qays)**2+(xcoords[j]-qaxs)**2)
+                        if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
+                            flatData[qays,qaxs] = -50000/((1+dist)**2)
+                        elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
+                            flatData[qaxs,qays] = -50000/((1+dist)**2)
+                        yval = int(ycoords[j]+syhi[i]+0.5)
+                        qays = ys+yval-1
+                        dist = np.sqrt((ycoords[j]+syhi[i]-qays)**2+(xcoords[j]-qaxs)**2)
+                        if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
+                            flatData[qays,qaxs] = -50000/((1+dist)**2)
+                        elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
+                            flatData[qaxs,qays] = -50000/((1+dist)**2)
                 masterFlat.tagDataAs("slitqa", flatData)
                 masterFlat.writeTo(qafile, tag="slitqa")
                 masterFlat.removeProperty("slitqa")

@@ -74,7 +74,7 @@ class darkSubtractProcess(fatboyProcess):
                 if (self._fdb.getGPUMode()):
                     nm = createNoisemap(masterDark.getData(), ncomb)
                 else:
-                    nm = np.sqrt(masterDark.getData()/ncomb)
+                    nm = np.sqrt(np.abs(masterDark.getData()/ncomb))
                 masterDark.tagDataAs("noisemap", nm)
                 masterDark.writeTo(nmfile, tag="noisemap")
 
@@ -363,7 +363,7 @@ class darkSubtractProcess(fatboyProcess):
             if (self._fdb.getGPUMode()):
                 nm = createNoisemap(masterDark.getData(), ncomb)
             else:
-                nm = np.sqrt(masterDark.getData()/ncomb)
+                nm = np.sqrt(np.abs(masterDark.getData()/ncomb))
             masterDark.tagDataAs("noisemap", nm)
         #Get this FDU's noisemap
         nm = fdu.getData(tag="noisemap")
