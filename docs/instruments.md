@@ -30,7 +30,11 @@ How strong is the evidence?
 - **FLAMINGOS-1 imaging** is the strongest validation. The same dataset was reduced four ways: by the original Python 2 /
   PyCUDA pipeline (CPU and GPU) and by the Python 3 / CuPy pipeline (CPU and GPU). All four agree on the final image
   alignment shifts to four or more decimal places.
-- CPU and GPU runs of every configuration above agree to floating-point rounding.
+- CPU and GPU runs of every configuration above agree to floating-point rounding (LUCI: byte-identical output).
+- Wavelength calibration is graded per slitlet (RMS in pixels). On these datasets the median is 0.05-0.10 px for the
+  arc and sky lists of FLAMINGOS-1, OSIRIS, KAST and LUCI (excellent to good), and 0.22-0.25 px for MIRADAS (see the
+  [MIRADAS guide](miradas.md#wavelengthcalibrate)). A second OSIRIS xenon-arc dataset calibrates (0.06 px) with the
+  shipped `Xenon_optical_air.dat`; the older Xe list it was configured with lacks the brightest blue Xe I lines.
 - The OSIRIS, KAST and MIRADAS datasets exercise the spectroscopy chain (slitlet finding, rectification, wavelength
   calibration, extraction) on very different optical layouts: a classic longslit, a dual-arm longslit with a rotated
   dispersion axis, and an image-slicer IFU fed by multiple slits.

@@ -161,6 +161,18 @@ MIRADAS ships line lists and per-slitlet starting guesses. In the templates:
 
 - SOL and SOS: `resample_to_common_scale = no`. MOS: `yes`, plus `n_brightest_lines = 14` and `max_bright_line_separation = 1000`.
 
+**Quality grades.** Each slitlet/segment is graded by its RMS in pixels (see [wavelengthCalibrate](processes/spectroscopy.md#wavelengthcalibrate)).
+MIRADAS fits typically land at 0.2-0.5 px with 40-80 lines over 90% of the cut, so many are graded marginal or poor
+although they are right; set `wavecal_quality_thresholds` looser (for example `0.2,0.3,0.45,0.6`) if you want the grades
+to single out the genuinely bad ones.
+
+**Each slitlet is a different order.** The fallbacks for a slitlet whose bright lines don't match take this into
+account: a calibrated slitlet is used as a *neighbor* guess only if its wavelength range overlaps this slitlet's
+configured range, and the *trend* guess predicts the solution from the orders on either side (wavelengths change
+smoothly from order to order). In the second pass, after every slitlet has been tried, poor slitlets get these guesses
+again. On the SOS test data this replaced a wrong match on order 2, segment 1 (3.3 px, 14 lines) with a solution that
+continues the order-to-order progression (0.08 px, 36 lines), and improved order 1 from 0.9 to 0.14 px.
+
 ## MIRADAS-specific processes
 
 All MIRADAS processes accept `write_output` and `write_calib_output`. Many take `slitlet_number`: `all` (default) or a number 1 to 13 to work on one slitlet only, which is useful for debugging.

@@ -21,6 +21,9 @@ the matching section here. New options are listed with their default.
 | Median fixes, v2.3.45 vs v2.3.44 | specBench CPU, oriBench GPU, LUCI GPU | oriBench: alignment shifts identical (drizzled pixels differ at 1e-7). specBench: 559/571 identical; 6 of 23 extracted spectra rescaled by 0.007-0.23% and 2 standard-star pixels changed - both from the single-value median that used to return 0. LUCI: GPU clean sky now the lower quartile and identical to CPU; wavelength solutions moved 0.09 A median (0.02 px), fit RMS 0.473 -> 0.452 A |
 | Gap-aware `padding`, v2.4.0 | MIRADAS SOS + MOS order 20 (findSlitlets), LUCI auto/region GPU | MIRADAS slitmasks byte-identical to v2.3.47 with `padding`=2. LUCI auto with `padding`=3: 16 continua traced (was 10), 17 spectra extracted (was 13) incl. the brightest objects, fluxes 0.95-1.0 of the traceSlitlets run (was 0.62-0.96); wavecal median sigma 0.454 -> 0.491 A |
 | GPU == CPU, v2.4.3 | all 9 verified configs, GPU and CPU (run one at a time) | No tracebacks; same ERRORs as before. LUCI byte-identical GPU vs CPU (107/107 files), MIRADAS SOS 107/108, SOL 94/111, MOS 75/91 (left: bad pixel mask GPU vs CPU); specBench (linearity/dark onward), oriBench (imaging) and longslit (fitted-distortion drizzle) still differ at the rounding level. Every dataset calibrates the same number of slitlets as its previous verified run, median wavelength sigma within noise |
+| wavelengthCalibrate QA / fallbacks / second pass, v2.4.4-2.4.6 | WC reruns of LUCI (sky and arc), KAST, OSIRIS x2, MIRADAS SOL/SOS/MOS, specBench (one at a time) | First pass log-identical to before on every dataset; no tracebacks. Medians 0.05-0.10 px (FLAMINGOS-1, OSIRIS, KAST, LUCI), 0.22-0.25 px (MIRADAS). Second pass replaced MIRADAS SOS orders 1-2 seg 1 (order 2 was a wrong match) and LUCI arc slit 10 (100 A off at the blue end) with solutions that fit their neighbors. Offline bench of every fallback on ~180 calibrated cuts: no wrong solution accepted |
+| avrajit-osiris (OSIRIS R2500U Xe arc), v2.4.5 | WC rerun | Calibrates on the first match with `Xenon_optical_air.dat` (0.057 px, 16 lines); with the old Xe list it fails cleanly (fallback solutions rejected as poor) |
+| `wavecal.py` standalone, v2.4.7 | 24 LUCI arc slitlets in a loop | Same grades as the pipeline, RMS within 0.004 px, slit 10 replaced the same way |
 | MEGARA, FourStar, SINFONI, others | - | Not yet run through the refactored pipeline |
 
 ## Open issues
@@ -40,10 +43,10 @@ the matching section here. New options are listed with their default.
   `calcTransOpt` in float32 on the GPU and numpy float64 on the CPU, so those runs can still differ at the
   rounding level. Transforms given as arrays (MOS) are bit-identical. The 3-d GPU drizzle (SINFONI) still
   has the host-buffer problem noted under gpu_drihizzle.
-- **wavelengthCalibrate**: the 3-line match depends on the brightness ranking of the line list's lines (LUCI slit 9
-  with padding); fallbacks added in 2.4.4. avrajit-osiris still fails: `xenon_optical.dat` has no lines between 4481
-  and 4844 A, where the arc's brightest (Xe I) lines are - a line-list problem (the earlier "wrong XML parameters"
-  conclusion was a chance blind match; the arcs are R2500U, matching the configured 3440-4650 A).
+- **wavelengthCalibrate**: the pattern-match fallback finds nothing on very dense line lists (LUCI NeArXe arcs, MIRADAS
+  UArNe) - the learned/neighbor/trend fallbacks cover those. MIRADAS fits grade 0.2-0.5 px although correct (consider
+  looser `wavecal_quality_thresholds` in the MIRADAS templates). avrajit-osiris's own config still names the old
+  `xml/xenon_optical.dat` (no bright blue Xe I lines); it calibrates with the shipped `Xenon_optical_air.dat`.
 - **traceOrders mask bias**: a `traceOrders` slitmask sits ~1.0 px below the flat's half-max center on LUCI
   (the `-1` on `ylo` plus truncation of the float edges). `flexure_correction` measures and removes it along
   with the flexure; without it, it is uncorrected.

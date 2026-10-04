@@ -22,6 +22,7 @@ descends from the original FATBOY, the pipeline for the Flamingos-2 near-IR imag
 | Understand what each reduction step does and which options matter | [Process guide](processes/README.md) |
 | Look up every option and its default | [Options reference](options-reference.md) |
 | Reduce MIRADAS data (SOL, SOS or MOS mode) | [MIRADAS guide](miradas.md) |
+| Find or build a line list for wavelength calibration | [Line lists and `makeLineList.py`](instruments.md#line-lists-and-wavelength-calibration-files-shipped-with-superfatboy) |
 | Write your own process or datatype, or script the pipeline from Python | [API guide](api.md) |
 
 ## The idea in thirty seconds

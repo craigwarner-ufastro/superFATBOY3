@@ -65,6 +65,7 @@ superFatboy3.py -list | head -40
 | `superFatboy3.py -config` | List the configuration files shipped inside the package (line lists, wavelength-calibration XML files) |
 | `superFatboy3.py my_data.xml -gpu 1` | Run on GPU number 1 (sets `CUDA_VISIBLE_DEVICES` before CuPy loads) |
 | `superFatboy3.py -h` | Short usage message |
+| `makeLineList.py -e "Ne I,Ar I" -r 13000 26000 -o list.dat` | Build a wavelength-calibration line list from the NIST database (see [line lists](instruments.md#making-a-line-list-makelinelistpy)) |
 
 `-list` is always correct for the version you have installed, because it is generated from the code. A snapshot of it is
 in the [options reference](options-reference.md).

@@ -22,6 +22,9 @@ untracked, git-ignored `html/` folder (copied in by the user for reference; neve
 `docs/api.md` marked *(tested)* were actually run (custom process via `processdir`, custom datatype via `datatypedir`,
 Python-API `fatboyDatabase(...).execute()`); rerun them if the fatboyProcess/fatboyDatabase API changes.
 (The EMIR/OSIRIS `overwite_files` typo, the MIRADAS `wc_*_new.xml` template names, and `package_data` missing templates/linelists were all fixed in v2.3.37.)
+Since v2.4.5-2.4.7: line lists and `makeLineList.py` are documented in `docs/instruments.md`, the standalone `wavecal`
+module in `docs/api.md` (its example is *(tested)* on the LUCI arc), and the wavelength-calibration fallbacks, second
+pass and fit functions in `docs/processes/spectroscopy.md`.
 
 ## Orientation for anyone writing documentation on superFATBOY (read this first)
 
@@ -72,6 +75,8 @@ runs (not just "compiles") have validated:
 - **MIRADAS (IFU-fed-by-MOS-slits)**: all three modes — SOL, SOS, MOS — both CPU and GPU. This one
   had the longest bug tail (see `project_miradas_collapse_spaxels_investigation` memory for the
   full bisection story) before landing clean.
+- **LUCI MOS** (`caden_luci_test.xml`, v2.4.2): region file + traceSlitlets + flexure correction,
+  through extraction; GPU and CPU byte-identical since v2.4.3. `LUCI_MOS_template.xml`.
 - **Not yet run through the refactored pipeline at all**: MEGARA (fiber-fed spectrograph — some
   process-level review happened, see the algorithm-audit-list memory, but no real end-to-end
   pipeline run), FourStar, SINFONI, and whatever other instruments have templates/data but no
@@ -118,7 +123,7 @@ runs (not just "compiles") have validated:
 brittle/heuristic-heavy in the codebase and queued for a deeper robustness pass once translation
 bug-hunting was done: `findSlitletProcess`, `rectifyProcess`, `wavelengthCalibrateProcess`,
 `miradasCollapseSpaxelsProcess`, `removeCosmicRaysSpecProcess`, `badPixelMaskSpecProcess`. Status
-as of v2.3.34:
+as of v2.4.7 (2026-10-04):
 - **`findSlitletProcess`** (`traceOrders`/`traceSlitlets`) — full Q1-5 audit done, shipped
   (`fc1e581`/`c474a5e`, v2.3.27/2.3.28): `edge_detection_method=auto` (local-minimum rescue for weak
   packed-slit boundaries cross-correlation misses), a `stats_<flatid>.txt` per-datapoint diagnostic
@@ -159,15 +164,16 @@ as of v2.3.34:
   designed**. Separately, a real GPU-vs-CPU rectify bug that was corrupting its input slitmask *is*
   fixed (see `project_miradas_collapse_spaxels_investigation` memory for the full bisection) — that
   was blocking MIRADAS GPU mode entirely and is unrelated to the peak-finder brittleness itself.
-- **`wavelengthCalibrateProcess`** — audited across 5 real datasets; **no systemic algorithm
-  problem found** (MIRADAS SOL/specBench/LUCI all 100% clean). The one real failure
-  (`avrajit-osiris.xml`) is a **line-list gap** (`xenon_optical.dat` lacks the 4481-4844 A Xe I lines);
-  an earlier conclusion that its XML parameters were wrong was a chance blind match and is retracted
-  (see the v2.4.4 section). v2.4.4 added QA grades, fail-clean per segment, and gated
-  neighbor/blind fallbacks for a failed 3-line match.
-  One real pre-existing bug fixed (negative-index slice wraparound near array edges, all 8 sites).
-  Two standalone tool prototypes exist (`tools_linelist_builder_draft.py`,
-  `tools_linelist_intensity_check_draft.py`), not integrated.
+- **`wavelengthCalibrateProcess`** — three audit rounds, done (v2.4.4-2.4.7; details in the
+  "wavelengthCalibrate round 3" and "audit round 2" sections below): per-slitlet QA grades (RMS in px)
+  in log/qa file/header; fail-clean per segment; fallbacks `learned,neighbor,trend,pattern,blind`
+  behind a quality gate; a second pass for poor/failed slitlets (fixed MIRADAS SOS order 2's wrong match
+  and LUCI arc slit 10); measured line intensities written per frame; legendre/chebyshev fits (same
+  solutions, native coefficients in the header). The avrajit failure was a **line-list gap**, fixed by the
+  shipped `Xenon_optical_air.dat`; `makeLineList.py` builds lists from NIST. `wavecal.py` (standalone, one
+  cut) now subclasses the process. Earlier: negative-index slice wraparound fixed (all 8 sites). The draft
+  tools `tools_linelist_builder_draft.py` / `tools_linelist_intensity_check_draft.py` (untracked) are
+  superseded by `makeLineList.py` and the measured_lines files - ask before deleting them.
 - **`removeCosmicRaysSpecProcess` / `badPixelMaskSpecProcess`** — **not yet started** at all beyond
   whatever bugs were hit incidentally during translation bug-hunting.
 
@@ -221,6 +227,9 @@ for kernel `D` state before assuming a bug).
   each guess with measured intensities, then the list's.
 - Pipeline results: SOS orders 1-2 and LUCI arc slit 10 fixed by the second pass; everything else log-identical
   (first pass byte-identical; second-pass lines appended).
+- `wavecal.py` (v2.4.7) subclasses wavelengthCalibrateProcess; its old helper copies had `np.np.correlate` (crashed
+  every match). Check: loop the 24 LUCI arc slitlets through it passing `solvedCuts`/`lineMeasures` and compare with
+  the pipeline's `qa_mlamp-clear-lamp.dat` (scratchpad `wavecal_test/run.py` pattern).
 - NIST ASD query (makeLineList.py): `format=1`, `show_av=3` = vacuum; needs a User-Agent (403 otherwise); columns
   differ by spectrum (parse by header). Strong blue Xe I lines have no NIST intensity; Handbook omits them.
 

@@ -14,8 +14,9 @@ Full documentation is in [`docs/`](docs/README.md):
 - [Process guide](docs/processes/README.md) and [options reference](docs/options-reference.md)
 - [MIRADAS guide](docs/miradas.md)
 - [API guide](docs/api.md): scripting superFATBOY and writing your own processes and datatypes
+- [Line lists](docs/instruments.md#line-lists-and-wavelength-calibration-files-shipped-with-superfatboy): the shipped line lists, and `makeLineList.py` to build one from NIST
 
-Validated end-to-end in both GPU and CPU mode: FLAMINGOS-1 (imaging and MOS), OSIRIS and KAST (longslit), and MIRADAS (SOL, SOS, MOS).
+Validated end-to-end in both GPU and CPU mode: FLAMINGOS-1 (imaging and MOS), OSIRIS and KAST (longslit), MIRADAS (SOL, SOS, MOS) and LUCI (MOS).
 Templates for these are in [`superFATBOY/data/templates/`](superFATBOY/data/templates/).
 
 ## Requirements
