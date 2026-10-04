@@ -266,6 +266,11 @@ the matching section here. New options are listed with their default.
   (2.3.43)
 
 ### wavelengthCalibrate
+- `wavecal.py` (standalone, one cut): now a subclass of wavelengthCalibrateProcess using its methods - QA grades and
+  header keywords, fail-clean, fallbacks (neighbor/trend/learned when the caller passes `solvedCuts`/`lineMeasures`),
+  immediate retry of a poor solution, legendre/chebyshev, measured_lines file. Matches the pipeline on all 24 LUCI arc
+  slitlets. Its own copies of the helpers are gone, with a `np.np.correlate` that crashed every 3-line match, and a
+  gaussWidth fallback that used an undefined `lsq`. (2.4.7)
 - Starting guesses beyond the configured one (`wavecal_fallback`, now `learned,neighbor,trend,pattern,blind`), each
   redoing the template, the 3-line match and the fit (`tryWavelengthGuess`): **learned** = line intensities measured in
   the calibrated slitlets; **neighbor** = a calibrated slitlet's polynomial shifted by cross-correlation, only if its

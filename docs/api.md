@@ -83,6 +83,35 @@ fd.cleanUp()             # delete the temp directory
 
 Use the library functions directly, without a database, if you only need an algorithm: see [Library modules](#library-modules).
 
+## Wavelength-calibrating one cut: `wavecal`
+
+`superFATBOY.wavecal` runs `wavelengthCalibrate` on a single slitlet or order outside the pipeline, for example to try
+a line list or a starting guess on one slitlet quickly. It uses the pipeline's own matching, fitting, fallbacks and
+quality grades, so a cut gets the same solution it would get in a pipeline run (checked on all 24 LUCI arc slitlets).
+Output goes to `./wavelengthCalibrated/`. *(tested)*
+
+```python
+from superFATBOY import wavecal
+
+options = {"line_list": "NeArXe.dat", "min_wavelength": "13000", "max_wavelength": "26000",
+           "wavelength_scale_guess": "-4.5"}
+solved = []      #calibrated cuts so far: lets the neighbor and trend fallbacks work
+measured = {}    #line intensities measured so far: the learned fallback
+for slitlet in range(1, 25):
+    fdu = wavecal.extract2DFromImageWithSlitmask("rct_lamp.fits", "rct_slitmask.fits", slitlet=slitlet)
+    wavecal.executeWavelengthCalibration(fdu, dict(options), {"solvedCuts": solved, "lineMeasures": measured})
+    if (fdu.hasProperty("solvedCuts")):
+        solved = fdu.getProperty("solvedCuts")
+        measured = fdu.getProperty("lineMeasures")
+    print(slitlet, fdu.getProperty("wcHeader"))
+```
+
+`extract1DFromImage(image, ylo, yhi)` takes a cut between two rows instead, and `read1DFromImage(file)` reads a 1-d
+spectrum. Any `wavelengthCalibrate` option can go in the options dict. With a single cut there is no second pass;
+instead a solution graded `wavecal_retry_grade` or worse is retried with the fallbacks at once and replaced only if
+clearly better. After a successful fit the FDU has the properties `wcHeader`, `wcQuality` (RMS, RMS px, grade,
+number of lines), `solvedCuts` and `lineMeasures`.
+
 ## `fatboyDatabase`
 
 `superFATBOY/fatboyDatabase.py`. The main framework class. Constructor: `fatboyDatabase(config=None, modeTag=None)`.
