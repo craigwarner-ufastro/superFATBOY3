@@ -209,8 +209,16 @@ the matching section here. New options are listed with their default.
 - New `makeLineList.py` (installed script): a line list for any spectra and wavelength range from the NIST Atomic
   Spectra Database (vacuum queried, converted to air; missing intensities estimated from g*A; per-spectrum scales by
   hand or fit to intensities measured by wavelengthCalibrate; blend flags; cached queries). (2.4.5)
+- `makeLineList.py --clean LIST -m measured_lines...`: flags (or with `--correct` moves) the lines of an existing list
+  whose offset from the solutions is consistent over the fits (`--flag-offset` 0.3 px, `--min-fits` 3,
+  `--min-significance` 3, `--max-correct` 1.5 px); several measured files are pooled; `-m` may be repeated. (2.4.9)
 
 ### Line lists (data/linelists)
+- New `Redman_UArNe_lines_MIRADAS.dat`: the Redman UArNe list with the 50 lines that sit at a consistent offset from
+  the MIRADAS solutions flagged -1, from the SOL, SOS and MOS order-20 test data. On data not used for the cleaning: SOS
+  median RMS 0.24 -> 0.20 px, MOS order 20 (split by slitlet) 0.22 -> 0.16 px; no slitlet worse. Correcting the lines
+  instead (`--correct`) gives lower RMS (0.18 / 0.15) but changes the solutions by ~0.7 px with no independent check of
+  which is more accurate, so the shipped list only flags. Not yet the MIRADAS templates' default. (2.4.9)
 - New `Xenon_optical_air.dat`: the NIST Handbook Xe list plus the strong blue Xe I lines it lacks (4501-4697 A, the
   brightest lines of a xenon arc); intensities measured from a calibrated GTC/OSIRIS R2500U Xe arc (3446-4606 A), NIST
   ASD values scaled to them elsewhere, g*A estimates for 4624/4671/4697. With it avrajit-osiris calibrates on the first
@@ -269,6 +277,9 @@ the matching section here. New options are listed with their default.
   (2.3.43)
 
 ### wavelengthCalibrate
+- `measured_lines_*.dat` also gives each line's mean offset from the solutions (wavelength units and px), its standard
+  deviation and number of fits, for every line matched (also those clipped); same in standalone `wavecal`. A consistent
+  offset means a wrong list wavelength or an unresolved blend. (2.4.9)
 - `wavecal.py` (standalone, one cut): now a subclass of wavelengthCalibrateProcess using its methods - QA grades and
   header keywords, fail-clean, fallbacks (neighbor/trend/learned when the caller passes `solvedCuts`/`lineMeasures`),
   immediate retry of a poor solution, legendre/chebyshev, measured_lines file. Matches the pipeline on all 24 LUCI arc

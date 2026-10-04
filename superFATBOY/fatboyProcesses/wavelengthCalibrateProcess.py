@@ -2079,6 +2079,9 @@ class wavelengthCalibrateProcess(fatboyProcess):
         self._log.writeLog(__name__, "Found "+str(len(reflines))+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=2)
         self._log.writeLog(__name__, "Data - fit mean: "+formatNum(residLines.mean())+"\tsigma: "+formatNum(residLines.std()), printCaller=False, tabLevel=2)
 
+        #Every matched line (before sigma clipping), for the per-line offsets in measured_lines
+        allReflines = np.array(reflines)
+        allWlines = np.array(wlines)
         #Throw away outliers starting at 2 sigma significance
         sigThresh = 2
         niter = 0
@@ -2113,7 +2116,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
         print("\t\tData - fit mean: "+formatNum(residLines.mean())+"\tsigma: "+formatNum(residLines.std()))
         self._log.writeLog(__name__, "After "+str(niter)+" passes, kept "+str(len(reflines))+" of "+str(norig)+" datapoints.  Fit: "+formatList(lsq[0]), printCaller=False, tabLevel=2)
         self._log.writeLog(__name__, "Data - fit mean: "+formatNum(residLines.mean())+"\tsigma: "+formatNum(residLines.std()), printCaller=False, tabLevel=2)
-        return {"reflines": reflines, "wlines": wlines, "lineParams": lineParams, "coeffs": lsq[0], "native": lsq[1], "fit_order": fit_order, "residLines": residLines, "norig": norig, "obsSpec": obsSpec, "gaussWidth": gaussWidth, "fluxScale": fluxScale, "scale": scale}
+        return {"reflines": reflines, "wlines": wlines, "lineParams": lineParams, "coeffs": lsq[0], "native": lsq[1], "fit_order": fit_order, "residLines": residLines, "norig": norig, "obsSpec": obsSpec, "gaussWidth": gaussWidth, "fluxScale": fluxScale, "scale": scale, "allReflines": allReflines, "allWlines": allWlines}
     #end solveFromMatch
 
     #Fit the wavelength solution of order fit_order to (x, wavelength) with wavelength_fit_function.  polynomial =
@@ -2197,6 +2200,28 @@ class wavelengthCalibrateProcess(fatboyProcess):
                 flux[i] = max(np.median([m[2] for m in measures[i]]), 0.0)
         return flux
     #end learnedLineFlux
+
+    #Offsets of the matched lines from a solution: the solution's wavelength at each line's pixel minus the line-list
+    #wavelength, in wavelength units and pixels (divided by the local dispersion), for every line matched before sigma
+    #clipping.  A line whose offset has the same sign and size in every slitlet has a wrong wavelength in the list (or is
+    #an unresolved blend).  Returns {index in masterWave: (offset, offset in px)}.
+    def measureLineOffsets(self, coeffs, order, reflines, wlines, masterWave):
+        out = dict()
+        x = np.asarray(reflines, dtype=np.float64)
+        w = np.asarray(wlines, dtype=np.float64)
+        if (len(x) == 0):
+            return out
+        disp = np.zeros(len(x))
+        for i in range(1, order+1):
+            disp += i*coeffs[i]*x**(i-1)
+        off = polyFunction(coeffs, x, order)-w
+        for k in range(len(x)):
+            b = np.where(masterWave == w[k])[0]
+            if (len(b) == 0 or disp[k] == 0):
+                continue
+            out[int(b[0])] = (float(off[k]), float(off[k]/abs(disp[k])))
+        return out
+    #end measureLineOffsets
 
     #How convincingly a linear solution lam0 + sc*x matches the peaks (pixel positions) with line-list lines.  From
     #the peaks' side: n of N peaks within tol px of a line, against the chance p that a random position is (p = the
@@ -2586,6 +2611,46 @@ class wavelengthCalibrateProcess(fatboyProcess):
         return False
     #end betterSolution
 
+    #Write measured_lines_<frame>.dat: for each line-list line measured in the calibrated slitlets, the median measured
+    #intensity (on the list's scale; the list's own if not measured), the list's flag, and after the comment mark the
+    #list intensity, number of slitlets, and the mean offset of the line in the fits (wavelength units and px), the
+    #standard deviation of the offsets in px and the number of fits - "-" for lines not used in a fit.  makeLineList.py
+    #--clean flags (or corrects) lines with a consistent offset.
+    def writeMeasuredLines(self, fileBase, line_list, measures, offsets, addListName, frameName):
+        if (len(measures) == 0 and len(offsets) == 0):
+            return
+        (listWave, listFlux, listFlag) = self.readLineList(line_list)
+        mfile = fileBase
+        if (addListName):
+            mfile += "_"+os.path.basename(str(line_list)).split(".")[0]
+        mfile += ".dat"
+        f = open(mfile, 'w')
+        f.write("#Lines measured in the calibrated slitlets of "+frameName+", line list "+str(line_list)+"\n")
+        f.write("#Intensity: median over slitlets, on the list's scale (near 0 = in range but not seen).  Offset: solution - list\n")
+        f.write("#wavelength at the line, mean over the fits (before sigma clipping); a consistent offset means a wrong list wavelength\n")
+        f.write("#or an unresolved blend.  Columns: wavelength, intensity, flag, #list intensity, n slitlets, offset, offset px, std px, n fits\n")
+        for i in sorted(set(list(measures.keys())+list(offsets.keys())), key=lambda k: listWave[k]):
+            m = measures.get(i, [])
+            o = offsets.get(i, [])
+            if (len(m) == 0 and len(o) == 0):
+                continue
+            inten = listFlux[i]
+            if (len(m) > 0):
+                inten = np.median([v[2] for v in m])
+            line = str(listWave[i])+"\t"+formatNum(inten, 1)+"\t"+str(listFlag[i])+"\t#"+formatNum(listFlux[i], 1)+"\t"+str(len(m))
+            if (len(o) > 0):
+                offA = np.array([v[2] for v in o])
+                offP = np.array([v[3] for v in o])
+                sd = 0.0
+                if (len(o) > 1):
+                    sd = offP.std(ddof=1)
+                line += "\t"+formatNum(offA.mean(), 4)+"\t"+formatNum(offP.mean(), 3)+"\t"+formatNum(sd, 3)+"\t"+str(len(o))
+            else:
+                line += "\t-\t-\t-\t0"
+            f.write(line+"\n")
+        f.close()
+    #end writeMeasuredLines
+
     def setDefaultOptions(self):
         self._options.setdefault('bright_line_searchbox_max', '-100')
         self._optioninfo.setdefault('bright_line_searchbox_max', 'Max pixel value of search box, negative notation allowed.')
@@ -2865,6 +2930,8 @@ class wavelengthCalibrateProcess(fatboyProcess):
         segState = dict()
         #Intensities of line-list lines measured in the calibrated slitlets, per line list: {index: [(j, seg, value)]}
         lineMeasures = dict()
+        #Offsets of the matched lines from the solutions, per line list: {index: [(j, seg, offset, offset in px)]}
+        lineOffsets = dict()
         fallbackMethods = [m.strip().lower() for m in str(self.getOption("wavecal_fallback", fdu.getTag())).split(",") if m.strip().lower() not in ["", "none"]]
         retryGrade = str(self.getOption("wavecal_retry_grade", fdu.getTag())).lower()
         gradeRank = {"excellent": 0, "good": 1, "satisfactory": 2, "marginal": 3, "poor": 4}
@@ -3523,10 +3590,16 @@ class wavelengthCalibrateProcess(fatboyProcess):
                         lm = lineMeasures.setdefault(line_list, dict())
                         for i in lm:
                             lm[i] = [m for m in lm[i] if not (m[0] == j and m[1] == seg)]
+                        lo = lineOffsets.setdefault(line_list, dict())
+                        for i in lo:
+                            lo[i] = [m for m in lo[i] if not (m[0] == j and m[1] == seg)]
                         if (quality != "poor"):
                             measured = self.measureLineIntensities(oned, lsq[0], fit_order, masterWave, masterFlux, wlines, gaussWidth)
                             for i in measured:
                                 lm.setdefault(i, []).append((j, seg, measured[i]))
+                            offsets = self.measureLineOffsets(lsq[0], fit_order, cand["allReflines"], cand["allWlines"], masterWave)
+                            for i in offsets:
+                                lo.setdefault(i, []).append((j, seg, offsets[i][0], offsets[i][1]))
                     except Exception as ex:
                         print("wavelengthCalibrateProcess::wavelengthCalibrate> Warning: could not measure line intensities"+pass_name+fdu.getFullId()+": "+str(ex))
                         self._log.writeLog(__name__, "could not measure line intensities"+pass_name+fdu.getFullId()+": "+str(ex), type=fatboyLog.WARNING)
@@ -3599,25 +3672,10 @@ class wavelengthCalibrateProcess(fatboyProcess):
         for i in range(len(qaParams)):
             f.write(qaParams[i]+"\n")
         f.close()
-        #Line intensities measured in the calibrated slitlets, in the line-list format (wavelength, intensity), for
-        #building a line list that matches this lamp/sky and instrument
-        for (ilist, line_list) in enumerate(sorted(lineMeasures)):
-            lm = lineMeasures[line_list]
-            if (len(lm) == 0):
-                continue
-            (listWave, listFlux, listFlag) = self.readLineList(line_list)
-            mfile = outdir+"/wavelengthCalibrated/measured_lines_"+skyFDU._id
-            if (len(lineMeasures) > 1):
-                mfile += "_"+os.path.basename(str(line_list)).split(".")[0]
-            mfile += ".dat"
-            f = open(mfile, 'w')
-            f.write("#Line intensities measured in the calibrated slitlets of "+skyFDU.getFullId()+", on the scale of "+str(line_list)+"\n")
-            f.write("#(median over slitlets; near 0 = in range but not seen).  Columns: wavelength, measured intensity, flag, #list intensity, n slitlets\n")
-            for i in sorted(lm, key=lambda k: listWave[k]):
-                if (len(lm[i]) == 0):
-                    continue
-                f.write(str(listWave[i])+"\t"+formatNum(np.median([m[2] for m in lm[i]]), 1)+"\t"+str(listFlag[i])+"\t#"+formatNum(listFlux[i], 1)+"\t"+str(len(lm[i]))+"\n")
-            f.close()
+        #Line intensities measured in the calibrated slitlets and the offsets of the lines used in the fits, in the
+        #line-list format (wavelength, intensity, flag), for building a line list that matches this lamp/sky and instrument
+        for line_list in sorted(set(list(lineMeasures.keys())+list(lineOffsets.keys()))):
+            self.writeMeasuredLines(outdir+"/wavelengthCalibrated/measured_lines_"+skyFDU._id, line_list, lineMeasures.get(line_list, dict()), lineOffsets.get(line_list, dict()), len(lineMeasures) > 1, skyFDU.getFullId())
         #Summary: how many slitlets/segments got each grade, and the median RMS of those that were fit
         grades = [q.split("\t")[10] for q in qaParams if len(q.split("\t")) > 10]
         fitRms = [(float(q.split("\t")[8]), float(q.split("\t")[9])) for q in qaParams if len(q.split("\t")) > 10 and not q.split("\t")[10].startswith("failed")]

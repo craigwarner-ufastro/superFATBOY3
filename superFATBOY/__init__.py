@@ -1,6 +1,6 @@
 #print "__init__ main"
 #from fatboyDatabase import fatboyDatabase
-__version = "2.4.8"
+__version = "2.4.9"
 __version__ = __version
 __build = "9/30/26"
 __build__ = __build

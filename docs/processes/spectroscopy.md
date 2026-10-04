@@ -457,10 +457,15 @@ wrong first match, 3.3 px) and order 1 are replaced by trend solutions that cont
 (0.08 and 0.14 px); LUCI arclamp slitlet 10 (wrong by 100 A at the blue end) by a solution with measured intensities
 that agrees with the OH solution; data that calibrated well before are unchanged.
 
-**Measured line intensities.** The intensities measured in the calibrated slitlets are also written to
-`wavelengthCalibrated/measured_lines_<frame>.dat`, in the line-list format (wavelength, measured intensity, flag,
-#list intensity, number of slitlets). Lines that are in range but not seen come out near 0. Use them to build a line list
-that matches your lamp or sky and instrument, with `makeLineList.py -m` (see [Line lists](../instruments.md#making-a-line-list-makelinelistpy)).
+**Measured line intensities and offsets.** Every frame also gets `wavelengthCalibrated/measured_lines_<frame>.dat`, in
+the line-list format: wavelength, measured intensity (median over the calibrated slitlets, on the list's scale; near 0
+for a line in range but not seen) and flag, then after the `#`: the list's intensity, the number of slitlets, and for
+lines used in fits the mean **offset** of the line from the solutions (solution wavelength at the line minus the list
+wavelength, in wavelength units and px), its standard deviation (px) and the number of fits. Lines matched but clipped
+from a fit are included. Poor solutions are left out. An offset that is the same in every slitlet is not noise: the
+list's wavelength is off for this instrument, or the line is an unresolved blend. Use the file with `makeLineList.py`:
+`-m` to put a NIST list's intensities on your lamp's scale, `--clean` to flag or correct the offset lines of an
+existing list (see [Line lists](../instruments.md#making-a-line-list-makelinelistpy)).
 
 **Fit functions.** `wavelength_fit_function = legendre` or `chebyshev` fits that series instead of a power series. Of
 the same order they are the same functions of pixel, so the solution is the same (checked to 1e-11 A, and the existing

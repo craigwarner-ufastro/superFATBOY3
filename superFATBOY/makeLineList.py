@@ -13,6 +13,13 @@
 ##   makeLineList.py -e "Xe I,Xe II" -r 3400 5000 -o xenon_blue.dat
 ##   makeLineList.py -e "Ne I,Ar I" -r 13000 26000 --vacuum --min-intensity 50 -o NeAr_HK.dat
 ##   makeLineList.py -e "Xe I,Xe II" -r 3400 5000 -m wavelengthCalibrated/measured_lines_arc.dat --use-measured -o xe.dat
+##
+## --clean LIST instead cleans an existing line list with the offsets measured by wavelengthCalibrate (columns 6-9 of
+## measured_lines_*.dat; -m may be given several times, e.g. for several frames or datasets): a line that sits at the
+## same offset from the solutions in every fit (|mean| >= --flag-offset px, >= --min-fits fits, mean/standard error >=
+## --min-significance) has a wrong wavelength in the list or is an unresolved blend.  It is flagged -1 (still in the
+## template, not in the fit), or with --correct moved by its mean offset if that is at most --max-correct px.
+##   makeLineList.py --clean Redman_UArNe_lines.dat -m sol/measured_lines_a.dat -m sos/measured_lines_b.dat -o clean.dat
 import argparse
 import datetime
 import hashlib
@@ -146,17 +153,110 @@ def readList(fname):
             continue
     return out
 
+#Read the offsets in measured_lines_*.dat files written by wavelengthCalibrate: {wavelength: [(mean offset, mean px,
+#std px, n fits, intensity, n slitlets)]}, one entry per file
+def readOffsets(files):
+    out = dict()
+    for fname in files:
+        for l in open(fname):
+            if (l.strip() == "" or l.lstrip().startswith("#")):
+                continue
+            (data, sep, extra) = l.partition("#")
+            p = data.split()
+            e = extra.split()
+            try:
+                w = float(p[0])
+                inten = float(p[1])
+            except (ValueError, IndexError):
+                continue
+            if (len(e) < 6 or e[2] == "-"):
+                out.setdefault(w, []).append((None, None, None, 0, inten, int(e[1]) if len(e) > 1 else 0))
+                continue
+            out.setdefault(w, []).append((float(e[2]), float(e[3]), float(e[4]), int(e[5]), inten, int(e[1])))
+    return out
+
+#--clean: flag (or correct) the lines of an existing list that sit at a consistent offset from the solutions
+def cleanList(args):
+    if (len(args.measured) == 0):
+        sys.exit("makeLineList> --clean needs at least one -m measured_lines file")
+    offsets = readOffsets(args.measured)
+    keys = np.array(sorted(offsets))
+    out = []
+    nflag = 0
+    ncorr = 0
+    ntested = 0
+    for l in open(args.clean):
+        if (l.strip() == "" or l.lstrip().startswith("#")):
+            out.append(l.rstrip("\n"))
+            continue
+        (data, sep, comment) = l.rstrip("\n").partition("#")
+        p = data.split()
+        try:
+            w = float(p[0])
+        except (ValueError, IndexError):
+            out.append(l.rstrip("\n"))
+            continue
+        inten = p[1] if len(p) > 1 else "1"
+        flag = p[2] if len(p) > 2 else "0"
+        note = ""
+        k = np.searchsorted(keys, w)
+        match = None
+        for kk in (k-1, k):
+            if (0 <= kk < len(keys) and abs(keys[kk]-w) < 1.e-4):
+                match = offsets[keys[kk]]
+        if (match is not None):
+            used = [m for m in match if m[3] > 0]
+            n = sum(m[3] for m in used)
+            if (args.use_measured):
+                inten = "%.4g" % (sum(m[4]*m[5] for m in match)/max(sum(m[5] for m in match), 1))
+            if (n >= args.min_fits and flag == "0"):
+                ntested += 1
+                #pooled mean and standard deviation over the files (in px and wavelength units)
+                meanP = sum(m[1]*m[3] for m in used)/n
+                meanA = sum(m[0]*m[3] for m in used)/n
+                ss = sum((m[3]-1)*m[2]**2+m[3]*(m[1]-meanP)**2 for m in used)
+                sd = math.sqrt(ss/(n-1)) if n > 1 else 0.0
+                sig = abs(meanP)/(sd/math.sqrt(n)) if sd > 0 else np.inf
+                if (abs(meanP) >= args.flag_offset and sig >= args.min_significance):
+                    if (args.correct and abs(meanP) <= args.max_correct):
+                        note = " corrected by %+.4f (%+.2f px over %d fits)" % (meanA, meanP, n)
+                        w = w+meanA
+                        ncorr += 1
+                    else:
+                        note = " flagged: offset %+.2f px over %d fits" % (meanP, n)
+                        flag = "-1"
+                        nflag += 1
+        text = "%s\t%s\t%s" % (repr(round(w, 4)) if note.startswith(" corrected") else p[0], inten, flag)
+        comment = comment.strip()
+        if (note != ""):
+            comment = (comment+";" if comment != "" else "")+note
+        out.append(text+(("\t#"+comment) if comment != "" else ""))
+    header = ["#Cleaned by makeLineList.py "+datetime.date.today().isoformat()+" from "+os.path.basename(args.clean)+" with "+", ".join(os.path.basename(m) for m in args.measured)+":",
+              "#lines with |offset| >= %.2f px over >= %d fits at >= %.1f sigma %s (%d of %d lines tested)." % (args.flag_offset, args.min_fits, args.min_significance, "corrected (up to %.1f px; flagged beyond)" % args.max_correct if args.correct else "flagged -1", nflag+ncorr, ntested)]
+    f = sys.stdout if args.output is None else open(args.output, "w")
+    f.write("\n".join(header+out)+"\n")
+    if (args.output is not None):
+        f.close()
+    print("makeLineList> "+str(ntested)+" lines used in at least "+str(args.min_fits)+" fits; "+str(nflag)+" flagged, "+str(ncorr)+" corrected", file=sys.stderr)
+#end cleanList
+
 def main():
     ap = argparse.ArgumentParser(description="Build a superFATBOY line list from the NIST Atomic Spectra Database.")
-    ap.add_argument("-e", "--elements", required=True, help='spectra, comma-separated, e.g. "Ne I,Ar I,Xe I" (a bare element means its neutral spectrum)')
-    ap.add_argument("-r", "--range", nargs=2, type=float, required=True, metavar=("MIN", "MAX"), help="wavelength range in Angstrom")
+    ap.add_argument("-e", "--elements", default=None, help='spectra, comma-separated, e.g. "Ne I,Ar I,Xe I" (a bare element means its neutral spectrum)')
+    ap.add_argument("-r", "--range", nargs=2, type=float, default=None, metavar=("MIN", "MAX"), help="wavelength range in Angstrom")
+    ap.add_argument("--clean", default=None, metavar="LIST", help="clean this existing line list with the offsets in the -m measured_lines files instead of querying NIST")
+    ap.add_argument("--flag-offset", type=float, default=0.3, help="--clean: flag lines whose mean offset is at least this many px (default 0.3)")
+    ap.add_argument("--min-fits", type=int, default=3, help="--clean: only judge lines used in at least this many fits (default 3)")
+    ap.add_argument("--min-significance", type=float, default=3.0, help="--clean: and whose mean offset is at least this many standard errors (default 3)")
+    ap.add_argument("--correct", action="store_true", help="--clean: move lines by their mean offset instead of flagging them (if at most --max-correct px)")
+    ap.add_argument("--max-correct", type=float, default=1.5, help="--clean --correct: larger offsets are flagged, not corrected (default 1.5 px)")
     ap.add_argument("-o", "--output", default=None, help="output file (default: stdout)")
     ap.add_argument("--vacuum", action="store_true", help="vacuum wavelengths (default: air above 2000 A)")
     ap.add_argument("--min-intensity", type=float, default=0, help="drop lines fainter than this (after scaling)")
     ap.add_argument("--max-lines", type=int, default=0, help="keep only the brightest N lines")
     ap.add_argument("--missing", default="estimate", help="lines with no NIST intensity: estimate (from g*A), skip, or a number")
     ap.add_argument("-s", "--scale", default="", help='intensity scale per spectrum, e.g. "Ar I=0.5,Ne I=2"')
-    ap.add_argument("-m", "--measured", default=None, help="measured intensities (superFATBOY measured_lines_*.dat, or wavelength intensity columns) to fit per-spectrum scales to")
+    ap.add_argument("-m", "--measured", action="append", default=[], help="measured intensities (superFATBOY measured_lines_*.dat, or wavelength intensity columns) to fit per-spectrum scales to; with --clean, the offsets to clean with (may be repeated)")
     ap.add_argument("--use-measured", action="store_true", help="replace NIST intensities with the measured ones where measured")
     ap.add_argument("--measured-medium", default="same", choices=["same", "air", "vacuum"], help="medium of the measured file's wavelengths (default: same as the output)")
     ap.add_argument("--match-tol", type=float, default=0.1, help="tolerance in Angstrom for matching measured lines (default 0.1)")
@@ -165,6 +265,11 @@ def main():
     ap.add_argument("--nist-file", action="append", default=[], help="parse a saved NIST ASCII response instead of querying (SPECTRUM=FILE)")
     ap.add_argument("--cache", default=os.path.expanduser("~/.cache/superFATBOY/nist"), help="cache directory for NIST responses ('' for none)")
     args = ap.parse_args()
+    if (args.clean is not None):
+        cleanList(args)
+        return
+    if (args.elements is None or args.range is None):
+        ap.error("-e and -r are required (or --clean LIST)")
 
     (wmin, wmax) = sorted(args.range)
     spectra = []
@@ -222,8 +327,10 @@ def main():
                 sp += " I"
             scales[sp] = float(v)
     measured = []
-    if (args.measured is not None):
-        measured = readList(args.measured)
+    if (len(args.measured) > 0):
+        for mfile in args.measured:
+            measured.extend(readList(mfile))
+        measured.sort()
         if (args.measured_medium == "air" and args.vacuum):
             measured = [(float(airToVac(w)), i) for (w, i) in measured]
         elif (args.measured_medium == "vacuum" and not args.vacuum):

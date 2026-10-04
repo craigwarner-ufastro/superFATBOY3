@@ -98,6 +98,7 @@ there if the file is not found as given. `superFatboy3.py -config` lists them.
 | Files | Purpose |
 |---|---|
 | `Redman_UArNe_lines.dat`, `MIRADAS_UArHg_lines.dat` | MIRADAS arclamp line lists |
+| `Redman_UArNe_lines_MIRADAS.dat` | `Redman_UArNe_lines.dat` cleaned for MIRADAS with `makeLineList.py --clean`: 50 lines with a consistent offset flagged -1, lowering the fit RMS by up to about a quarter where those lines fall (see the [MIRADAS guide](miradas.md#wavelengthcalibrate)) |
 | `OHlines.dat`, `OHlines_hires_*.dat` | OH sky-line lists at several resolutions (near-IR sky calibration) |
 | `henearjhuse_air.dat`, `HeNeAr_vac.dat`, `hklines_mod.dat` | near-IR and optical arc and sky-line lists |
 | `NeAr_lines_IR.dat`, `ThAr_lines_IR.dat`, `Xenon_IR.dat` | infrared arclamp lists |
@@ -138,3 +139,20 @@ scale), and some strong lines have none at all. So:
 
 `--min-intensity` and `--max-lines` trim faint lines; a list with many lines the data never shows makes the first
 match harder.
+
+**Cleaning an existing list.** If the wavelength fits grade worse than the data deserve, check whether particular lines
+are to blame: `measured_lines_*.dat` gives each line's mean offset from the solutions. A line that sits at the same
+offset in every fit has a list wavelength that is wrong for your instrument, or is a blend your resolution does not
+separate. `--clean` takes an existing list and one or more measured files (several frames, or several datasets with the
+same lamp) and flags those lines -1, so they still shape the template but stay out of the fit:
+
+```bash
+makeLineList.py --clean Redman_UArNe_lines.dat -m sol/wavelengthCalibrated/measured_lines_lamp.dat \
+    -m sos/wavelengthCalibrated/measured_lines_lamp.dat -o Redman_UArNe_cleaned.dat
+```
+
+A line is flagged when it was used in at least `--min-fits` fits (3), its mean offset is at least `--flag-offset` px
+(0.3) and at least `--min-significance` standard errors (3). With `--correct` such lines are instead moved by their
+mean offset (up to `--max-correct` px, 1.5; beyond that they are flagged) - right for a wrong list wavelength, but for a
+blend it bakes in the blend's centroid at your resolution. `--use-measured` also replaces the intensities with the
+measured ones. Judge a cleaned list on data it was not cleaned with.

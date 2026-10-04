@@ -166,6 +166,16 @@ MIRADAS fits typically land at 0.2-0.5 px with 40-80 lines over 90% of the cut, 
 although they are right; set `wavecal_quality_thresholds` looser (for example `0.2,0.3,0.45,0.6`) if you want the grades
 to single out the genuinely bad ones.
 
+**A cleaned line list.** Most of the MIRADAS fit RMS comes from the line list, not the data: a given line sits at the
+same offset from the solutions in every order and slitlet where it is fit (0.11 px scatter for one line, 0.26 px between
+lines). `Redman_UArNe_lines_MIRADAS.dat` flags the 50 lines with a consistent offset in the SOL, SOS and MOS order-20
+test data. On data not used for the cleaning it lowered the median RMS from 0.24 to 0.20 px (SOS) and from 0.22 to
+0.16 px (MOS order 20); orders without repeated measurements are unchanged. To use it, set
+`line_list = Redman_UArNe_lines_MIRADAS.dat`. With more MIRADAS frames, clean again: every run writes
+`measured_lines_*.dat`, and `makeLineList.py --clean Redman_UArNe_lines.dat -m ... -m ...` pools them (see
+[Line lists](instruments.md#making-a-line-list-makelinelistpy)). Lines recur most in MOS data (one order through every
+slitlet).
+
 **Each slitlet is a different order.** The fallbacks for a slitlet whose bright lines don't match take this into
 account: a calibrated slitlet is used as a *neighbor* guess only if its wavelength range overlaps this slitlet's
 configured range, and the *trend* guess predicts the solution from the orders on either side (wavelengths change

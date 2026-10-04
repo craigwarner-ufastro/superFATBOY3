@@ -32,7 +32,8 @@ class quietLog:
 ## Guesses that need other slitlets (neighbor, trend, learned intensities) work when the caller passes earlier results
 ## in calibs: 'solvedCuts' (list of (slitlet-1, segment-1, 1-d cut, coefficients, order)) and 'lineMeasures'
 ## ({index in the line list: [(slitlet-1, segment-1, intensity)]}); after a successful fit both are updated and set as
-## properties of the FDU, so a loop over slitlets can pass them on.
+## properties of the FDU, so a loop over slitlets can pass them on, as is 'lineOffsets' (the lines' offsets from the
+## fits, for measured_lines_*.dat).
 class wavelengthCalibrateSingleProcess(wavelengthCalibrateProcess):
     gpumode = False
 
@@ -149,6 +150,7 @@ class wavelengthCalibrateSingleProcess(wavelengthCalibrateProcess):
         #Results of other slitlets, for the neighbor, trend and learned-intensity guesses
         solvedCuts = list(calibs.get('solvedCuts', []))
         lineMeasures = calibs.get('lineMeasures', dict())
+        lineOffsets = calibs.get('lineOffsets', dict())
 
         scale = wavelength_scale_guess[0]
         nonlinear = False
@@ -435,13 +437,19 @@ class wavelengthCalibrateSingleProcess(wavelengthCalibrateProcess):
                 solvedCuts = [sc for sc in solvedCuts if not (sc[0] == j and sc[1] == seg)]
                 for i in lineMeasures:
                     lineMeasures[i] = [m for m in lineMeasures[i] if not (m[0] == j and m[1] == seg)]
+                for i in lineOffsets:
+                    lineOffsets[i] = [m for m in lineOffsets[i] if not (m[0] == j and m[1] == seg)]
                 if (quality != "poor"):
                     solvedCuts.append((j, seg, oned.copy(), np.array(lsq[0], dtype=np.float64), fit_order))
                     measured = self.measureLineIntensities(oned, lsq[0], fit_order, masterWave, masterFlux, wlines, gaussWidth)
                     for i in measured:
                         lineMeasures.setdefault(i, []).append((j, seg, measured[i]))
+                    offsets = self.measureLineOffsets(lsq[0], fit_order, cand["allReflines"], cand["allWlines"], masterWave)
+                    for i in offsets:
+                        lineOffsets.setdefault(i, []).append((j, seg, offsets[i][0], offsets[i][1]))
                 fdu.setProperty("solvedCuts", solvedCuts)
                 fdu.setProperty("lineMeasures", lineMeasures)
+                fdu.setProperty("lineOffsets", lineOffsets)
                 fdu.setProperty("wcQuality", (rmsWave, rmsPix, quality, len(reflines)))
         except Exception as ex:
             print("wavelengthCalibrateProcess::wavelengthCalibrate> ERROR: "+type(ex).__name__+": "+str(ex)+pass_name+fdu.getFullId()+"!")
@@ -470,17 +478,9 @@ class wavelengthCalibrateSingleProcess(wavelengthCalibrateProcess):
         f.write("Slitlet\tSegment\tn lines\tn used\tsigma\tmin\tmax\tfit\tRMS\tRMS px\tquality\tcoverage %\n")
         f.write(qaRow+"\n")
         f.close()
-        #Line intensities measured so far (this cut and any passed in), in the line-list format
-        if (cand is not None and len(lineMeasures) > 0):
-            mfile = outdir+"/wavelengthCalibrated/measured_lines_"+skyFDU._id+".dat"
-            f = open(mfile, 'w')
-            f.write("#Line intensities measured in the calibrated cuts, on the scale of "+str(line_list)+"\n")
-            f.write("#(median over cuts; near 0 = in range but not seen).  Columns: wavelength, measured intensity, flag, #list intensity, n cuts\n")
-            for i in sorted(lineMeasures, key=lambda k: masterWave[k]):
-                if (len(lineMeasures[i]) == 0):
-                    continue
-                f.write(str(masterWave[i])+"\t"+formatNum(np.median([m[2] for m in lineMeasures[i]]), 1)+"\t"+str(masterFlag[i])+"\t#"+formatNum(masterFlux[i], 1)+"\t"+str(len(lineMeasures[i]))+"\n")
-            f.close()
+        #Line intensities and offsets measured so far (this cut and any passed in), in the line-list format
+        if (cand is not None and (len(lineMeasures) > 0 or len(lineOffsets) > 0)):
+            self.writeMeasuredLines(outdir+"/wavelengthCalibrated/measured_lines_"+skyFDU._id, line_list, lineMeasures, lineOffsets, False, skyFDU.getFullId())
 
         if (minLambda is None or cand is None):
             #This cut was not wavelength calibrated

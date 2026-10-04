@@ -230,6 +230,11 @@ for kernel `D` state before assuming a bug).
 - `wavecal.py` (v2.4.7) subclasses wavelengthCalibrateProcess; its old helper copies had `np.np.correlate` (crashed
   every match). Check: loop the 24 LUCI arc slitlets through it passing `solvedCuts`/`lineMeasures` and compare with
   the pipeline's `qa_mlamp-clear-lamp.dat` (scratchpad `wavecal_test/run.py` pattern).
+- **MIRADAS RMS is the line list** (v2.4.9): per-line offsets are consistent across orders/slits (0.11 px within a
+  line, 0.26 px between lines); cubic is enough (orders 4-6 don't help, leave-one-out worse). measured_lines files now
+  carry offsets; `makeLineList.py --clean` flags/corrects. Validation must be held-out: leave-one-dataset-out (little
+  overlap between SOL/SOS/MOS orders) and split-by-slitlet within MOS (lines recur): flag 0.22 -> 0.16, correct -> 0.15.
+  Shipped `Redman_UArNe_lines_MIRADAS.dat` = flag version (correct moves solutions ~0.7 px, no truth to arbitrate).
 - NIST ASD query (makeLineList.py): `format=1`, `show_av=3` = vacuum; needs a User-Agent (403 otherwise); columns
   differ by spectrum (parse by header). Strong blue Xe I lines have no NIST intensity; Handbook omits them.
 
