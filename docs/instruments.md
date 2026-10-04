@@ -57,8 +57,8 @@ template (copy the closest validated one):
 | Instrument | What exists | Where to read |
 |---|---|---|
 | **CIRCE** (GTC near-IR imager; multi-ramp FITS) | `circeImage` and `circeFastImage` datatypes; `remergeCirce`, `deboneCirce`, `trimWindow`, `mergeObjects` processes | [instrument-specific processes](processes/instruments.md#circe) |
-| **MEGARA** (GTC fiber spectrograph) | `megaraSpectrum` datatype; `trimOverscan`, `megaraIdentifyFibers`, `collapseFibers`, `megaraSkySubtract` processes; fiber options in `findSlitlets` | [instrument-specific processes](processes/instruments.md#megara) |
-| **SINFONI** (VLT IFU) | `sinfoni*` processes (linearity calculation, slitlet identification, collapse, datacube, PSF, stacking, bad-line removal) | [instrument-specific processes](processes/instruments.md#sinfoni) |
+| **MEGARA** (GTC fiber spectrograph) | `megaraSpectrum` datatype; `trimOverscan`, `megaraIdentifyFibers`, `collapseFibers`, `megaraSkySubtract` processes; fiber options in `findSlitlets`. *GPU run of one LCB dataset (v2.4.10): all 622 fibers traced (identical to the Python 2 version), collapsed and wavelength-calibrated (median 0.05 px); sky subtraction not tested - the test files lack the fiber header data `megaraIdentifyFibers` needs.* | [instrument-specific processes](processes/instruments.md#megara) |
+| **SINFONI** (VLT IFU) | `sinfoni*` processes (linearity calculation, slitlet identification, collapse, datacube, PSF, stacking, bad-line removal). *GPU run of the 30 Dor H+K dataset (v2.4.10): full chain through registered and stacked datacubes, slitmask identical to the Python 2 version, stacked image and cube correlate 0.999 with it; CPU mode not yet run.* | [instrument-specific processes](processes/instruments.md#sinfoni) |
 | **GMOS** | `biasSubtract` (labelled GMOS-specific in the code) | [bias subtract](processes/imaging.md#biassubtract) |
 | **FourStar** | in-progress imaging datatype and mosaic process (uncommitted work in the source tree) | not documented |
 

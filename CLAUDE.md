@@ -77,10 +77,14 @@ runs (not just "compiles") have validated:
   full bisection story) before landing clean.
 - **LUCI MOS** (`caden_luci_test.xml`, v2.4.2): region file + traceSlitlets + flexure correction,
   through extraction; GPU and CPU byte-identical since v2.4.3. `LUCI_MOS_template.xml`.
-- **Not yet run through the refactored pipeline at all**: MEGARA (fiber-fed spectrograph — some
-  process-level review happened, see the algorithm-audit-list memory, but no real end-to-end
-  pipeline run), FourStar, SINFONI, and whatever other instruments have templates/data but no
-  session log entry here. Don't assume these work; there's no evidence either way yet.
+- **SINFONI** (`xml/sinfoni_test_30Dor.xml`, data on NFS `/net/bolt`) and **MEGARA** (`xml/mt1.xml`) run end to
+  end on GPU since v2.4.10 (copies `claude_sinfoni_30Dor.xml` / `claude_megara_mt1.xml` with debug_mode off - the
+  user's SINFONI XML has `debug_mode=yes`). Compared with the user's py2 outputs (`sinfoniTest-30Dor-2026-py2`,
+  `anthonyMegaraData-2026`): slitmasks identical, products ~identical. MEGARA's recovered (bias-subtracted) files lack
+  the fiber header data, so megaraIdentifyFibers finds 0 fibers and sky subtraction can't be tested. CPU mode of both
+  not yet run.
+- **Not yet run through the refactored pipeline at all**: FourStar, and whatever other instruments have
+  templates/data but no session log entry here. Don't assume these work.
 - `/home/cwarner/work/xml/verified/verified_configs.md` is the authoritative list of
   known-both-modes-passing configs, each with a matching instrument template (also mirrored into
   `superFATBOY/data/templates/`). If a dataset/instrument isn't in that table, treat it as untested.
@@ -230,6 +234,10 @@ for kernel `D` state before assuming a bug).
 - `wavecal.py` (v2.4.7) subclasses wavelengthCalibrateProcess; its old helper copies had `np.np.correlate` (crashed
   every match). Check: loop the 24 LUCI arc slitlets through it passing `solvedCuts`/`lineMeasures` and compare with
   the pipeline's `qa_mlamp-clear-lamp.dat` (scratchpad `wavecal_test/run.py` pattern).
+- **v2.4.10 SINFONI/MEGARA bugs**: (1) rewritten `extractSpectra`'s illumination-profile floor breaks with a
+  negative sigma (SINFONI configs use -5): now positive sigma only. (2) `tracePeakLocalMax` QA: `ycoords[i]` is a row of
+  all fibers - my own Sept scalar-astype sweep made it `int()`; check any such sweep for array-valued operands.
+  (3) collapseFibers mixed GPU data with a host slitmask: arrays fetched with force_cpu once before the fiber loop.
 - **MIRADAS RMS is the line list** (v2.4.9): per-line offsets are consistent across orders/slits (0.11 px within a
   line, 0.26 px between lines); cubic is enough (orders 4-6 don't help, leave-one-out worse). measured_lines files now
   carry offsets; `makeLineList.py --clean` flags/corrects. Validation must be held-out: leave-one-dataset-out (little

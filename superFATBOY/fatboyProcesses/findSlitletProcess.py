@@ -2160,20 +2160,22 @@ class findSlitletProcess(fatboyProcess):
                 #Generate qa data
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
                     for i in range(len(xcoords)):
-                        yval = int(ycoords[i]+.5)
+                        #ycoords[i] holds every fiber's position at this x: mark them all
+                        yval = (ycoords[i]+.5).astype(np.int32)
                         xval = int(xcoords[i]+.5)
                         for yi in range(-1,2):
                             for xi in range(-1,2):
                                 dist = np.sqrt((yi**2)+(xi**2))
-                                flatData[yval+yi, xval+xi] = -50000/((1+dist)**2)
+                                flatData[np.clip(yval+yi, 0, flatData.shape[0]-1), min(max(xval+xi, 0), flatData.shape[1]-1)] = -50000/((1+dist)**2)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
                     for i in range(len(xcoords)):
-                        yval = int(ycoords[i]+.5)
+                        #ycoords[i] holds every fiber's position at this x: mark them all
+                        yval = (ycoords[i]+.5).astype(np.int32)
                         xval = int(xcoords[i]+.5)
                         for yi in range(-1,2):
                             for xi in range(-1,2):
                                 dist = np.sqrt((yi**2)+(xi**2))
-                                flatData[xval+xi, yval+yi] = -50000/((1+dist)**2)
+                                flatData[min(max(xval+xi, 0), flatData.shape[0]-1), np.clip(yval+yi, 0, flatData.shape[1]-1)] = -50000/((1+dist)**2)
                 masterFlat.tagDataAs("slitqa", flatData)
                 masterFlat.writeTo(qafile, tag="slitqa")
                 masterFlat.removeProperty("slitqa")

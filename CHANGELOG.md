@@ -24,7 +24,9 @@ the matching section here. New options are listed with their default.
 | wavelengthCalibrate QA / fallbacks / second pass, v2.4.4-2.4.6 | WC reruns of LUCI (sky and arc), KAST, OSIRIS x2, MIRADAS SOL/SOS/MOS, specBench (one at a time) | First pass log-identical to before on every dataset; no tracebacks. Medians 0.05-0.10 px (FLAMINGOS-1, OSIRIS, KAST, LUCI), 0.22-0.25 px (MIRADAS). Second pass replaced MIRADAS SOS orders 1-2 seg 1 (order 2 was a wrong match) and LUCI arc slit 10 (100 A off at the blue end) with solutions that fit their neighbors. Offline bench of every fallback on ~180 calibrated cuts: no wrong solution accepted |
 | avrajit-osiris (OSIRIS R2500U Xe arc), v2.4.5 | WC rerun | Calibrates on the first match with `Xenon_optical_air.dat` (0.057 px, 16 lines); with the old Xe list it fails cleanly (fallback solutions rejected as poor) |
 | `wavecal.py` standalone, v2.4.7 | 24 LUCI arc slitlets in a loop | Same grades as the pipeline, RMS within 0.004 px, slit 10 replaced the same way |
-| MEGARA, FourStar, SINFONI, others | - | Not yet run through the refactored pipeline |
+| SINFONI 30 Dor (sinfoni_test_30Dor), v2.4.10 | GPU | Full chain to registered/stacked datacubes, no tracebacks; slitmask identical to the py2 original; stacked image and cube correlate 0.9998 / 0.9987 with py2. CPU not yet run |
+| MEGARA LCB (mt1), v2.4.10 | GPU | Through findSlitlets (identical to py2), collapseFibers, shiftAdd (identical), wavelengthCalibrate (622/622 fibers, median 0.05 px), resample. Sky subtraction untested: the recovered files lack the fiber header data for megaraIdentifyFibers |
+| FourStar, others | - | Not yet run through the refactored pipeline |
 
 ## Open issues
 
@@ -99,6 +101,9 @@ the matching section here. New options are listed with their default.
   are disabled with an ERROR (unchanged behavior, documented here).
 
 ### fatboyLibs
+- `extractSpectra` (rewrite): the illumination-profile floor is only used for a positive sigma. With a zero or
+  negative sigma (older configs, e.g. SINFONI's `slitlet_autodetect_sigma=-5`) it misjudged the floor and merged
+  slitlets: SINFONI found 27 instead of 31 (32 after autocorrect, as the py2 original). (2.4.10)
 - `medianfilterCPU`: the first and last `boxsize` points used a 2*boxsize-point (even) window instead of
   2*boxsize+1 like the interior and `gpumedianfilter`, and the output was float64 where the GPU gives
   float32. Now identical to the GPU on real and random data (up to 2.45 counts different at the ends of a
@@ -229,6 +234,9 @@ the matching section here. New options are listed with their default.
 ## Processes
 
 ### findSlitlets
+- `tracePeakLocalMax` (MEGARA fibers) crashed writing its QA image (`only length-1 arrays can be converted to
+  Python scalars`): `ycoords[i]` holds every fiber at that x, and the 2.3.x scalar-`.astype` sweep made the cast a
+  scalar `int()`. Vectorized again, indices clipped to the image. (2.4.10)
 - `traceOrders`: one bad segment no longer discards the whole image; it gets a straight fallback. (Sept 11)
 - Auto-detect crashes in GPU mode (`force_cpu`) and CPU mode (`concatenate`). (d3dbd22)
 - `traceSlitlets` writes a per-datapoint `stats_<flat>.txt` like `traceOrders`. (2.3.27)
@@ -395,6 +403,8 @@ the matching section here. New options are listed with their default.
 - Default `align_method` is `triangles`. (6b1eeb4)
 
 ### collapseFibers
+- GPU mode: the fiber loop multiplied device data (clean sky) by a host slitmask (`Unsupported type numpy.ndarray`).
+  Every array is now fetched to the CPU once before the loop (not per fiber); `nslits` stored as an int. (2.4.10)
 - `properties`/`headerVals` undefined in the output-exists path. (2.3.43)
 
 ### miradasCollapseSpaxels

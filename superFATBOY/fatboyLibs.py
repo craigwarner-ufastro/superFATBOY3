@@ -2066,7 +2066,9 @@ def extractSpectra(data, sigma, width, nspec=0, sort=False, minFluxPct=0.001, al
     thresh = medVal+sigma*sd
     #Trough significance is measured vs background scatter
     minDepth = sigma*sd
-    if (illumination_profile and medVal > sigma*sd):
+    #(only for a positive sigma: a zero or negative sigma - "accept down to |sigma| sd below the background", as in older
+    #configs - keeps the original thresholds, which the illumination-profile floor would misjudge)
+    if (illumination_profile and sigma > 0 and medVal > sigma*sd):
         #"Background" is significantly positive -- check for a substantial population well below it
         low = s < medVal-sigma*sd
         if (low.sum() >= max(width+1, 0.02*norig)):
