@@ -306,8 +306,10 @@
   <process name="extractSpectra">
     <option name="extract_method" value="auto"/>
     <option name="extract_weighting" value="linear"/>
-<!-- large dithers (100 arcsec here) leave wide, lightly exposed wings in the shift-added frame; ignore them
-        when looking for the spectrum -->
+<!-- Keep this for Flamingos-2: large dithers (100 arcsec here) leave wide, lightly exposed wings in the
+        shift-added frame, and residuals there (early F2 data have a damaged detector quadrant; in lmcx1 HK a narrow
+        tilted track) can outrank the target when looking for the spectrum.  0.5 ignores positions with less than half
+        the maximum exposure; see docs/processes/spectroscopy.md, extractSpectra. -->
     <option name="extract_min_exposure_fraction" value="0.5"/>
     <option name="write_fits_table" value="yes"/>
     <option name="write_output" value="yes"/>

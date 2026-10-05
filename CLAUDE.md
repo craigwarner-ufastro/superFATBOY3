@@ -36,7 +36,8 @@ validated-table rows (CHANGELOG, docs/instruments.md, docs/quickstart.md, README
 (needs a `gmosSpectrum` datatype Craig will find), FIRE, FISICA, MMT-Pol, RHO, SUBARU (nick-subaru).
 - **lmcx1** (F2 longslit JH+HK): every Gemini frame has 4 standard COMMENT cards; `readHeader` assigned commentary keys as one
   multi-line value -> astropy ValueError on every badPixelMaskSpec (fixed: copied card by card). The HK science spectrum was
-  found on an amplified stripe in the low-exposure wing of the shift-added frame (ABBA nods 100" apart):
+  found on a narrow tilted track (7 positions wide in the cut, so the 5-pt median keeps it) in the
+  low-exposure wing of the shift-added frame - an F2-specific flaw (damaged-quadrant era) (ABBA nods 100" apart):
   `extract_min_exposure_fraction` (default 0 = off, 0.5 in the template) replaces low-exposure positions of the 1-d cut with
   the median. findSpectra's Gaussian started at the middle of a lopsided detected range and diverged (151 px aperture):
   now starts at the peak and falls back to the detected range on a negative/out-of-window fit - regression on KAST, LUCI,

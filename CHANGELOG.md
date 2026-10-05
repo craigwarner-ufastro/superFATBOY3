@@ -375,8 +375,9 @@ the matching section here. New options are listed with their default.
   (2.4.16)
 - New `extract_min_exposure_fraction` (default `0`, off): finding spectra ignores cross-dispersion positions with
   less than this fraction of the maximum exposure (their 1-d cut values are set to the median of the rest, so the
-  background statistics are unchanged). On Flamingos-2 lmcx1 HK an amplified stripe in the wing of the shift-added
-  frame (a third of the exposure) outranked LMC X-1 - both the current and the original ranking pick the narrower,
+  background statistics are unchanged). On Flamingos-2 lmcx1 HK a narrow track tilted ~1 degree to the dispersion
+  (spread over 7 positions of the cut, too wide for its 5-point median) in the wing of the shift-added frame (a third of
+  the exposure) outranked LMC X-1 - both the current and the original ranking pick the narrower,
   flat-topped peak. 0.5 finds the target in HK and leaves JH's aperture within 5 px. (2.4.16)
 - Gaussian weighting referenced undefined `extract_xlo`/`extract_xhi`. (Sept 15)
 
