@@ -127,6 +127,8 @@ and what has been validated.
 | [`SINFONI_IFU_template.xml`](../superFATBOY/data/templates/SINFONI_IFU_template.xml) | SINFONI (VLT), near-IR image-slicer IFU | Linearity from a lamp series, 32 slitlets, Xe arc calibration, slitlet identification, 3-d datacubes, PSF, register and stack |
 | [`FLAMINGOS2_longslit_template.xml`](../superFATBOY/data/templates/FLAMINGOS2_longslit_template.xml) | Flamingos-2 (Gemini South), near-IR longslit | Two bands (JH, HK) as two tagged datasets, each with its own standard; dome on-off flats, large-nod double subtraction, HeNeAr arcs |
 
+No template for your instrument? Start from the general template for your observing mode - `GENERAL_imaging_IR`, `GENERAL_imaging_optical`, `GENERAL_spectroscopy_longslit_IR`, `GENERAL_spectroscopy_longslit_optical`, `GENERAL_spectroscopy_MOS_IR` or `GENERAL_spectroscopy_MOS_optical` (each `_template.xml`, same folder). See [Instruments and templates](instruments.md#general-templates).
+
 ```bash
 cp superFATBOY/data/templates/FLAMINGOS1_imaging_template.xml ~/reductions/my_data.xml
 ```

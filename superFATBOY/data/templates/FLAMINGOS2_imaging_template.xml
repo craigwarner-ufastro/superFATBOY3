@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<!-- Flamingos-2 (Gemini South) near-IR imaging template, from the 2009 Galactic Center data (verified GPU + CPU).
+     One <object> per target and filter (here J, H, Ks at two position angles); darks at each exposure time used by the
+     science frames and flats; lamp-on dome flats per filter (flat_method dome_on).  Files are named S<date>S<index>.fits:
+     the prefix carries the night sub-directory and the year, the index the frame number.
+     Off-source sky: each object's sky frames are given in a text file (sky_offsource_method), one line per object:
+         object-name first last   sky-name first last
+     e.g. "gc_j 85 99 gc_j 80 84" = frames 85-99 of gc_j are the target, 80-84 of gc_j are its sky.
+     For on-source dithers use sky_subtract_method = remove_objects instead.
+     F2 frames are 1 x 2048 x 2048 cubes and the field is circular: radius_reject masks outside it. -->
+<queries>
+  <dataset dir="/path/to/F2/data/" tag="gc">
+    <object type="auto" name="gc_j" prefix="2009sep12/S2009">
+      <index start="0080" stop="0099"/>
+    </object>
+    <object type="auto" name="gc_h" prefix="2009sep12/S2009">
+      <index start="0100" stop="0113"/>
+    </object>
+    <object type="auto" name="gc_ks" prefix="2009sep12/S2009">
+      <index start="0114" stop="0127"/>
+    </object>
+    <object type="auto" name="gc_rot_j" prefix="2009sep12/S2009">
+      <index start="0128" stop="0141"/>
+    </object>
+    <object type="auto" name="gc_rot_h" prefix="2009sep12/S2009">
+      <index start="0142" stop="0155"/>
+    </object>
+    <object type="auto" name="gc_rot_ks" prefix="2009sep12/S2009">
+      <index start="0156" stop="0163"/>
+    </object>
+
+    <calib type="dark" name="dark3s" prefix="2009sep12/S2009">
+      <index start="0014" stop="0022"/>
+    </calib>
+    <calib type="dark" name="dark15s" prefix="2009sep12/S2009">
+      <index start="0446" stop="0450"/>
+    </calib>
+    <calib type="dark" name="dark5s" prefix="2009sep11/S2009">
+      <index start="0357" stop="0365"/>
+    </calib>
+    <calib type="dark" name="dark30s" prefix="2009sep12/S2009">
+      <index start="0538" stop="0546"/>
+    </calib>
+
+<!-- FLAT_TYPE = dome on: lamp-on dome flats only (no lamp-off frames) -->
+    <calib type="flat" name="flat_j_on" prefix="2009sep11/S2009">
+      <index start="0315" stop="0322"/>
+      <property name="flat_type" value="lamp_on"/>
+    </calib>
+    <calib type="flat" name="flat_h_on" prefix="2009sep11/S2009">
+      <index start="0323" stop="0331"/>
+      <property name="flat_type" value="lamp_on"/>
+    </calib>
+    <calib type="flat" name="flat_ks_on" prefix="2009sep11/S2009">
+      <index start="0332" stop="0333"/>
+      <property name="flat_type" value="lamp_on"/>
+    </calib>
+    <calib type="flat" name="flat_ks_on" prefix="2009sep12/S2009">
+      <index start="0294" stop="0295"/>
+      <property name="flat_type" value="lamp_on"/>
+    </calib>
+  </dataset>
+</queries>
+
+<processes>
+<!-- DO_LINEARIZE = yes with LINEARITY_COEFFS = 1, i.e. no correction (as in the old setup) -->
+  <process name="linearity">
+    <option name="linearity_coeffs" value="1"/>
+  </process>
+
+  <process name="darkSubtract">
+<!-- the old setup prompted for a missing dark; off here so an unattended run cannot hang -->
+    <option name="prompt_for_missing_dark" value="no"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="flatDivide">
+    <option name="flat_method" value="dome_on"/>
+  </process>
+
+<!-- BAD_PIXEL_MASK_CLIPPING = values, HIGH 2.0, LOW 0.5, EDGE_REJECT 5, RADIUS_REJECT 1040 (F2's circular field) -->
+  <process name="badPixelMask">
+    <option name="clipping_method" value="values"/>
+    <option name="clipping_high" value="2.0"/>
+    <option name="clipping_low" value="0.5"/>
+    <option name="edge_reject" value="5"/>
+    <option name="radius_reject" value="1040"/>
+  </process>
+
+<!-- SKY_SUBTRACT_METHOD = offsource; SKY_OFFSOURCE_METHOD = offskies.dat: each line is
+     object-name first last  sky-name first last (object frames, then the frames used as their sky) -->
+  <process name="skySubtract">
+<!-- Off-source sky (as in these data): skies are separate pointings, listed per object in sky_offsource_method.
+     On-source dithers instead: the other dithered frames of the same target make each frame's sky, with objects
+     masked; replace the two offsource lines below with
+    <option name="sky_subtract_method" value="remove_objects"/>
+    <option name="use_sky_files" value="range"/>
+    <option name="sky_files_range" value="3"/>
+     (range = the 3 frames before and after each frame; "all" uses every other frame of the object) -->
+    <option name="sky_subtract_method" value="offsource"/>
+    <option name="sky_offsource_method" value="/path/to/F2/data/offskies.dat"/>
+    <option name="sky_offsource_range" value="240"/>
+    <option name="sky_reject_type" value="sigclip"/>
+    <option name="sky_nlow" value="1"/>
+    <option name="sky_nhigh" value="1"/>
+    <option name="sky_lsigma" value="5"/>
+    <option name="sky_hsigma" value="5"/>
+    <option name="use_sky_files" value="all"/>
+    <option name="keep_skies" value="yes"/>
+    <option name="two_pass_object_masking" value="yes"/>
+    <option name="two_pass_boxcar_size" value="51"/>
+    <option name="interp_zeros_sky" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+<!-- REMOVE_COSMIC_RAYS = yes, COSMIC_RAY_PASSES = 3 -->
+  <process name="cosmicRays">
+    <option name="cosmic_ray_passes" value="3"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+<!-- STACK_METHOD = Imcombine (drizzle each frame, then a sigma-clipped combine), ALIGN_BOX 2048 centred at 1024,
+     DRIZZLE point kernel, dropsize 0.01, STACK_REJECT sigclip nlow 1 nhigh 1 lsigma 3 hsigma 3 -->
+  <process name="alignStack">
+    <option name="align_method" value="triangles"/>
+<!-- triangles (the default align_method) matches star triangles between frames.  In a crowded field (the Galactic
+     Center has thousands of stars per frame) triangles from all stars are slow and match by chance: use the 150
+     brightest and sigma-clip the shifts of the matched triangles.  xregister (cross-correlation) is the alternative. -->
+    <option name="triangles_max_stars" value="150"/>
+    <option name="triangles_use_sigma_clipping" value="yes"/>
+    <option name="align_box_size_x" value="2048"/>
+    <option name="align_box_size_y" value="2048"/>
+    <option name="align_box_center_x" value="1024"/>
+    <option name="align_box_center_y" value="1024"/>
+    <option name="stack_method" value="drihizzle_imcombine"/>
+    <option name="drihizzle_kernel" value="point"/>
+    <option name="drihizzle_dropsize" value="0.01"/>
+    <option name="drihizzle_in_units" value="counts"/>
+    <option name="stack_reject_type" value="sigclip"/>
+    <option name="stack_nlow" value="1"/>
+    <option name="stack_nhigh" value="1"/>
+    <option name="stack_lsigma" value="3"/>
+    <option name="stack_hsigma" value="3"/>
+    <option name="keep_indiv_images" value="no"/>
+    <option name="write_output" value="yes"/>
+  </process>
+</processes>
+
+<parameters>
+  <param name="outputdir" value="/path/to/output"/>
+  <param name="overwrite_files" value="yes"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="clean_up" value="no"/>
+  <param name="prefix_delimiter" value="none"/>
+  <param name="exptime_keyword" value="EXPTIME"/>
+  <param name="obstype_keyword" value="OBSTYPE"/>
+  <param name="nreads_keyword" value="LNRS"/>
+  <param name="filter_keyword" value="FILTER"/>
+  <param name="ra_keyword" value="RA"/>
+  <param name="dec_keyword" value="DEC"/>
+  <param name="ut_keyword" value="UT"/>
+  <param name="date_keyword" value="DATE"/>
+  <param name="relative_offset_arcsec" value="no"/>
+  <param name="min_frame_value" value="1"/>
+  <param name="max_frame_value" value="50000"/>
+  <param name="ignore_first_frames" value="no"/>
+  <param name="ignore_after_bad_read" value="no"/>
+  <param name="gpumode" value="yes"/>
+</parameters>
+</fatboy>

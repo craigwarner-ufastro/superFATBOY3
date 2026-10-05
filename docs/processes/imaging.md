@@ -178,8 +178,13 @@ All frames with the same object name are aligned and stacked together. Give each
 | `triangles` | Matches triangles (asterisms) of detected stars between frames | Many stars in the field; robust when a bright star dithers off the chip |
 | `xregister_guesses`, `manual` | Uses shifts you supply in `align_shifts_file` | |
 
-The `triangles` method is used by the FLAMINGOS-1 imaging template. It has its own tuning options: `triangles_min_angle`, `triangles_max_angle`,
-`triangles_atol`, `triangles_rtol`, `triangles_max_stars`, `triangles_use_sigma_clipping` and `triangles_sigma`.
+The `triangles` method is the default and is used by the imaging templates. It has its own tuning options:
+`triangles_min_angle`, `triangles_max_angle`, `triangles_atol`, `triangles_rtol`, `triangles_max_stars`,
+`triangles_use_sigma_clipping` and `triangles_sigma`. By default it uses the 150 brightest stars
+(`triangles_max_stars`; `none` = all) and sigma-clips the shifts of the matched triangles
+(`triangles_use_sigma_clipping = yes`). With every star, a crowded field is slow and full of chance matches: on the
+Flamingos-2 Galactic Center frames (thousands of stars) the unlimited, unclipped shifts were 1-2.5 px off, at about 35 s
+per frame; with the defaults they agree with `xregister` to 0.12 px (median), in a few seconds per filter.
 
 | Option | Default | Meaning |
 |---|---|---|

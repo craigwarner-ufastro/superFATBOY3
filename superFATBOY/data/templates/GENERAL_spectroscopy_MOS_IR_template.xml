@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<!-- GENERAL near-IR multi-object (MOS) spectroscopy template: a starting point for an instrument without its own
+     template.  As the IR longslit chain, with slitlets found from a region file or the flat, rectified and
+     wavelength-calibrated one by one.  Based on the verified LUCI and FLAMINGOS-1 MOS configurations
+     (LUCI_MOS_template.xml, FLAMINGOS1_MOS_template.xml).
+     Flats and arclamps must be taken through the same mask as the science. -->
+<queries>
+  <dataset dir="/path/to/data/" datatype="spectrum">
+    <object type="auto" name="field" prefix="mos">
+      <index start="1" stop="8"/>
+      <property name="specmode" value="mos"/>
+      <property name="dispersion" value="horizontal"/>
+    </object>
+
+    <calib type="dark" name="dark" prefix="dark"/>
+
+    <calib type="flat" name="flat_on" prefix="flat_on">
+      <property name="flat_type" value="lamp_on"/>
+      <property name="specmode" value="mos"/>
+      <property name="dispersion" value="horizontal"/>
+    </calib>
+
+    <calib type="arclamp" name="arc" prefix="arc">
+      <property name="arclamp_type" value="lamp_on"/>
+      <property name="specmode" value="mos"/>
+      <property name="dispersion" value="horizontal"/>
+    </calib>
+  </dataset>
+</queries>
+
+<processes>
+  <process name="noisemap">
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="darkSubtract">
+    <option name="prompt_for_missing_dark" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+<!-- Clean sky = lower quartile of the dithered frames, used to find the OH lines -->
+  <process name="createCleanSkies">
+    <option name="combine_method" value="quartile"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="createMasterArclamps">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+<!-- Slitlets: from a region file drawn on the data (DS9 boxes, one per slitlet; leave out alignment-star boxes and
+     any mask ID strip), traced as a group; or found automatically from the flat:
+    <option name="slitlet_autodetect_source" value="flat"/>
+    <option name="slitlet_autodetect_nslits" value="24"/>
+    <option name="padding" value="3"/>
+     flexure_correction = shift measures and corrects a shift of the science frames relative to the flats. -->
+  <process name="findSlitlets">
+    <calib name="region_file" value="/path/to/regions.reg"/>
+    <option name="trace_slitlets_individually" value="no"/>
+    <option name="flexure_correction" value="shift"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+
+  <process name="cosmicRaysSpec">
+    <option name="cosmic_ray_algorithm" value="dcr"/>
+    <option name="cosmic_ray_method" value="replace"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="flatDivideSpec">
+    <option name="flat_method" value="dome_on"/>
+    <option name="prompt_for_missing_flat" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="badPixelMaskSpec">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="skySubtractSpec">
+    <option name="sky_method" value="dither"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+<!-- mos_mode whole_chip: one distortion solution for the chip from the object continua and arclamp lines.
+     mos_max_slit_width: wider boxes are taken as alignment-star boxes and skipped. -->
+  <process name="rectify">
+    <option name="mos_mode" value="whole_chip"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="drihizzle_kernel" value="point_replace"/>
+    <option name="drihizzle_dropsize" value="1"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="doubleSubtract">
+    <option name="find_shift_constrain_boxsize" value="50"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="shiftAdd">
+    <option name="find_shift_constrain_boxsize" value="50"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="wavelengthCalibrate">
+<!-- Wavelength units are those of the line list: Angstrom for every shipped list except hklines_mod.dat (microns).
+        min_wavelength, max_wavelength and wavelength_scale_guess (units per pixel) must use the same units.
+        Line lists and starting guesses used with each instrument: docs/instruments.md, "Line lists by instrument". -->
+<!-- Each slitlet separately, from the OH sky lines here; for arclamps set use_arclamps = yes and a lamp list. -->
+    <option name="calibrate_slitlets_individually" value="yes"/>
+    <option name="line_list" value="OHlines_hires_100.dat"/>
+    <option name="use_arclamps" value="no"/>
+    <option name="wavelength_scale_guess" value="-4.5"/>
+    <option name="min_wavelength" value="13000"/>
+    <option name="max_wavelength" value="26000"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+
+  <process name="extractSpectra">
+    <option name="extract_method" value="auto"/>
+    <option name="extract_weighting" value="linear"/>
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+<!-- A standard star (<calib type="standard">) must be taken through the science mask or a longslit with its own
+     flat and arclamp; then add calibStarDivide (see GENERAL_spectroscopy_longslit_IR_template.xml). -->
+</processes>
+
+<parameters>
+<!-- set your output directory (it must exist) -->
+  <param name="outputdir" value="/path/to/output"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="prefix_delimiter" value="none"/>
+<!-- FITS keywords: standard names are found automatically; set them here if your instrument uses others -->
+  <param name="exptime_keyword" value="EXPTIME"/>
+  <param name="obstype_keyword" value="OBSTYPE"/>
+  <param name="filter_keyword" value="FILTER"/>
+  <param name="ra_keyword" value="RA"/>
+  <param name="dec_keyword" value="DEC"/>
+  <param name="relative_offset_arcsec" value="no"/>
+<!-- set gpumode = no if the machine has no NVIDIA GPU with CUDA -->
+  <param name="gpumode" value="yes"/>
+</parameters>
+</fatboy>

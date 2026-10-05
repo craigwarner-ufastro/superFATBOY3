@@ -67,10 +67,27 @@ Parts of the spectroscopic machinery have also been tested on real **EMIR** spec
 algorithms (slitlet finding, rectification, wavelength calibration), but there is no verified end-to-end configuration
 for it, so it is not in the table above.
 
+## General templates
+
+For an instrument without its own template, start from the general template for your observing mode. Each has the basic
+reduction steps only, with a short comment on every option you are likely to change, and points to the instrument
+templates it was built from.
+
+| Template | Steps | Built from |
+|---|---|---|
+| [`GENERAL_imaging_IR_template.xml`](../superFATBOY/data/templates/GENERAL_imaging_IR_template.xml) | linearity (optional), dark, flat, bad pixel mask, sky subtraction (on-source dithers; off-source shown), cosmic rays, align and stack | FLAMINGOS-1, Flamingos-2 imaging |
+| [`GENERAL_imaging_optical_template.xml`](../superFATBOY/data/templates/GENERAL_imaging_optical_template.xml) | bias, (dark), dome flat, bad pixel mask, cosmic rays, align and stack; no sky subtraction | the IR chain with bias, no sky step (not yet run on optical data) |
+| [`GENERAL_spectroscopy_longslit_IR_template.xml`](../superFATBOY/data/templates/GENERAL_spectroscopy_longslit_IR_template.xml) | dark, flats, slit, A-B nod sky subtraction, rectify, double subtract, shift-add, wavelength calibration (arcs or OH), extraction, standard | Flamingos-2 longslit |
+| [`GENERAL_spectroscopy_longslit_optical_template.xml`](../superFATBOY/data/templates/GENERAL_spectroscopy_longslit_optical_template.xml) | bias, flats, sky from the slit (`median`; `median_boxcar` also works), rectify, shift-add, arc wavelength calibration, extraction, standard | KAST, OSIRIS |
+| [`GENERAL_spectroscopy_MOS_IR_template.xml`](../superFATBOY/data/templates/GENERAL_spectroscopy_MOS_IR_template.xml) | as IR longslit, with slitlets from a region file or the flat and per-slitlet calibration | LUCI, FLAMINGOS-1 MOS |
+| [`GENERAL_spectroscopy_MOS_optical_template.xml`](../superFATBOY/data/templates/GENERAL_spectroscopy_MOS_optical_template.xml) | as optical longslit, with slitlets from the flat or a region file | optical longslit + LUCI slit handling (not yet run on optical MOS data) |
+
+IFU templates will follow. Overscan trimming is instrument specific and is not in the optical templates.
+
 ## Adapting a template to a new instrument
 
-The quickest path is to copy the validated template of the most similar instrument and change the instrument-specific
-parts. Usually these are:
+The quickest path is to copy the validated template of the most similar instrument (or the general template for your
+mode) and change the instrument-specific parts. Usually these are:
 
 1. **`datatype`** on `<dataset>`: `spectrum` for generic spectroscopy (works for FLAMINGOS-1 and KAST), or one of the
    instrument datatypes (`osirisSpectrum`, `miradasSpectrum`, `megaraSpectrum`, `circeImage`). Imaging with a

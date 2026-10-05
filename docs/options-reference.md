@@ -2,7 +2,7 @@
 
 *[Docs home](README.md)*
 
-**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.18.
+**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.19.
 Run `superFatboy3.py -list` yourself for the live list, or regenerate this file with
 `python3 docs/gen_options_reference.py`. For prose descriptions of what each process does, see the
 [process guide](processes/README.md).
@@ -130,11 +130,11 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `triangles_atol` | `2.0` | maximum absolute tolerance in pixels for matching triangles |
 | `triangles_debug_plots` | `yes` |  |
 | `triangles_max_angle` | `110` | max angle for any triangle to have |
-| `triangles_max_stars` | `None` | if not None, max stars to compute triangles from, sorted by flux |
+| `triangles_max_stars` | `150` | Use only the N brightest stars for triangles (none = all). In crowded fields all stars are slow and match by chance. |
 | `triangles_min_angle` | `30` | min angle for any triangle to have |
 | `triangles_rtol` | `0.025` | maximum relative tolerance in pixels for matching triangles |
 | `triangles_sigma` | `3` | Sigma to use for sigma clipping |
-| `triangles_use_sigma_clipping` | `no` | Use sigma clipping on shifts from fit triangles |
+| `triangles_use_sigma_clipping` | `yes` | Use sigma clipping on shifts from fit triangles |
 | `use_only_selected_indices` | `None` | If not None, this can be a list of indices or ASCII file listing indices of frames to align/stack. Others will be ignored. |
 | `write_calib_output` | `no` |  |
 | `write_output` | `no` |  |

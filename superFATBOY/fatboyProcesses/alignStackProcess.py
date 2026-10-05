@@ -96,8 +96,9 @@ class alignStackProcess(fatboyProcess):
             triangles_atol = float(self.getOption('triangles_atol', fdu.getTag()))
             triangles_rtol = float(self.getOption('triangles_rtol', fdu.getTag()))
             max_stars = None
-            if (self.getOption('triangles_max_stars', fdu.getTag()) is not None):
-                max_stars = int(self.getOption('triangles_max_stars', fdu.getTag()))
+            maxStarsOpt = self.getOption('triangles_max_stars', fdu.getTag())
+            if (maxStarsOpt is not None and str(maxStarsOpt).lower() not in ('none', 'all', '0')):
+                max_stars = int(maxStarsOpt)
             debug_plots = False
             if (self.getOption('triangles_debug_plots', fdu.getTag()).lower() == "yes"):
                 debug_plots = True
@@ -267,15 +268,15 @@ class alignStackProcess(fatboyProcess):
         self._options.setdefault('triangles_debug_plots', 'yes')
         self._options.setdefault('triangles_max_angle', '110')
         self._optioninfo.setdefault('triangles_max_angle', 'max angle for any triangle to have')
-        self._options.setdefault('triangles_max_stars', None)
-        self._optioninfo.setdefault('triangles_max_stars', 'if not None, max stars to compute triangles from, sorted by flux')
+        self._options.setdefault('triangles_max_stars', '150')
+        self._optioninfo.setdefault('triangles_max_stars', 'Use only the N brightest stars for triangles (none = all).\nIn crowded fields all stars are slow and match by chance.')
         self._options.setdefault('triangles_min_angle', '30')
         self._optioninfo.setdefault('triangles_min_angle', 'min angle for any triangle to have')
         self._options.setdefault('triangles_rtol', '0.025') #maximum relative tolerance in pixels for matching triangles
         self._optioninfo.setdefault('triangles_rtol', 'maximum relative tolerance in pixels for matching triangles')
         self._options.setdefault('triangles_sigma', '3')
         self._optioninfo.setdefault('triangles_sigma', 'Sigma to use for sigma clipping') 
-        self._options.setdefault('triangles_use_sigma_clipping', 'no')
+        self._options.setdefault('triangles_use_sigma_clipping', 'yes')
         self._optioninfo.setdefault('triangles_use_sigma_clipping', 'Use sigma clipping on shifts from fit triangles')
         self._options.setdefault('use_only_selected_indices', None)
         self._optioninfo.setdefault('use_only_selected_indices', 'If not None, this can be a list of indices or ASCII\nfile listing indices of frames to align/stack.\nOthers will be ignored.')
@@ -354,10 +355,15 @@ class alignStackProcess(fatboyProcess):
             #imcombine frames and take mean
             (data, imexpmap, imheader) = imcombine_method(frameList, outfile=None, expmask='return_expmask', method="mean", reject=stack_reject_type, nlow=stack_nlow, nhigh=stack_nhigh, lsigma=stack_lsigma, hsigma=stack_hsigma, lthreshold=-1e+6, mef=frameList[0]._mef, log=self._log, returnHeader=True, mode=gpu_imcombine.MODE_FDU_TAG, dataTag="drihizzled")
             expmap = imcombine_method(frameList, outfile=None, method="sum", mef=frameList[0]._mef, log=self._log, mode=gpu_imcombine.MODE_FDU_TAG, dataTag="exposure_map")
+            #Exposure-map bookkeeping on the host: in GPU mode imcombine returns device arrays while the drizzled
+            #frames' exposure maps can be on the host, and CuPy will not mix the two
+            toHost = lambda x: x.get() if hasattr(x, 'get') else np.asarray(x)
+            imexpmap = toHost(imexpmap)
+            expmap = toHost(expmap)
             expdiff = np.zeros(expmap.shape, np.float32)
             for i in range(len(frameList)):
                 fullexp = frameList[i].exptime
-                currExp = frameList[i].getData(tag="exposure_map")
+                currExp = toHost(frameList[i].getData(tag="exposure_map"))
                 #boolean mapping of np.where exposure map > total exposure time (more than 1 input pixel contributing flux)
                 b = currExp > fullexp
                 expdiff += b*(currExp-fullexp)

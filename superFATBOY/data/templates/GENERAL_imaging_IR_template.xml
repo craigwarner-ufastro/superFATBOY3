@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<!-- GENERAL near-IR imaging template: a starting point for an instrument without its own template.
+     Steps: linearity (optional), dark, flat, bad pixel mask, sky subtraction, cosmic rays, align and stack.
+     Based on the verified FLAMINGOS-1 (oriBench) and Flamingos-2 (Galactic Center) configurations; see
+     FLAMINGOS1_imaging_template.xml and FLAMINGOS2_imaging_template.xml for worked examples. -->
+<queries>
+<!-- One <object> per target and filter; each block selects files by prefix and index (prefix.NNNN.fits; a
+     sub-directory can go in the prefix, e.g. prefix="night1/obj").  Darks are matched to each frame by exposure
+     time, flats by filter. -->
+  <dataset dir="/path/to/data/">
+    <object type="auto" name="target_k" prefix="target_k">
+      <index start="1" stop="9"/>
+    </object>
+
+    <calib type="dark" name="dark" prefix="dark"/>
+
+<!-- Dome flats: lamp-on frames (flat_method dome_on), or lamp-on and lamp-off pairs (dome_on-off, below).
+     Sky or twilight flats: flat_method sky / twilight. -->
+    <calib type="flat" name="flat_k_on" prefix="flat_k_on">
+      <property name="flat_type" value="lamp_on"/>
+    </calib>
+    <calib type="flat" name="flat_k_off" prefix="flat_k_off">
+      <property name="flat_type" value="lamp_off"/>
+    </calib>
+  </dataset>
+</queries>
+
+<processes>
+<!-- Linearity correction: polynomial coefficients for your detector (1 = none)
+  <process name="linearity">
+    <option name="linearity_coeffs" value="1.00425 -1.01413e-6 4.18096e-11"/>
+  </process>
+-->
+
+  <process name="darkSubtract">
+    <option name="prompt_for_missing_dark" value="no"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="flatDivide">
+    <option name="flat_method" value="dome_on-off"/>
+    <option name="flat_lamp_off_files" value="off"/>
+  </process>
+
+<!-- Bad pixels from the master flat: values outside clipping_low - clipping_high of the normalized flat.
+     radius_reject masks outside a circular field (pixels from the centre), edge_reject the chip edges. -->
+  <process name="badPixelMask">
+    <option name="clipping_high" value="2.0"/>
+    <option name="clipping_low" value="0.5"/>
+    <option name="edge_reject" value="5"/>
+  </process>
+
+<!-- On-source dithers (default): each frame's sky is made from the other dithered frames of the same target,
+     with stars masked.  use_sky_files = all (every other frame) or range (sky_files_range frames either side).
+     Off-source skies: separate sky pointings, listed per object in a text file, one line per object:
+         object-name first last   sky-name first last
+     then use
+    <option name="sky_subtract_method" value="offsource"/>
+    <option name="sky_offsource_method" value="/path/to/offskies.dat"/>
+     (sky_offsource_method = auto picks frames more than sky_offsource_range arcsec away instead).  For an
+     extended object or nebulosity see offsource_extended / offsource_neb. -->
+  <process name="skySubtract">
+    <option name="sky_subtract_method" value="remove_objects"/>
+    <option name="use_sky_files" value="all"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="cosmicRays">
+    <option name="write_output" value="yes"/>
+  </process>
+
+<!-- triangles (default) matches triangles of the brightest stars (triangles_max_stars, 150) between frames;
+     xregister cross-correlates the frames instead.  stack_method drihizzle drizzles all frames into one image;
+     drihizzle_imcombine drizzles each frame and combines them with sigma clipping (stack_reject_type ...). -->
+  <process name="alignStack">
+    <option name="align_method" value="triangles"/>
+    <option name="stack_method" value="drihizzle"/>
+    <option name="write_output" value="yes"/>
+  </process>
+</processes>
+
+<parameters>
+<!-- set your output directory (it must exist) -->
+  <param name="outputdir" value="/path/to/output"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="prefix_delimiter" value="none"/>
+<!-- FITS keywords: standard names are found automatically; set them here if your instrument uses others -->
+  <param name="exptime_keyword" value="EXPTIME"/>
+  <param name="obstype_keyword" value="OBSTYPE"/>
+  <param name="filter_keyword" value="FILTER"/>
+  <param name="ra_keyword" value="RA"/>
+  <param name="dec_keyword" value="DEC"/>
+<!-- RA and DEC are offsets in arcsec (yes) rather than coordinates (no) -->
+  <param name="relative_offset_arcsec" value="no"/>
+<!-- frames outside this value range are rejected as bad or saturated -->
+  <param name="min_frame_value" value="1"/>
+  <param name="max_frame_value" value="50000"/>
+<!-- set gpumode = no if the machine has no NVIDIA GPU with CUDA -->
+  <param name="gpumode" value="yes"/>
+</parameters>
+</fatboy>

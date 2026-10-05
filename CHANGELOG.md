@@ -32,6 +32,11 @@ the matching section here. New options are listed with their default.
 
 ## Open issues
 
+- **CPU imcombine `reject = sigclip` with `nonzero`** returns 0 where only 1-2 valid inputs remain: the first pass's
+  variance rounds to zero or below, its sqrt is NaN and every input is rejected (later passes have a +1e-6 guard).
+  The GPU combine keeps those values. Same in main. On Flamingos-2 gc it puts ~24k holes in the CPU skies (masked
+  Galactic Center stars), which zero interpolation then fills differently, so GPU and CPU stacks differ
+  (correlation 0.95-0.998). Proposed fix pending sign-off (imcombine is the core co-add code).
 - **sinfoniCollapseSlitlets** `padx`/`pady` (use-derivatives centroiding branch, not the default
   2-d Gaussian): commented out as a likely copy/paste from sinfoniCharacterizePSF, which pads for both
   methods. Re-check when SINFONI data is run.
@@ -257,6 +262,14 @@ the matching section here. New options are listed with their default.
 - `setup_venv.sh`: the final check runs from the venv directory (from the checkout it imported the tree's copy, wrong for
   `--no-editable`); a relative `--venv` is made absolute; prints a note when scipy >= 1.15 (also in requirements.txt). (2.4.15)
 
+### Templates (data/templates)
+- New general templates for instruments without their own: `GENERAL_imaging_IR`, `GENERAL_imaging_optical`,
+  `GENERAL_spectroscopy_longslit_IR`, `GENERAL_spectroscopy_longslit_optical`, `GENERAL_spectroscopy_MOS_IR`,
+  `GENERAL_spectroscopy_MOS_optical` (`_template.xml`): basic steps only. Optical: biases (no overscan trimming), no
+  sky subtraction for imaging, `median` sky along the slit for spectroscopy. IFU templates to follow. (2.4.19)
+- New `FLAMINGOS2_imaging_template.xml` (Galactic Center, off-source skies from a list file, triangles with the
+  crowded-field settings; on-source dithers shown as the alternative). (2.4.19)
+
 ### Line lists (data/linelists)
 - docs/instruments.md: every shipped list with its line count, range and medium, and a "Line lists by instrument"
   table (lamp and sky lists, scale guesses, wavelength ranges, source configs); the spectroscopy templates carry
@@ -458,6 +471,13 @@ the matching section here. New options are listed with their default.
 - Kernel name typo `noisemaps_twilight_float`. (Sept 15)
 
 ### alignStack
+- `triangles` defaults: `triangles_max_stars = 150` (was all stars; `none` restores that) and
+  `triangles_use_sigma_clipping = yes` (was no). On the crowded Flamingos-2 Galactic Center frames the old defaults
+  gave shifts 1-2.5 px off at ~35 s per frame; the new ones agree with xregister to 0.12 px median (0.27 max, 48
+  frames), a few seconds per filter; on oriBench 0.01-0.11 px from xregister (old defaults 0.03-0.12), 7x faster. (2.4.19)
+- `stack_method = drihizzle_imcombine` crashed in GPU mode (`TypeError: Unsupported type numpy.ndarray`): the combined
+  exposure map comes back from gpu_imcombine on the device while each drizzled frame's exposure map is on the host.
+  The exposure-map bookkeeping is now done on the host. Found on Flamingos-2 imaging (gc). (2.4.19)
 - Default `align_method` is `triangles`. (6b1eeb4)
 
 ### megaraSkySubtract

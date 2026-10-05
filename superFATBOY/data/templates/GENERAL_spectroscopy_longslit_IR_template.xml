@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<!-- GENERAL near-IR longslit spectroscopy template: a starting point for an instrument without its own template.
+     Steps: dark, clean sky, master arclamp, slit, cosmic rays, flat, bad pixels, sky subtraction of A-B nods,
+     rectification, double subtraction, shift-add, wavelength calibration, extraction, standard-star division.
+     Based on the verified Flamingos-2 longslit configuration; see FLAMINGOS2_longslit_template.xml (two bands,
+     each with its own standard). -->
+<queries>
+<!-- datatype = spectrum.  Every block needs specmode longslit; dispersion = horizontal (default) or vertical. -->
+  <dataset dir="/path/to/data/" datatype="spectrum">
+    <object type="auto" name="target" prefix="target">
+      <index start="1" stop="8"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="horizontal"/>
+    </object>
+
+<!-- Telluric/flux standard, used by calibStarDivide.  sky_method step: its frames are subtracted pairwise. -->
+    <calib type="standard" name="standard" prefix="std">
+      <index start="1" stop="4"/>
+      <property name="specmode" value="longslit"/>
+      <property name="sky_method" value="step"/>
+      <property name="dispersion" value="horizontal"/>
+    </calib>
+
+    <calib type="dark" name="dark" prefix="dark"/>
+
+    <calib type="flat" name="flat_on" prefix="flat_on">
+      <property name="flat_type" value="lamp_on"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="horizontal"/>
+    </calib>
+
+<!-- Arclamps: used by rectify (use_arclamps) and, with use_arclamps in wavelengthCalibrate, for the
+     wavelength solution.  Without arcs, wavelength calibration uses the OH sky lines. -->
+    <calib type="arclamp" name="arc" prefix="arc">
+      <property name="arclamp_type" value="lamp_on"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="horizontal"/>
+    </calib>
+  </dataset>
+</queries>
+
+<processes>
+  <process name="noisemap">
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="darkSubtract">
+    <option name="prompt_for_missing_dark" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="createCleanSkies">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="createMasterArclamps">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+<!-- The slit (illuminated region) traced from the master flat (flat_method is set in flatDivideSpec) -->
+  <process name="findSlitlets">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="cosmicRaysSpec">
+    <option name="cosmic_ray_algorithm" value="dcr"/>
+    <option name="cosmic_ray_method" value="replace"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="flatDivideSpec">
+    <option name="flat_method" value="dome_on"/>
+    <option name="prompt_for_missing_flat" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="badPixelMaskSpec">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+<!-- dither: subtract the frame at the other nod position (needs RA/Dec or offsets in the header) -->
+  <process name="skySubtractSpec">
+    <option name="sky_method" value="dither"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+<!-- continuum_trace_xinit: a pixel along the dispersion where the target has continuum -->
+  <process name="rectify">
+    <option name="fit_order" value="3"/>
+    <option name="sky_fit_order" value="3"/>
+    <option name="continuum_trace_xinit" value="1000"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="drihizzle_kernel" value="turbo"/>
+    <option name="drihizzle_dropsize" value="1"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="doubleSubtract">
+    <option name="find_shift_constrain_boxsize" value="50"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="shiftAdd">
+    <option name="find_shift_constrain_boxsize" value="50"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="wavelengthCalibrate">
+<!-- Wavelength units are those of the line list: Angstrom for every shipped list except hklines_mod.dat (microns).
+        min_wavelength, max_wavelength and wavelength_scale_guess (units per pixel) must use the same units.
+        Line lists and starting guesses used with each instrument: docs/instruments.md, "Line lists by instrument". -->
+<!-- Arclamps (use_arclamps = yes) with a lamp list, or the OH sky lines in the science frames:
+    <option name="line_list" value="OHlines.dat"/>
+    <option name="use_arclamps" value="no"/>
+     wavelength_scale_guess: Angstrom per pixel, negative when wavelength decreases along the dispersion axis. -->
+    <option name="line_list" value="HeNeAr_vac.dat"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="wavelength_scale_guess" value="-6.6"/>
+    <option name="min_wavelength" value="9000"/>
+    <option name="max_wavelength" value="18000"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+
+<!-- extract_min_exposure_fraction 0.5: ignore the lightly exposed wings of a stack with large dithers -->
+  <process name="extractSpectra">
+    <option name="extract_method" value="auto"/>
+    <option name="extract_weighting" value="linear"/>
+    <option name="extract_min_exposure_fraction" value="0.5"/>
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="calibStarDivide">
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+</processes>
+
+<parameters>
+<!-- set your output directory (it must exist) -->
+  <param name="outputdir" value="/path/to/output"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="prefix_delimiter" value="none"/>
+<!-- FITS keywords: standard names are found automatically; set them here if your instrument uses others -->
+  <param name="exptime_keyword" value="EXPTIME"/>
+  <param name="obstype_keyword" value="OBSTYPE"/>
+  <param name="filter_keyword" value="FILTER"/>
+  <param name="ra_keyword" value="RA"/>
+  <param name="dec_keyword" value="DEC"/>
+<!-- RA and DEC are offsets in arcsec (yes) rather than coordinates (no) -->
+  <param name="relative_offset_arcsec" value="no"/>
+<!-- set gpumode = no if the machine has no NVIDIA GPU with CUDA -->
+  <param name="gpumode" value="yes"/>
+</parameters>
+</fatboy>

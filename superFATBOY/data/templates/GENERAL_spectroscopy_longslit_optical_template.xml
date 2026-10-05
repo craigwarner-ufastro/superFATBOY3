@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<!-- GENERAL optical (CCD) longslit spectroscopy template: a starting point for an instrument without its own
+     template.  Steps: bias, master arclamp, cosmic rays, flat, sky subtraction along the slit, rectification,
+     shift-add (combine the frames), wavelength calibration from arclamps, extraction, standard-star division.
+     No nodding: the sky comes from the slit itself.  Overscan trimming is instrument specific - add it in your
+     own copy if needed.  Based on the verified KAST and OSIRIS configurations (KAST_longslit_template.xml,
+     OSIRIS_2019_longslit_template.xml). -->
+<queries>
+  <dataset dir="/path/to/data/" datatype="spectrum">
+    <object type="auto" name="target" prefix="target">
+      <index start="1" stop="3"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="horizontal"/>
+    </object>
+
+<!-- Flux standard, used by calibStarDivide -->
+    <calib type="standard" name="standard" prefix="std">
+      <index start="1" stop="1"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="horizontal"/>
+    </calib>
+
+    <calib type="bias" name="bias" prefix="bias">
+      <property name="specmode" value="longslit"/>
+    </calib>
+
+    <calib type="flat" name="flat" prefix="flat">
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="horizontal"/>
+    </calib>
+
+    <calib type="arclamp" name="arc" prefix="arc">
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="horizontal"/>
+    </calib>
+  </dataset>
+</queries>
+
+<processes>
+  <process name="noisemap">
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="biasSubtract">
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="createMasterArclamps">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="cosmicRaysSpec">
+    <option name="cosmic_ray_algorithm" value="dcr"/>
+    <option name="cosmic_ray_method" value="replace"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="flatDivideSpec">
+    <option name="flat_method" value="dome_on"/>
+    <option name="prompt_for_missing_flat" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+<!-- median: the sky at each wavelength is the median along the slit.  median_boxcar also works (a running
+     median along the dispersion as well; the KAST and OSIRIS templates use it). -->
+  <process name="skySubtractSpec">
+    <option name="sky_method" value="median"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+<!-- continuum_trace_xinit: a pixel along the dispersion where the target has continuum -->
+  <process name="rectify">
+    <option name="fit_order" value="1"/>
+    <option name="sky_fit_order" value="2"/>
+    <option name="continuum_trace_xinit" value="1000"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="drihizzle_kernel" value="turbo"/>
+    <option name="drihizzle_dropsize" value="1"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="shiftAdd">
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="wavelengthCalibrate">
+<!-- Wavelength units are those of the line list: Angstrom for every shipped list except hklines_mod.dat (microns).
+        min_wavelength, max_wavelength and wavelength_scale_guess (units per pixel) must use the same units.
+        Line lists and starting guesses used with each instrument: docs/instruments.md, "Line lists by instrument". -->
+<!-- wavelength_scale_guess: Angstrom per pixel, negative when wavelength decreases along the dispersion axis.
+     No list for your lamp?  makeLineList.py builds one from NIST, e.g. makeLineList.py -e "Ne I,Ar I" -r 5500 9000 -->
+    <option name="line_list" value="osiris_HgAr_air_nist.dat"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="fit_order" value="3"/>
+    <option name="wavelength_scale_guess" value="2.0"/>
+    <option name="min_wavelength" value="3600"/>
+    <option name="max_wavelength" value="9200"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+
+  <process name="extractSpectra">
+    <option name="extract_method" value="auto"/>
+    <option name="extract_weighting" value="linear"/>
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="calibStarDivide">
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+</processes>
+
+<parameters>
+<!-- set your output directory (it must exist) -->
+  <param name="outputdir" value="/path/to/output"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="prefix_delimiter" value="none"/>
+<!-- FITS keywords: standard names are found automatically; set them here if your instrument uses others -->
+  <param name="exptime_keyword" value="EXPTIME"/>
+  <param name="obstype_keyword" value="OBSTYPE"/>
+  <param name="filter_keyword" value="FILTER"/>
+  <param name="ra_keyword" value="RA"/>
+  <param name="dec_keyword" value="DEC"/>
+
+<!-- set gpumode = no if the machine has no NVIDIA GPU with CUDA -->
+  <param name="gpumode" value="yes"/>
+</parameters>
+</fatboy>
