@@ -89,6 +89,8 @@ and what has been validated.
 | [`MIRADAS_SOS_template.xml`](../superFATBOY/data/templates/MIRADAS_SOS_template.xml) | MIRADAS, single-object short (SOS) | 13 slitlets |
 | [`MIRADAS_MOS_template.xml`](../superFATBOY/data/templates/MIRADAS_MOS_template.xml) | MIRADAS, multi-object (MOS) | 12 slitlets, one per probe arm |
 | [`LUCI_MOS_template.xml`](../superFATBOY/data/templates/LUCI_MOS_template.xml) | LUCI (LBT), near-IR multi-object (MOS) | Slitlets from a region file drawn on the data, `flexure_correction = shift`; wavelength calibration from OH sky lines |
+| [`MEGARA_LCB_template.xml`](../superFATBOY/data/templates/MEGARA_LCB_template.xml) | MEGARA (GTC), fiber IFU (LCB) | Overscan trim, 622 fibers traced on the trace map, fiber identification from the raw headers, ThArNe calibration, sky fibers subtracted |
+| [`SINFONI_IFU_template.xml`](../superFATBOY/data/templates/SINFONI_IFU_template.xml) | SINFONI (VLT), near-IR image-slicer IFU | Linearity from a lamp series, 32 slitlets, Xe arc calibration, slitlet identification, 3-d datacubes, PSF, register and stack |
 
 ```bash
 cp superFATBOY/data/templates/FLAMINGOS1_imaging_template.xml ~/reductions/my_data.xml

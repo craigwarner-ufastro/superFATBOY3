@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<queries>
+<!-- MEGARA (GTC) fiber spectroscopy, Large Compact Bundle (LCB, 623 fibers, one dead).  Verified on 2018-11-30 HR-I
+        data of NGC1052-DF2 (3 science frames, biases, trace-map flats, ThArNe arcs), GPU and CPU, superFATBOY v2.4.12.
+
+        Change the dataset dir to point to your RAW data: megaraIdentifyFibers reads the fiber table (which fibers are
+        object and which are sky) from the raw headers, so frames that have been through another pipeline may lack it
+        and sky subtraction will then find no sky fibers.  Files are selected by index and suffix
+        (NNNNNNNNNN-YYYYMMDD-MEGARA-<type>.fits).
+-->
+  <dataset dir="/path/to/MEGARA/raw/" datatype="megaraSpectrum">
+    <object name="target" suffix="20181130-MEGARA-MegaraLcbImage">
+      <index start="0001855479" stop="0001855481"/>
+      <property name="dispersion" value="horizontal"/>
+    </object>
+
+    <calib name="bias" type="bias" suffix="20181130-MEGARA-MegaraBiasImage">
+      <index start="0001855559" stop="0001855565"/>
+    </calib>
+
+<!-- Trace-map (fiber flat) frames: used to find and trace the fibers and as the flat field -->
+    <calib name="flat" type="flat" suffix="20181130-MEGARA-MegaraTraceMap">
+      <index start="0001855529" stop="0001855531"/>
+      <property name="flat_type" value="lamp_on"/>
+      <property name="dispersion" value="horizontal"/>
+    </calib>
+
+    <calib name="lamp" type="arclamp" suffix="20181130-MEGARA-MegaraArcCalibration">
+      <index start="0001855532" stop="0001855540"/>
+      <property name="dispersion" value="horizontal"/>
+    </calib>
+  </dataset>
+</queries>
+
+<processes>
+<!-- Raw MEGARA frames: trim the overscan once (do not run on frames that have already been trimmed) -->
+  <process name="trimOverscan">
+    <option name="overscan_rows" value="2056:2156"/>
+    <option name="overscan_cols" value="0:50,4146:4197"/>
+    <option name="python_slicing" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="noisemap">
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="biasSubtract">
+    <option name="prompt_for_missing_bias" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="createCleanSkies">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="createMasterArclamps">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+<!-- Fibers: peaks found along a cut at x=500, traced along the dispersion (all 622 fibers at once) -->
+  <process name="findSlitlets">
+    <option name="slitlet_autodetect_x" value="500"/>
+    <option name="slitlet_autodetect_min_width" value="2"/>
+    <option name="slitlet_autodetect_sigma" value="0"/>
+    <option name="autodetect_peak_local_max" value="yes"/>
+    <option name="fiber_width" value="5"/>
+    <option name="slitlet_autodetect_nslits" value="622"/>
+    <option name="fit_order" value="3"/>
+    <option name="trace_slitlets_individually" value="no"/>
+    <option name="slitlet_trace_ylo" value="3700"/>
+    <option name="slitlet_trace_yhi" value="4000"/>
+    <option name="trace_peak_local_max" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="cosmicRaysSpec">
+    <option name="cosmic_ray_algorithm" value="dcr"/>
+    <option name="cosmic_ray_method" value="replace"/>
+    <option name="mos_use_whole_chip" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="flatDivideSpec">
+    <option name="normalize_flat" value="yes"/>
+    <option name="flat_method" value="dome_on"/>
+    <option name="flat_selection" value="all"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+<!-- Object and sky fibers from the raw headers.  The LCB has 623 fibers; fiber 623 is not traced -->
+  <process name="megaraIdentifyFibers">
+    <option name="missing_fiber_list" value="623"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="collapseFibers">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="shiftAdd">
+    <option name="mos_use_whole_chip" value="yes"/>
+    <option name="manual_shifts" value="0"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+<!-- HR-I VPH, ThArNe arcs.  Change the range and scale for another VPH -->
+  <process name="wavelengthCalibrate">
+    <option name="calibrate_slitlets_individually" value="yes"/>
+    <option name="line_list" value="megara_ThArNe_list.dat"/>
+    <option name="wavelength_scale_guess" value="-0.1274"/>
+    <option name="min_wavelength" value="8380"/>
+    <option name="max_wavelength" value="8890"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="resample">
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="megaraSkySubtract">
+    <option name="sky_combine_method" value="mean"/>
+    <option name="scaling" value="peak"/>
+    <option name="keep_skies" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+</processes>
+
+<parameters>
+  <param name="outputdir" value="/path/to/output"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="gain_keyword" value="GAIN1"/>
+  <param name="readnoise_keyword" value="RDNOISE1"/>
+  <param name="grism_keyword" value="VPH"/>
+  <param name="filter_keyword" value="OSFILTER"/>
+  <param name="object_keyword" value="OBSTYPE"/>
+  <param name="verbosity" value="normal"/>
+  <param name="gpumode" value="yes"/>
+</parameters>
+</fatboy>

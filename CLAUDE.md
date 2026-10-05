@@ -77,12 +77,11 @@ runs (not just "compiles") have validated:
   full bisection story) before landing clean.
 - **LUCI MOS** (`caden_luci_test.xml`, v2.4.2): region file + traceSlitlets + flexure correction,
   through extraction; GPU and CPU byte-identical since v2.4.3. `LUCI_MOS_template.xml`.
-- **SINFONI** (`xml/sinfoni_test_30Dor.xml`, data on NFS `/net/bolt`) and **MEGARA** (`xml/mt1.xml`) run end to
-  end on GPU since v2.4.10 (copies `claude_sinfoni_30Dor.xml` / `claude_megara_mt1.xml` with debug_mode off - the
-  user's SINFONI XML has `debug_mode=yes`). Compared with the user's py2 outputs (`sinfoniTest-30Dor-2026-py2`,
-  `anthonyMegaraData-2026`): slitmasks identical, products ~identical. MEGARA's recovered (bias-subtracted) files lack
-  the fiber header data, so megaraIdentifyFibers finds 0 fibers and sky subtraction can't be tested. CPU mode of both
-  not yet run.
+- **SINFONI** (`xml/sinfoni_test_30Dor.xml`, data on NFS `/net/bolt`) and **MEGARA** (`xml/mt1.xml`, raw data now from
+  `/net/bolt/data1/anthony/...` - the older recovered copies lack the fiber header table) are **verified GPU + CPU** as of
+  v2.4.12 (`xml/verified/`, templates `SINFONI_IFU_template.xml`, `MEGARA_LCB_template.xml`). The user's working SINFONI
+  XML has `debug_mode=yes` and an `overwite_files` typo - test copies/verified copies fix both. Bugs it took: v2.4.10
+  (extractSpectra negative sigma, fiber QA image, collapseFibers GPU), v2.4.12 (megaraSkySubtract math.sqrt + GPU/host mixing).
 - **Not yet run through the refactored pipeline at all**: FourStar, and whatever other instruments have
   templates/data but no session log entry here. Don't assume these work.
 - `/home/cwarner/work/xml/verified/verified_configs.md` is the authoritative list of

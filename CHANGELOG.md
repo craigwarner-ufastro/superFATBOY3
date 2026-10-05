@@ -24,8 +24,8 @@ the matching section here. New options are listed with their default.
 | wavelengthCalibrate QA / fallbacks / second pass, v2.4.4-2.4.6 | WC reruns of LUCI (sky and arc), KAST, OSIRIS x2, MIRADAS SOL/SOS/MOS, specBench (one at a time) | First pass log-identical to before on every dataset; no tracebacks. Medians 0.05-0.10 px (FLAMINGOS-1, OSIRIS, KAST, LUCI), 0.22-0.25 px (MIRADAS). Second pass replaced MIRADAS SOS orders 1-2 seg 1 (order 2 was a wrong match) and LUCI arc slit 10 (100 A off at the blue end) with solutions that fit their neighbors. Offline bench of every fallback on ~180 calibrated cuts: no wrong solution accepted |
 | avrajit-osiris (OSIRIS R2500U Xe arc), v2.4.5 | WC rerun | Calibrates on the first match with `Xenon_optical_air.dat` (0.057 px, 16 lines); with the old Xe list it fails cleanly (fallback solutions rejected as poor) |
 | `wavecal.py` standalone, v2.4.7 | 24 LUCI arc slitlets in a loop | Same grades as the pipeline, RMS within 0.004 px, slit 10 replaced the same way |
-| SINFONI 30 Dor (sinfoni_test_30Dor), v2.4.10 | GPU | Full chain to registered/stacked datacubes, no tracebacks; slitmask identical to the py2 original; stacked image and cube correlate 0.9998 / 0.9987 with py2. CPU not yet run |
-| MEGARA LCB (mt1), v2.4.10 | GPU | Through findSlitlets (identical to py2), collapseFibers, shiftAdd (identical), wavelengthCalibrate (622/622 fibers, median 0.05 px), resample. Sky subtraction untested: the recovered files lack the fiber header data for megaraIdentifyFibers |
+| SINFONI 30 Dor (sinfoni_test_30Dor), verified v2.4.12 | GPU + CPU | Full chain to registered/stacked datacubes, no tracebacks; slitmask identical to the py2 original; stacked image and cube correlate 0.9998 / 0.9987 with py2 (flux 0.6% lower). GPU vs CPU: 1.000000 / 0.999998. `SINFONI_IFU_template.xml` |
+| MEGARA LCB (mt1), verified v2.4.12 | GPU + CPU | From the raw data (bolt): 622 fibers traced (identical to py2), 56 sky fibers identified, 622/622 wavelength-calibrated (610 excellent), sky subtracted. GPU vs CPU: 87/139 files identical, the rest within 5e-6 of the data range. `MEGARA_LCB_template.xml` |
 | FourStar, others | - | Not yet run through the refactored pipeline |
 
 ## Open issues
@@ -407,6 +407,13 @@ the matching section here. New options are listed with their default.
 
 ### alignStack
 - Default `align_method` is `triangles`. (6b1eeb4)
+
+### megaraSkySubtract
+- Crashed in GPU mode (`only length-1 arrays can be converted to Python scalars`): the sky noisemap used `math.sqrt` on an
+  array (py2: numpy `sqrt`), and the fiber loops mixed device data with host masks and accumulators.  Arrays are now
+  fetched to the CPU once per frame, combined sky sections converted to numpy; the median-combine noisemap takes |sky|.
+  The vertical-dispersion branch never set `clean_factor` (py2 too).  First full run of the process (needs raw MEGARA
+  frames with the fiber table in the header). (2.4.12)
 
 ### collapseFibers
 - GPU mode: the fiber loop multiplied device data (clean sky) by a host slitmask (`Unsupported type numpy.ndarray`).

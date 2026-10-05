@@ -24,6 +24,8 @@ unhandled errors and sane, finite output. Each has a matching template XML file 
 | **MIRADAS** | SOS (single-object short) | [`MIRADAS_SOS_template.xml`](../superFATBOY/data/templates/MIRADAS_SOS_template.xml) | `miradasSpectrum` | 13 slitlets |
 | **MIRADAS** | MOS (multi-object) | [`MIRADAS_MOS_template.xml`](../superFATBOY/data/templates/MIRADAS_MOS_template.xml) | `miradasSpectrum` | 12 slitlets, one MIRADAS order |
 | **LUCI** (LBT) | Near-IR multi-object spectroscopy (MOS) | [`LUCI_MOS_template.xml`](../superFATBOY/data/templates/LUCI_MOS_template.xml) | `spectrum` | 24 slitlets (region file, group trace, flexure correction), A-B nodded H+K frames, through spectral extraction: 19 spectra, 24 wavelength solutions. The standard star (different mask, no calibrations) is not included |
+| **MEGARA** (GTC) | Fiber IFU (LCB, 623 fibers), HR-I | [`MEGARA_LCB_template.xml`](../superFATBOY/data/templates/MEGARA_LCB_template.xml) | `megaraSpectrum` | 3 science frames from raw: 622 fibers traced (identical to the Python 2 version), 56 sky fibers identified, all fibers wavelength-calibrated (median 0.05 px), sky subtracted. GPU and CPU agree to 5e-6 of the data range |
+| **SINFONI** (VLT) | Near-IR image-slicer IFU (32 slitlets), H+K | [`SINFONI_IFU_template.xml`](../superFATBOY/data/templates/SINFONI_IFU_template.xml) | `spectrum` | 30 Doradus and a standard star, full chain to registered, stacked datacubes; slitmask identical to the Python 2 version, stacked image within 0.6% of it |
 
 How strong is the evidence?
 
@@ -57,8 +59,6 @@ template (copy the closest validated one):
 | Instrument | What exists | Where to read |
 |---|---|---|
 | **CIRCE** (GTC near-IR imager; multi-ramp FITS) | `circeImage` and `circeFastImage` datatypes; `remergeCirce`, `deboneCirce`, `trimWindow`, `mergeObjects` processes | [instrument-specific processes](processes/instruments.md#circe) |
-| **MEGARA** (GTC fiber spectrograph) | `megaraSpectrum` datatype; `trimOverscan`, `megaraIdentifyFibers`, `collapseFibers`, `megaraSkySubtract` processes; fiber options in `findSlitlets`. *GPU run of one LCB dataset (v2.4.10): all 622 fibers traced (identical to the Python 2 version), collapsed and wavelength-calibrated (median 0.05 px); sky subtraction not tested - the test files lack the fiber header data `megaraIdentifyFibers` needs.* | [instrument-specific processes](processes/instruments.md#megara) |
-| **SINFONI** (VLT IFU) | `sinfoni*` processes (linearity calculation, slitlet identification, collapse, datacube, PSF, stacking, bad-line removal). *GPU run of the 30 Dor H+K dataset (v2.4.10): full chain through registered and stacked datacubes, slitmask identical to the Python 2 version, stacked image and cube correlate 0.999 with it; CPU mode not yet run.* | [instrument-specific processes](processes/instruments.md#sinfoni) |
 | **GMOS** | `biasSubtract` (labelled GMOS-specific in the code) | [bias subtract](processes/imaging.md#biassubtract) |
 | **FourStar** | in-progress imaging datatype and mosaic process (uncommitted work in the source tree) | not documented |
 

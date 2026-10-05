@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<queries>
+<!-- SINFONI (VLT) near-IR integral-field spectroscopy (32 slitlets, image slicer).  Verified on 2012-12-21 H+K
+        data of 30 Doradus and a standard star, GPU and CPU, superFATBOY v2.4.12.
+
+        Change the dataset dir to point to your data.  SINFONI files are named SINFO.<timestamp>.fits(.gz); select
+        each group by timestamp range (prefix_delimiter = none below).  The chain: linearity (from a lamp series),
+        bad-line removal, darks, flats (lamp on-off), arclamps (on-off), slitlet finding, sky subtraction, rectify,
+        wavelength calibration, slitlet identification, collapse to images, 3-d datacubes, PSF, register and stack.
+-->
+  <dataset dir="/path/to/SINFONI/raw" datatype="spectrum">
+
+    <object type="auto" name="target" prefix="SINFO.">
+      <timestamp start="2012-12-21T00:32:08.416" stop="2012-12-21T01:09:55.906"/>
+      <property name="dispersion" value="vertical"/>
+    </object>
+
+<!-- Standard star: rectified with the target's distortion solution -->
+    <object type="auto" name="STD_target" prefix="SINFO.">
+      <timestamp start="2012-12-21T01:24:35.799" stop="2012-12-21T01:26:14.973"/>
+      <property name="dispersion" value="vertical"/>
+      <property name="rectify_object" value="target"/>
+    </object>
+
+<!-- Darks for each exposure time used (several timestamp ranges may be combined) -->
+    <calib type="dark" name="dark1s" prefix="SINFO.">
+      <timestamp start="2012-12-12T09:54:40.511" stop="2012-12-12T09:55:19.382"/>
+      <property name="dispersion" value="vertical"/>
+    </calib>
+    <calib type="dark" name="dark90s" prefix="SINFO.">
+      <timestamp start="2012-12-21T10:13:34.751" stop="2012-12-21T10:17:10.671"/>
+      <property name="dispersion" value="vertical"/>
+    </calib>
+
+<!-- Flats (lamp on and off frames together; told apart by a header keyword in flatDivideSpec) -->
+    <calib type="flat" name="flat_hk" prefix="SINFO.">
+      <timestamp start="2012-12-21T10:31:35.018" stop="2012-12-21T10:38:42.092"/>
+      <property name="dispersion" value="vertical"/>
+    </calib>
+
+<!-- Arclamps (lamp on and off; told apart by a header keyword in createMasterArclamps) -->
+    <calib type="lamp" name="lamp_hk" prefix="SINFO.">
+      <timestamp start="2012-12-21T10:40:40.786" stop="2012-12-21T10:41:23.430"/>
+      <property name="dispersion" value="vertical"/>
+    </calib>
+
+<!-- Linearity series (lamp exposures of increasing time) for sinfoniCalcLinearity -->
+    <calib type="auto" name="linearity_lamp_hk" prefix="SINFO.">
+      <timestamp start="2012-11-20T10:09:47.652" stop="2012-11-20T10:36:48.764"/>
+      <property name="dispersion" value="vertical"/>
+    </calib>
+
+  </dataset>
+</queries>
+
+<processes>
+  <process name="sinfoniCalcLinearity">
+  </process>
+
+  <process name="linearity">
+    <option name="linearity_coeffs" value="1"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="sinfoniRemoveBadLines">
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="darkSubtract">
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="createCleanSkies">
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="createMasterArclamps">
+    <option name="lamp_method" value="lamp_on-off"/>
+    <option name="lamp_off_files" value="ESO INS1 LAMP1 ST"/> <!-- header keyword that is False for lamp-off frames -->
+    <option name="lamp_off_header_value" value="False"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+<!-- 32 slitlets packed side by side: auto-detected on the flat at row 900.  The negative sigma accepts boundaries down
+        to 5 sigma below the background, needed for SINFONI's shallow inter-slitlet dips; autocorrect fills in any missed. -->
+  <process name="findSlitlets">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="fit_order" value="2"/>
+    <option name="trace_slitlets_individually" value="yes"/>
+    <option name="slitlet_autodetect_x" value="900"/>
+    <option name="slitlet_autodetect_use_median" value="yes"/>
+    <option name="slitlet_autodetect_boxsize" value="21"/>
+    <option name="slitlet_autodetect_sigma" value="-5"/>
+    <option name="slitlet_autodetect_min_width" value="50"/>
+    <option name="slitlet_autodetect_nslits" value="32"/>
+    <option name="slitlet_attempt_autocorrect" value="yes"/>
+    <option name="slitlet_autocorrect_gap_size" value="0"/>
+    <option name="subtract_background_level" value="yes"/>
+    <option name="background_boxcar_width" value="71"/>
+    <option name="invert_before_correlating" value="yes"/>
+    <option name="edge_threshold" value="2"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+
+  <process name="cosmicRaysSpec">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="cosmic_ray_algorithm" value="dcr"/>
+    <option name="cosmic_ray_method" value="replace"/>
+    <option name="dcr_disp_axis" value="2"/>
+    <option name="dcr_threshold" value="5.0"/>
+    <option name="mos_use_whole_chip" value="no"/>
+  </process>
+
+  <process name="flatDivideSpec">
+    <option name="flat_method" value="dome_on-off"/>
+    <option name="flat_lamp_off_files" value="ESO INS1 LAMP5 ST"/> <!-- header keyword that is False for lamp-off frames -->
+    <option name="flat_lamp_off_header_value" value="False"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="badPixelMaskSpec">
+    <option name="write_calib_output" value="yes"/>
+    <option name="clipping_high" value="4.0"/>
+    <option name="clipping_low" value="0.25"/>
+    <option name="write_output" value="yes"/>
+    <option name="behavior" value="interpolate"/>
+    <option name="interpolation_algorithm" value="median_neighbor"/>
+  </process>
+
+  <process name="skySubtractSpec">
+    <option name="sky_method" value="offsource_dither"/>
+    <option name="sky_offsource_range" value="20"/>
+    <option name="remove_residuals" value="yes"/>
+    <option name="residual_removal_method" value="median_boxcar"/>
+    <option name="boxcar_width" value="51"/>
+    <option name="boxcar_nhigh" value="25"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="rectify">
+    <option name="fit_order" value="2"/>
+    <option name="sky_fit_order" value="2"/>
+    <option name="mos_mode" value="independent_slitlets"/>
+    <option name="continuum_trace_xinit" value="900"/>
+    <option name="mos_double_subtract_continua" value="no"/>
+    <option name="mos_max_slit_width" value="50"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="drihizzle_kernel" value="turbo"/>
+    <option name="drihizzle_dropsize" value="1"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+
+<!-- Xe arclamp, H+K grating -->
+  <process name="wavelengthCalibrate">
+    <option name="line_list" value="Xenon_IR.dat"/>
+    <option name="fit_order" value="3"/>
+    <option name="calibrate_slitlets_individually" value="yes"/>
+    <option name="resample_to_common_scale" value="yes"/>
+    <option name="wavelength_scale_guess" value="-5.0"/>
+    <option name="min_wavelength" value="14000"/>
+    <option name="max_wavelength" value="25000"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+
+  <process name="resample">
+    <option name="resample_to_common_scale" value="yes"/>
+    <option name="output_units" value="counts"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="sinfoniIdentifySlitlets">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="sinfoniCollapseSlitlets">
+    <option name="use_arclamps" value="yes"/>
+    <option name="use_integer_shifts" value="no"/>
+    <option name="collapse_method" value="median"/>
+    <option name="reference_slit" value="3"/>
+    <option name="line_search_box_lo" value="512"/>
+    <option name="line_search_box_hi" value="1536"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+
+  <process name="sinfoniCreate3dDatacubes">
+    <option name="use_arclamps" value="yes"/>
+    <option name="use_integer_shifts" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_plots" value="yes"/>
+  </process>
+
+  <process name="sinfoniCharacterizePSF">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="sinfoniRegisterStack">
+    <option name="keep_indiv_images" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+</processes>
+
+<parameters>
+  <param name="outputdir" value="/path/to/output/"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="clean_up" value="no"/>
+  <param name="prefix_delimiter" value="none"/>
+  <param name="filter_keyword" value="ESO INS FILT1 NAME"/>
+  <param name="grism_keyword" value="ESO INS GRAT1 NAME"/>
+  <param name="obstype_keyword" value="ESO DPR TYPE"/>
+  <param name="object_keyword" value="OBJECT"/>
+  <param name="rotpa_keyword" value="INSTRPA"/>
+  <param name="gain_keyword" value="GAIN"/>
+  <param name="GAIN" value="1"/>
+  <param name="readnoise_keyword" value="1"/>
+  <param name="pixscale_keyword" value="-0.12"/>
+  <param name="memory_image_limit" value="160"/>
+  <param name="gpumode" value="yes"/>
+  <param name="verbosity" value="normal"/>
+</parameters>
+</fatboy>
