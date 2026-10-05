@@ -78,7 +78,7 @@ class resampleProcess(fatboyProcess):
         if (fdu._specmode != fdu.FDU_TYPE_LONGSLIT):
             ### MOS/IFU data -- get slitmask
             # Use new fdu.getSlitmask method
-            fdu.printAllSlitmasks()
+            #fdu.printAllSlitmasks()
             slitmask = fdu.getSlitmask(pname=None, properties=properties, headerVals=headerVals)
             if (slitmask is None):
                 print("resampleProcess::resampleData> ERROR: Could not find slitmask for object "+fdu.getFullId()+".  Cannot resample!")
@@ -573,7 +573,7 @@ class resampleProcess(fatboyProcess):
 
         if (fdu._specmode != fdu.FDU_TYPE_LONGSLIT and not 'slitmask' in calibs):
             # Use new fdu.getSlitmask method
-            fdu.printAllSlitmasks()
+            #fdu.printAllSlitmasks()
             slitmask = fdu.getSlitmask(pname=None, shape=skyShape, properties=properties, headerVals=headerVals)
             if (slitmask is not None):
                 # Found slitmask

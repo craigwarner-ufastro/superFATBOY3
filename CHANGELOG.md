@@ -88,8 +88,8 @@ the matching section here. New options are listed with their default.
   noisemap, carried on through rectification). Now `np.sqrt(np.abs(...))`, 8 sites; also in main. (2.4.3)
 
 ### fatboyDataUnit / datatypes
-- `fatboySpectrum.printAllSlitmasks()` (called by resample and the SINFONI processes) prints only with
-  `verbosity = verbose`. (2.4.11)
+- `fatboySpectrum.printAllSlitmasks()` is a debugging method and always prints when called; its calls in resample and
+  the SINFONI processes are commented out or gated on `debug_mode` (the 2.4.11 verbosity gate inside it removed). (2.4.14)
 - `initialize()`: when NAXIS1/NAXIS2 are missing from the header the shape is now read from the data
   as intended (the check tested an undefined name, so such files were disabled as "misformatted").
   (2.3.43)

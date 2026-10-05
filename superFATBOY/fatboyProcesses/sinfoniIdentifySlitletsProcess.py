@@ -131,7 +131,7 @@ class sinfoniIdentifySlitletsProcess(fatboyProcess):
         if (not 'slitmask' in calibs):
             #Find slitmask associated with this fdu
             #Use new fdu.getSlitmask method
-            fdu.printAllSlitmasks()
+            #fdu.printAllSlitmasks()
             slitmask = fdu.getSlitmask(pname=None, shape=skyShape, properties=properties, headerVals=headerVals)
             if (slitmask is None):
                 print("sinfoniIdentifySlitletsProcess::getCalibs> ERROR: Could not find slitmask associated with "+fdu.getFullId()+"!  Unable to identify slitlets!")

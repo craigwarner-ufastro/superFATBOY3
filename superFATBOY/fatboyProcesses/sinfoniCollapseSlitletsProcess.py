@@ -529,9 +529,14 @@ class sinfoniCollapseSlitletsProcess(fatboyProcess):
                 calibs['masterLamp'] = masterLamp
                 skyShape = masterLamp.getShape()
 
+        debug = False
+        if (self.getOption("debug_mode", fdu.getTag()).lower() == "yes"):
+            debug = True
+
         if (not 'slitmask' in calibs):
             #Use new fdu.getSlitmask method
-            fdu.printAllSlitmasks()
+            if debug:
+                fdu.printAllSlitmasks()
             properties['SlitletsIdentified'] = True
             slitmask = fdu.getSlitmask(pname=None, shape=skyShape, properties=properties, headerVals=headerVals)
             if (slitmask is not None):
