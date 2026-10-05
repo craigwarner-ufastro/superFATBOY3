@@ -2,7 +2,7 @@
 
 *[Docs home](README.md)*
 
-**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.10.
+**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.11.
 Run `superFatboy3.py -list` yourself for the live list, or regenerate this file with
 `python3 docs/gen_options_reference.py`. For prose descriptions of what each process does, see the
 [process guide](processes/README.md).
@@ -242,7 +242,7 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `dcr_npass` | `5` | Maximum number of cleaning passes |
 | `dcr_threshold` | `4.0` | Threshold (in STDDEV) |
 | `dcr_upper_radius` | `3` | Upper radius of region for replacement statistics |
-| `dcr_verbosity` | `1` | Verbose level [0,1,2] |
+| `dcr_verbosity` | `1` | dcr output: 0 = pixels cleaned per frame, 1 = also per slitlet, 2 = also per-pass counts and frame statistics before/after cleaning |
 | `dcr_xradius` | `9` | x-radius of the box (size = 2 * radius) |
 | `dcr_yradius` | `9` | y-radius of the box (size = 2 * radius) |
 | `deepcr_inpaint_model` | `ACS-WFC-F606W-2-32` | Model to use for inpainting (replacing) in deepCR. Default was trained on HST imaging data. |

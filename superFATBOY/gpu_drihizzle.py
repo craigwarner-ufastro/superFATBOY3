@@ -891,7 +891,6 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
     # expmaps = list of input exposure maps for use with 'cps' inputs
 
     t = time.time()
-    print("Drihizzle's the bizzle fo' shizzle!")
     _verbosity = fatboyLog.NORMAL
 
     global mod
@@ -907,7 +906,9 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             logtype = LOGTYPE_ASCII
         elif isinstance(log, fatboyLog):
             logtype = LOGTYPE_FATBOY
-            _verbosity = fatboyLog._verbosity
+            _verbosity = log._verbosity
+    if (_verbosity == fatboyLog.VERBOSE):
+        print("Drihizzle's the bizzle fo' shizzle!")
 
     # Filelist
     if isinstance(frames, str) and os.access(frames, os.F_OK):
@@ -1858,7 +1859,6 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
     #expmaps = list of input exposure maps for use with 'cps' inputs
 
     t = time.time()
-    print("Drihizzle's the bizzle fo' shizzle!")
     _verbosity = fatboyLog.NORMAL
 
     if (not superFATBOY.threaded()):
@@ -1875,7 +1875,9 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             logtype = LOGTYPE_ASCII
         elif(isinstance(log, fatboyLog)):
             logtype = LOGTYPE_FATBOY
-            _verbosity = fatboyLog._verbosity
+            _verbosity = log._verbosity
+    if (_verbosity == fatboyLog.VERBOSE):
+        print("Drihizzle's the bizzle fo' shizzle!")
 
     #Filelist
     if (isinstance(frames, str) and os.access(frames, os.F_OK)):

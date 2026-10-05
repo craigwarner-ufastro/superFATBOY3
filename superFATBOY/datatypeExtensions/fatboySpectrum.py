@@ -74,7 +74,10 @@ class fatboySpectrum(fatboyDataUnit):
         self._keywords.setdefault('ut_keyword',['UT', 'UTC', 'NOCUTC'])
     #end addKeywords
 
+    #Debugging aid: print every slitmask this frame and the database know about (verbosity = verbose only)
     def printAllSlitmasks(self):
+        if (self._fdb is None or self._fdb._verbosity != fatboyLog.VERBOSE):
+            return
         print("PRINTING SLITMASKS")
         for key in self._properties:
             if (key.find("slitmask") != -1):

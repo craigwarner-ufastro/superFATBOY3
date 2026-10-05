@@ -300,7 +300,7 @@ The important ones (the full list with defaults is in the [options reference](op
 | `overwrite_files` | `no` | `no` reuses output files already on disk; `yes` recomputes and overwrites. |
 | `memory_image_limit` | none | Roughly 10 times your free RAM in GB. Higher means fewer intermediate frames written to disk. |
 | `quick_start_file` | none | A file where superFATBOY caches per-file shapes and medians so later runs start faster. File-locked, so runs sharing it can't interleave lines. |
-| `verbosity` | `normal` | `brief`, `normal` or `verbose` |
+| `verbosity` | `normal` | `brief`, `normal` or `verbose`. `verbose` adds per-step details and debugging output (drizzle internals, slitmask listings) |
 | `logdir` | `flogs` | Directory for log files |
 | `tempdir` | `temp-fatboy` | Scratch directory (relative to where you start the run), removed at the end of a run. A `fatboy.lock` file inside records the host and pid of the run using it, so two datasets started from the same directory don't collide: if the directory is held by another live run, the second run uses `<tempdir>-<pid>` instead (with a WARNING); one left behind by a finished or crashed run is cleared and reused. |
 | `interactive_on_error` | `no` | `yes` pauses and waits for ENTER after an error (useful at a terminal, fatal when unattended) |

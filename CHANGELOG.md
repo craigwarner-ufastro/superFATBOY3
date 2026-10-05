@@ -87,6 +87,8 @@ the matching section here. New options are listed with their default.
   noisemap, carried on through rectification). Now `np.sqrt(np.abs(...))`, 8 sites; also in main. (2.4.3)
 
 ### fatboyDataUnit / datatypes
+- `fatboySpectrum.printAllSlitmasks()` (called by resample and the SINFONI processes) prints only with
+  `verbosity = verbose`. (2.4.11)
 - `initialize()`: when NAXIS1/NAXIS2 are missing from the header the shape is now read from the data
   as intended (the check tested an undefined name, so such files were disabled as "misformatted").
   (2.3.43)
@@ -151,6 +153,8 @@ the matching section here. New options are listed with their default.
   some values remain (60 sites; also in main). (2.3.45)
 
 ### gpu_drihizzle (GPU drizzle)
+- Read the run's verbosity (`log._verbosity`); it read the class default, so `verbosity = verbose` never applied to
+  GPU drizzle (also in the py2 original). The start-up banner prints only when verbose (also CPU drizzle). (2.4.11)
 - CUDA illegal-address crash: a `float32` cast on the wrong operand packed a float64 into a float
   kernel argument. (1a2a1dc)
 - uniformKernel scatter bounds; padding threads no longer write past the array end. (421323f)
@@ -363,6 +367,8 @@ the matching section here. New options are listed with their default.
 - GPU cosmic ray removal returned all zeros (result discarded). (48d2e68)
 
 ### removeCosmicRaysSpec / LA Cosmic
+- `dcr_verbosity` levels: 0 = pixels cleaned per frame, 1 (default) = also per slitlet, 2 = also the C code's
+  per-pass counts and before/after frame statistics (previously at 1, printed for every slitlet of every frame). (2.4.11)
 - `runDeepCR`/`runLacos` shadowed numpy as `np` (UnboundLocalError). (2.3.42)
 - `runLacos`/`runDeepCR` mixed CuPy and numpy arrays in GPU mode; they now use CPU data like `runDcr`.
   (2.3.44)
@@ -414,6 +420,7 @@ the matching section here. New options are listed with their default.
 - Undefined `nslits` fixed (by Craig). (2.3.44)
 
 ### MIRADAS / SINFONI processes
+- sinfoniCalcLinearity: the per-lamp lamp-off keyword print shows only with `verbosity = verbose`. (2.4.11)
 - miradasCharacterizePSF: `nslits` fallback called `.max()` on the slitmask calib object (AttributeError if
   reached). (2.4.3)
 - Missing `fatboySpecCalib` / `fatboyDataUnit` imports (paths taken when calibs come from XML).

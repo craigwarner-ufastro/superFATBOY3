@@ -146,7 +146,8 @@ class sinfoniCalcLinearityProcess(fatboyProcess):
                     if (lamp.hasProperty("lamp_type")):
                         #this FDU already has lamp_type set
                         continue
-                    print(lamp.getFullId(), lampoff, lampoffVal, str(lamp.getHeaderValue(lampoff)), "========")
+                    if (self._fdb._verbosity == fatboyLog.VERBOSE):
+                        print(lamp.getFullId(), lampoff, lampoffVal, str(lamp.getHeaderValue(lampoff)), "========")
                     if (str(lamp.getHeaderValue(lampoff)) == lampoffVal):
                         lamp.setProperty("lamp_type", "lamp_off")
                     else:

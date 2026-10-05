@@ -1642,6 +1642,7 @@ def createSlitmask(shp, rslitHi, rslitLo, nslits, horizontal):
     return slitmask_gpu.get()
 #end createSlitmask
 
+#verbose: 0 = total only, 1 = also per slitlet, 2 = also the C code's per-pass and frame statistics
 def dcr(image, clean_file=None, crfile=None, slitmask=None, thresh=4.0, xrad=9, yrad=9, npass=5, diaxis=1, lrad=1, urad=3, grad=1, verbose=1, mef=-1, log=None):
     import numpy as np
     if (isinstance(image, str)):
@@ -1672,7 +1673,7 @@ def dcr(image, clean_file=None, crfile=None, slitmask=None, thresh=4.0, xrad=9, 
     npix = 0
     if (slitmask is None):
         #process full frame. data will be modified to have cleaned data and return value cr has cr data
-        (npix, cr_data) = fatboyclib.dcr(data, thresh=thresh, xrad=xrad, yrad=yrad, npass=npass, diaxis=diaxis, lrad=lrad, urad=urad, grad=grad, verbose=verbose)
+        (npix, cr_data) = fatboyclib.dcr(data, thresh=thresh, xrad=xrad, yrad=yrad, npass=npass, diaxis=diaxis, lrad=lrad, urad=urad, grad=grad, verbose=max(verbose-1, 0))
     else:
         #Multi-object (or multi-order) spectroscopy.  Use slitmask, which is np.array same size as data where each pixel is an integer from 1 to n
         #representing the slitlet that pixel belongs to.
@@ -1715,7 +1716,7 @@ def dcr(image, clean_file=None, crfile=None, slitmask=None, thresh=4.0, xrad=9, 
                 if (yrad > (yhi-ylo)/2):
                     yrad = int((yhi-ylo)/2)
                 #Run DCR on this one slit.  Put return value into cr_data np.array. slit will contain cleaned_data
-                (num_pixels, cr_slit) = fatboyclib.dcr(slit, thresh=thresh, xrad=xrad, yrad=yrad, npass=npass, diaxis=diaxis, lrad=lrad, urad=urad, grad=grad, verbose=verbose)
+                (num_pixels, cr_slit) = fatboyclib.dcr(slit, thresh=thresh, xrad=xrad, yrad=yrad, npass=npass, diaxis=diaxis, lrad=lrad, urad=urad, grad=grad, verbose=max(verbose-1, 0))
                 npix += num_pixels 
                 cr_data[ylo:yhi,:][tempMask] = cr_slit[tempMask].astype(np.float32)
                 clean_data[ylo:yhi,:][tempMask] = slit[tempMask]
@@ -1728,7 +1729,7 @@ def dcr(image, clean_file=None, crfile=None, slitmask=None, thresh=4.0, xrad=9, 
                 if (xrad > (xhi-xlo)/2):
                     xrad = int((xhi-xlo)/2)
                 #Run DCR on this one slit.  Put return value into cr_data np.array. slit will contain cleaned_data
-                (num_pixels, cr_slit) = fatboyclib.dcr(slit, thresh=thresh, xrad=xrad, yrad=yrad, npass=npass, diaxis=diaxis, lrad=lrad, urad=urad, grad=grad, verbose=verbose)
+                (num_pixels, cr_slit) = fatboyclib.dcr(slit, thresh=thresh, xrad=xrad, yrad=yrad, npass=npass, diaxis=diaxis, lrad=lrad, urad=urad, grad=grad, verbose=max(verbose-1, 0))
                 npix += num_pixels
                 cr_data[:,xlo:xhi][tempMask] = cr_slit[tempMask].astype(np.float32)
                 clean_data[:,xlo:xhi][tempMask] = slit[tempMask]

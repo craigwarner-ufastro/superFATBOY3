@@ -497,7 +497,7 @@ class removeCosmicRaysSpecProcess(fatboyProcess):
         self._options.setdefault('dcr_upper_radius', 3)
         self._optioninfo.setdefault('dcr_upper_radius', 'Upper radius of region for replacement statistics')
         self._options.setdefault('dcr_verbosity', '1')
-        self._optioninfo.setdefault('dcr_verbosity', 'Verbose level [0,1,2]')
+        self._optioninfo.setdefault('dcr_verbosity', 'dcr output: 0 = pixels cleaned per frame, 1 = also per slitlet,\n2 = also per-pass counts and frame statistics before/after cleaning')
         self._options.setdefault('dcr_xradius', 9)
         self._optioninfo.setdefault('dcr_xradius', 'x-radius of the box (size = 2 * radius)')
         self._options.setdefault('dcr_yradius', 9)
