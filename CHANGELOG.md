@@ -54,6 +54,12 @@ the matching section here. New options are listed with their default.
   (the `-1` on `ylo` plus truncation of the float edges). `flexure_correction` measures and removes it along
   with the flexure; without it, it is uncorrected.
 - **removeCosmicRaysSpec / badPixelMaskSpec**: algorithm audits not started (LA Cosmic reviewed, below).
+- **scipy >= 1.15 vs older scipy**: `leastsq` was reimplemented in C; results are not bit-identical (KAST red arm:
+  rectified arc lines move 0.013 px median / 0.06 px max, wavelength solution 0.03 px, extracted spectrum 0.03 sigma
+  median; LUCI and MIRADAS SOS spectra within 0.4 / 0.08 sigma). Isolated by a numpy 2 + scipy 1.14 venv, which matches
+  the system install through rectify on all three. What is left under numpy 2 alone is ~1e-7 relative in the wavelength
+  solution coefficients and the resampled products (a float32 scalar somewhere in the wavecal fit - not yet located).
+  Noted in requirements.txt and by setup_venv.sh; to be analyzed more fully (which fits/traces are sensitive).
 
 ---
 
@@ -154,6 +160,10 @@ the matching section here. New options are listed with their default.
   some values remain (60 sites; also in main). (2.3.45)
 
 ### gpu_drihizzle (GPU drizzle)
+- WCS header math (CD matrix, CRPIX) uses float64 copies of the distortion coefficients (the kernels still get
+  float32). Under numpy 2 (NEP 50) float32 coefficients times Python floats stayed float32 (CRPIX2 1308.48135 ->
+  1308.48120); under numpy 1 the CD denominator was float32. Headers now agree between numpy versions; CD values
+  change at ~5e-8 relative. Data unchanged. (2.4.15)
 - Read the run's verbosity (`log._verbosity`); it read the class default, so `verbosity = verbose` never applied to
   GPU drizzle (also in the py2 original). The start-up banner prints only when verbose (also CPU drizzle). (2.4.11)
 - CUDA illegal-address crash: a `float32` cast on the wrong operand packed a float64 into a float
@@ -184,6 +194,10 @@ the matching section here. New options are listed with their default.
   argument corrupted the kernel arguments; now matches the CPU version. (2.3.43)
 
 ### drihizzle (CPU drizzle)
+- WCS header math (CD matrix, CRPIX) uses float64 copies of the distortion coefficients (the kernels still get
+  float32). Under numpy 2 (NEP 50) float32 coefficients times Python floats stayed float32 (CRPIX2 1308.48135 ->
+  1308.48120); under numpy 1 the CD denominator was float32. Headers now agree between numpy versions; CD values
+  change at ~5e-8 relative. Data unchanged. (2.4.15)
 - `turbo` with `dropsize < 1`: only one side of each overlap weight was clipped (`np.minimum(..,1)` /
   `np.maximum(..,0)`), so a drop near the far side of a pixel got weights like -0.3 and 1.3. Both sides now
   clipped to [0, 1], 2-d and 3-d; also in main. (2.4.3)
@@ -232,6 +246,8 @@ the matching section here. New options are listed with their default.
   root). (2.4.13)
 - `superFatboy3.py` no longer appends `..` to `sys.path` (it picked up whatever `superFATBOY` folder sat next to the run
   directory, e.g. the py2 original); run from a source tree it puts that tree first, an installed copy leaves the path alone. (2.4.13)
+- `setup_venv.sh`: the final check runs from the venv directory (from the checkout it imported the tree's copy, wrong for
+  `--no-editable`); a relative `--venv` is made absolute; prints a note when scipy >= 1.15 (also in requirements.txt). (2.4.15)
 
 ### Line lists (data/linelists)
 - New `Redman_UArNe_lines_MIRADAS.dat`: the Redman UArNe list with the 50 lines that sit at a consistent offset from

@@ -190,8 +190,12 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
         xcoeffs = [0,1,0]
         ycoeffs = [0,0,1]
 
+    #float64 copies for the WCS/CRPIX header math: with numpy 2 (NEP 50) float32 coefficients times
+    #Python floats stay float32, so the header values lost precision
     xcoeffs = np.array(xcoeffs).astype(np.float32)
+    xcw = xcoeffs.astype(np.float64)
     ycoeffs = np.array(ycoeffs).astype(np.float32)
+    ycw = ycoeffs.astype(np.float64)
 
     ncoeff = len(xcoeffs)
     order = 0
@@ -484,11 +488,11 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
 
             #Update WCS if applicable
             if (hasWCS):
-                denom = xcoeffs[1]*ycoeffs[2]-xcoeffs[2]*ycoeffs[1]
-                new11 = (cd11*ycoeffs[2] + cd21*ycoeffs[1])/denom
-                new21 = (cd21*ycoeffs[2] - cd11*ycoeffs[1])/denom
-                new12 = (cd12*xcoeffs[1] - cd22*xcoeffs[2])/denom
-                new22 = (cd12*xcoeffs[2] + cd22*xcoeffs[1])/denom
+                denom = xcw[1]*ycw[2]-xcw[2]*ycw[1]
+                new11 = (cd11*ycw[2] + cd21*ycw[1])/denom
+                new21 = (cd21*ycw[2] - cd11*ycw[1])/denom
+                new12 = (cd12*xcw[1] - cd22*xcw[2])/denom
+                new22 = (cd12*xcw[2] + cd22*xcw[1])/denom
                 newHeader['CD1_1'] = new11
                 newHeader['CD2_2'] = new22
                 newHeader['CD1_2'] = new12
@@ -508,8 +512,8 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
                         xout+=xcoeffs[n]*xin**(l-k)*yin**k
                     if (ytrans is None):
                         yout+=ycoeffs[n]*xin**(l-k)*yin**k
-                    xrefout+=xcoeffs[n]*xrefin**(l-k)*yrefin**k
-                    yrefout+=ycoeffs[n]*xrefin**(l-k)*yrefin**k
+                    xrefout+=xcw[n]*xrefin**(l-k)*yrefin**k
+                    yrefout+=ycw[n]*xrefin**(l-k)*yrefin**k
                     n+=1
 
             if (_verbosity == fatboyLog.VERBOSE):
@@ -1305,11 +1309,11 @@ def drihizzle(frames, outfile=None, weightfile=None, inmask=None, weight='exptim
             #Update WCS if applicable
             if (hasWCS):
                 if (j != 0):
-                    denom = xcoeffs[1]*ycoeffs[2]-xcoeffs[2]*ycoeffs[1]
-                    new11 = (cd11*ycoeffs[2] + cd21*ycoeffs[1])/denom
-                    new21 = (cd21*ycoeffs[2] - cd11*ycoeffs[1])/denom
-                    new12 = (cd12*xcoeffs[1] - cd22*xcoeffs[2])/denom
-                    new22 = (cd12*xcoeffs[2] + cd22*xcoeffs[1])/denom
+                    denom = xcw[1]*ycw[2]-xcw[2]*ycw[1]
+                    new11 = (cd11*ycw[2] + cd21*ycw[1])/denom
+                    new21 = (cd21*ycw[2] - cd11*ycw[1])/denom
+                    new12 = (cd12*xcw[1] - cd22*xcw[2])/denom
+                    new22 = (cd12*xcw[2] + cd22*xcw[1])/denom
                 updateHeaderEntry(temp[0].header, 'CD1_1', new11)
                 updateHeaderEntry(temp[0].header, 'CD2_2', new22)
                 updateHeaderEntry(temp[0].header, 'CD1_2', new12)
@@ -1641,9 +1645,14 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
         ycoeffs = [0,0,1,0]
         zcoeffs = [0,0,0,1]
 
+    #float64 copies for the WCS/CRPIX header math: with numpy 2 (NEP 50) float32 coefficients times
+    #Python floats stay float32, so the header values lost precision
     xcoeffs = np.array(xcoeffs).astype(np.float32)
+    xcw = xcoeffs.astype(np.float64)
     ycoeffs = np.array(ycoeffs).astype(np.float32)
+    ycw = ycoeffs.astype(np.float64)
     zcoeffs = np.array(zcoeffs).astype(np.float32)
+    zcw = zcoeffs.astype(np.float64)
 
     ncoeff = len(xcoeffs)
     order = 0
@@ -1923,11 +1932,11 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
 
             #Update WCS if applicable
             if (hasWCS):
-                denom = xcoeffs[1]*ycoeffs[2]-xcoeffs[2]*ycoeffs[1]
-                new11 = (cd11*ycoeffs[2] + cd21*ycoeffs[1])/denom
-                new21 = (cd21*ycoeffs[2] - cd11*ycoeffs[1])/denom
-                new12 = (cd12*xcoeffs[1] - cd22*xcoeffs[2])/denom
-                new22 = (cd12*xcoeffs[2] + cd22*xcoeffs[1])/denom
+                denom = xcw[1]*ycw[2]-xcw[2]*ycw[1]
+                new11 = (cd11*ycw[2] + cd21*ycw[1])/denom
+                new21 = (cd21*ycw[2] - cd11*ycw[1])/denom
+                new12 = (cd12*xcw[1] - cd22*xcw[2])/denom
+                new22 = (cd12*xcw[2] + cd22*xcw[1])/denom
                 newHeader['CD1_1'] = new11
                 newHeader['CD2_2'] = new22
                 newHeader['CD1_2'] = new12
@@ -1950,9 +1959,9 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
                             yout+=ycoeffs[n]*xin**(i-l+1)*yin**(l-k)*zin**(k-1)
                         if (ztrans is None):
                             zout+=zcoeffs[n]*xin**(i-l+1)*yin**(l-k)*zin**(k-1)
-                        xrefout+=xcoeffs[n]*xrefin**(i-l+1)*yrefin**(l-k)*zrefin**(k-1)
-                        yrefout+=ycoeffs[n]*xrefin**(i-l+1)*yrefin**(l-k)*zrefin**(k-1)
-                        zrefout+=zcoeffs[n]*xrefin**(i-l+1)*yrefin**(l-k)*zrefin**(k-1)
+                        xrefout+=xcw[n]*xrefin**(i-l+1)*yrefin**(l-k)*zrefin**(k-1)
+                        yrefout+=ycw[n]*xrefin**(i-l+1)*yrefin**(l-k)*zrefin**(k-1)
+                        zrefout+=zcw[n]*xrefin**(i-l+1)*yrefin**(l-k)*zrefin**(k-1)
                         n+=1
 
             if (_verbosity == fatboyLog.VERBOSE):
@@ -2432,11 +2441,11 @@ def drihizzle3d(frames, outfile=None, weightfile=None, inmask=None, weight='expt
             #Update WCS if applicable
             if (hasWCS):
                 if (j != 0):
-                    denom = xcoeffs[1]*ycoeffs[2]-xcoeffs[2]*ycoeffs[1]
-                    new11 = (cd11*ycoeffs[2] + cd21*ycoeffs[1])/denom
-                    new21 = (cd21*ycoeffs[2] - cd11*ycoeffs[1])/denom
-                    new12 = (cd12*xcoeffs[1] - cd22*xcoeffs[2])/denom
-                    new22 = (cd12*xcoeffs[2] + cd22*xcoeffs[1])/denom
+                    denom = xcw[1]*ycw[2]-xcw[2]*ycw[1]
+                    new11 = (cd11*ycw[2] + cd21*ycw[1])/denom
+                    new21 = (cd21*ycw[2] - cd11*ycw[1])/denom
+                    new12 = (cd12*xcw[1] - cd22*xcw[2])/denom
+                    new22 = (cd12*xcw[2] + cd22*xcw[1])/denom
                 updateHeaderEntry(temp[0].header, 'CD1_1', new11)
                 updateHeaderEntry(temp[0].header, 'CD2_2', new22)
                 updateHeaderEntry(temp[0].header, 'CD1_2', new12)

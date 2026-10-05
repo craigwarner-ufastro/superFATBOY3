@@ -2,6 +2,8 @@
 # Nothing in superFATBOY needs a particular numpy major version; these minimums are the versions known to work
 # together (scipy >= 1.13, astropy >= 6.1 and matplotlib >= 3.8.4 are needed if pip picks numpy 2).
 numpy>=1.24
+# Note: scipy 1.15 reimplemented the least-squares fitter (leastsq) in C. Results agree with scipy <= 1.14 within the
+# fit noise but are not bit-identical (e.g. the KAST red skyline trace); compare runs made with the same scipy.
 scipy>=1.10
 astropy>=5.3
 matplotlib>=3.7

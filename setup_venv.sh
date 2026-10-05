@@ -108,7 +108,8 @@ else
     say "creating the venv $VENV"
     "$PY" -m venv "$VENV"
 fi
-VPY="$(cd "$VENV" && pwd)/bin/python"
+VENV="$(cd "$VENV" && pwd)"
+VPY="$VENV/bin/python"
 "$VPY" -m pip install --quiet --upgrade pip setuptools wheel
 
 #--- Python packages
@@ -179,6 +180,8 @@ fi
 
 #--- check
 say "checking the installation"
+#run from the venv directory, not the checkout, so the check imports what was installed
+cd "$(dirname "$(dirname "$VPY")")"
 "$VPY" - <<'EOF'
 import warnings
 warnings.filterwarnings("ignore")
@@ -186,6 +189,8 @@ import numpy, scipy, astropy
 import superFATBOY
 from superFATBOY import fatboyclib
 print("setup_venv>   superFATBOY %s, numpy %s, scipy %s, astropy %s" % (superFATBOY.__version__, numpy.__version__, scipy.__version__, astropy.__version__))
+if tuple(int(v) for v in scipy.__version__.split(".")[:2]) >= (1, 15):
+    print("setup_venv>   note: scipy >= 1.15 fits (leastsq) differ slightly from older scipy - compare runs made with the same scipy")
 a = numpy.arange(11, dtype=numpy.float32)
 assert fatboyclib.median(a) == 5.0, "fatboyclib.median gave the wrong answer"
 print("setup_venv>   C extension fatboyclib: ok")
