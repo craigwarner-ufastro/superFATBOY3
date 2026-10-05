@@ -26,6 +26,7 @@ the matching section here. New options are listed with their default.
 | `wavecal.py` standalone, v2.4.7 | 24 LUCI arc slitlets in a loop | Same grades as the pipeline, RMS within 0.004 px, slit 10 replaced the same way |
 | SINFONI 30 Dor (sinfoni_test_30Dor), verified v2.4.12 | GPU + CPU | Full chain to registered/stacked datacubes, no tracebacks; slitmask identical to the py2 original; stacked image and cube correlate 0.9998 / 0.9987 with py2 (flux 0.6% lower). GPU vs CPU: 1.000000 / 0.999998. `SINFONI_IFU_template.xml` |
 | MEGARA LCB (mt1), verified v2.4.12 | GPU + CPU | From the raw data (bolt): 622 fibers traced (identical to py2), 56 sky fibers identified, 622/622 wavelength-calibrated (610 excellent), sky subtracted. GPU vs CPU: 87/139 files identical, the rest within 5e-6 of the data range. `MEGARA_LCB_template.xml` |
+| Python venv (`setup_venv.sh`: numpy 2.2, scipy 1.15, astropy 6.1, CuPy 14), v2.4.13 | KAST (sarik_quack1) GPU + CPU | No tracebacks, wavelength RMS 0.065 / 0.048 px. Against the system install (numpy 1.26, scipy 1.11), same code: identical through skySubtracted; blue arm identical to 1e-7 through extraction. Red arm differs from rectify on because scipy 1.15 replaced the Fortran MINPACK behind `leastsq` with a C translation (1e-9 px differences; isolated by crossing numpy/scipy versions - numpy 2 itself changes nothing): the noisy red skyline trace (0.7 px sigma) accepts/rejects a few points differently, so the distortion fit and the faint red spectrum shift (4% median). Expect the same between any two scipy versions on either side of 1.15. |
 | FourStar, others | - | Not yet run through the refactored pipeline |
 
 ## Open issues
@@ -221,6 +222,16 @@ the matching section here. New options are listed with their default.
 - `makeLineList.py --clean LIST -m measured_lines...`: flags (or with `--correct` moves) the lines of an existing list
   whose offset from the solutions is consistent over the fits (`--flag-offset` 0.3 px, `--min-fits` 3,
   `--min-significance` 3, `--max-correct` 1.5 px); several measured files are pooled; `-m` may be repeated. (2.4.9)
+- New `setup_venv.sh` + `requirements.txt`: a virtual environment with everything superFATBOY needs, on a desktop or HPC (no root):
+  CuPy wheel matched to the NVIDIA driver (`--cuda auto|11|12|none`), editable install (the venv's `superFatboy3.py` runs the
+  checkout, no reinstall after edits), fatboyclib built against the venv's numpy, optional nvcc build of fatboycudalib/cp_select
+  (`--ccbin`), `--modules` for HPC module loads, `--deepcr`, and a smoke test. numpy 2 works (the old numpy<2 need came from the
+  system scipy 1.11, not from superFATBOY). (2.4.13)
+- `pyproject.toml` trimmed to its build-system table: its stale `[project]` metadata (name superFATBOY3, version 2.3.6) overrode
+  setup.py under modern setuptools/pip. The C extension is named `superFATBOY.fatboyclib` (the slash form built it at the repo
+  root). (2.4.13)
+- `superFatboy3.py` no longer appends `..` to `sys.path` (it picked up whatever `superFATBOY` folder sat next to the run
+  directory, e.g. the py2 original); run from a source tree it puts that tree first, an installed copy leaves the path alone. (2.4.13)
 
 ### Line lists (data/linelists)
 - New `Redman_UArNe_lines_MIRADAS.dat`: the Redman UArNe list with the 50 lines that sit at a consistent offset from

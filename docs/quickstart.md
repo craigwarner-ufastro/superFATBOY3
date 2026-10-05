@@ -11,7 +11,7 @@ been developed and tested on Linux only.
 
 | Needed | For | Notes |
 |---|---|---|
-| Python 3 (3.8 or newer) | everything | |
+| Python 3 (3.9 or newer) | everything | |
 | `numpy`, `scipy`, `astropy` | everything | FITS I/O is through `astropy.io.fits` |
 | a C++ compiler, Python headers | everything | one small C++ extension (`fatboyclib`) is built during install |
 | `matplotlib` | optional | QA plots and `debug_mode` |
@@ -22,6 +22,40 @@ been developed and tested on Linux only.
 No GPU? That is fine. Set `<param name="gpumode" value="no"/>` and everything runs on the CPU, just more slowly.
 
 ## 2. Install
+
+### Recommended: a virtual environment (`setup_venv.sh`)
+
+From the superFATBOY3 checkout:
+
+```bash
+./setup_venv.sh                    # creates ./venv; GPU support if an NVIDIA GPU is found
+source venv/bin/activate
+superFatboy3.py my_data.xml
+```
+
+It needs no root and works on a desktop, a laptop or an HPC cluster. It creates the venv; installs numpy, scipy,
+astropy, matplotlib and sep; picks the CuPy build that matches your NVIDIA driver (or none, for CPU only); installs
+superFATBOY in **editable** mode, so `superFatboy3.py` always runs your checkout and edits need no reinstall; builds
+the C extension and, if `nvcc` is found, the optional CUDA extensions against the venv's numpy; and checks the result
+(including running a kernel on the GPU). Useful options (`./setup_venv.sh --help` lists them all):
+
+| Option | Use |
+|---|---|
+| `--venv DIR` | put the venv somewhere else (on a cluster: your home or project space) |
+| `--cuda none` / `--cuda 11` / `--cuda 12` | CPU only, or force a CuPy build (e.g. on an HPC login node with no GPU) |
+| `--ccbin /usr/bin/g++-9` | host compiler for `nvcc` when the default `gcc` is newer than your CUDA supports |
+| `--deepcr` | also install deepCR (pulls in PyTorch, several GB) |
+| `--modules "python gcc cuda"` | `module load` these first (HPC) |
+
+On HPC, load a Python (3.9+), a compiler and (for the CUDA extensions) CUDA first, e.g. `module load python gcc cuda`,
+and build on a GPU node or pass `--cuda 12`. The CUDA extensions are optional: without them GPU mode uses CuPy's own
+kernels.
+
+Results from two environments with different scipy versions can differ slightly: scipy 1.15 reimplemented the
+least-squares fitter (`leastsq`), so marginal points in a noisy trace can be accepted in one and rejected in the other.
+Compare runs made in the same environment when checking for regressions.
+
+### Other ways
 
 ```bash
 # (Optional, GPU users) build the CUDA helper libraries first.

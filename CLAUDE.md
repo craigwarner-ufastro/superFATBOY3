@@ -26,6 +26,18 @@ Since v2.4.5-2.4.7: line lists and `makeLineList.py` are documented in `docs/ins
 module in `docs/api.md` (its example is *(tested)* on the LUCI arc), and the wavelength-calibration fallbacks, second
 pass and fit functions in `docs/processes/spectroscopy.md`.
 
+## Virtual environment (setup_venv.sh, v2.4.13)
+
+`./setup_venv.sh [--venv DIR] [--cuda auto|11|12|none] [--ccbin /usr/bin/g++-9]` builds a venv with
+`requirements.txt`, the CuPy wheel matching `nvidia-smi`, an editable install (no reinstall after edits - the old "egg is stale"
+gotcha goes away inside a venv), fatboyclib built in place against the venv's numpy, and optionally the nvcc CUDA extensions.
+numpy 2 is fine; the old numpy<2 constraint was the system scipy 1.11. **Results vs the system install are not byte-identical,
+and that is scipy, not numpy**: scipy 1.15 rewrote MINPACK (`leastsq`) in C, ~1e-9 differences that flip marginal accept/reject
+decisions in sequential traces (KAST red skyline trace). Proved by crossing versions (numpy 2.2 + scipy 1.14 == system bit for
+bit). For regression comparisons, compare runs from the same environment. `superFatboy3.py` no longer does
+`sys.path.append('..')` (it imported the py2 tree when run from `/home/cwarner/work/...`); `pyproject.toml` is build-system only
+(its stale `[project]` table overrode setup.py).
+
 ## Orientation for anyone writing documentation on superFATBOY (read this first)
 
 This section is a summary for a Claude session that has **not** been doing this refactor work and

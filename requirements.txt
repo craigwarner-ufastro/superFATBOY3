@@ -1,0 +1,11 @@
+# superFATBOY3 Python dependencies (installed by setup_venv.sh, or: pip install -r requirements.txt)
+# Nothing in superFATBOY needs a particular numpy major version; these minimums are the versions known to work
+# together (scipy >= 1.13, astropy >= 6.1 and matplotlib >= 3.8.4 are needed if pip picks numpy 2).
+numpy>=1.24
+scipy>=1.10
+astropy>=5.3
+matplotlib>=3.7
+# Optional, installed by setup_venv.sh unless --minimal: source extraction used by some imaging alignment options
+sep>=1.2
+# GPU (installed by setup_venv.sh according to the NVIDIA driver): cupy-cuda12x or cupy-cuda11x
+# Optional (setup_venv.sh --deepcr): deepCR cosmic-ray removal, pulls in PyTorch (large)

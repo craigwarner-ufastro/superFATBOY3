@@ -6,8 +6,8 @@ from setuptools import setup, find_packages, Extension
 import os, numpy
 
 name = 'superFATBOY'
-version = '2.4.12'
-cmod_name = 'superFATBOY/fatboyclib'
+version = '2.4.13'
+cmod_name = 'superFATBOY.fatboyclib'
 sources = ['superFATBOY/fatboyclibmodule.cpp']
 
 include_dirs = [ numpy.get_include() ]

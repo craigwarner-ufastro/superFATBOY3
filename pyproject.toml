@@ -1,13 +1,6 @@
+# Build system only: the package metadata (name, version, scripts, the fatboyclib C extension) lives in setup.py, which
+# is the one place the version is bumped.  Runtime dependencies are in requirements.txt (setup_venv.sh installs them,
+# with the CuPy build that matches your NVIDIA driver).
 [build-system]
 requires = ["setuptools>=61.0", "wheel", "numpy"]
 build-backend = "setuptools.build_meta"
-
-[project]
-name = "superFATBOY3"
-version = "2.3.6"
-dependencies = [
-    "numpy",
-    "scipy",
-    "astropy",
-    "cupy-cuda12x"  # Optional: lists dependencies explicitly
-]

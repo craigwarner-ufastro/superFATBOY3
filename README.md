@@ -29,7 +29,11 @@ Templates for these are in [`superFATBOY/data/templates/`](superFATBOY/data/temp
 - deepCR (optional)
 
 ## Installation
-- To install optional GPU libraries, first use Makefile to build CUDA code, first make sure that you set environment variable `CUDA_HOME` to point to your install directory for CUDA (e.g. `/usr/local/cuda`).  Optionally you may also set`PYTHON3_INCLUDE` to e.g. `/usr/include/python3.8` but this *should* be auto-detected and not necessary to set manually unless it complains that it can't find Python.h.
+- **Recommended:** `./setup_venv.sh` creates a virtual environment with everything superFATBOY3 needs (CuPy matched to
+  your NVIDIA driver, or CPU only), installs superFATBOY in editable mode (no reinstall after editing the code) and checks
+  the result; it works on a desktop/laptop or an HPC cluster without root.  Then `source venv/bin/activate` and run
+  `superFatboy3.py my_data.xml`.  See `./setup_venv.sh --help` and the [quick start](docs/quickstart.md#2-install).
+- Alternatively, to install optional GPU libraries, first use Makefile to build CUDA code, first make sure that you set environment variable `CUDA_HOME` to point to your install directory for CUDA (e.g. `/usr/local/cuda`).  Optionally you may also set`PYTHON3_INCLUDE` to e.g. `/usr/include/python3.8` but this *should* be auto-detected and not necessary to set manually unless it complains that it can't find Python.h.
 Then
 ```
 cd superFATBOY3/superFATBOY

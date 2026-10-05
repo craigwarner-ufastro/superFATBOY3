@@ -4,10 +4,12 @@
 #
 #
 import sys, os, inspect, glob
-sys.path.append('..') #Append parent directory to sys.path
+#Run from a source tree (superFATBOY3/superFATBOY/superFatboy3.py): use that tree's package, ahead of any installed
+#copy.  An installed script (sudo install, or a venv's bin) leaves sys.path alone - adding the parent of the current
+#directory, as this used to, could pick up an unrelated "superFATBOY" folder next to the data.
 sfbdir = os.path.dirname(os.path.abspath(__file__))
-sfbdir = sfbdir[:sfbdir.rfind('/superFATBOY')]
-sys.path.append(sfbdir) #Append absoulute path in case script is run from another dir
+if (os.path.basename(sfbdir) == "superFATBOY" and os.access(os.path.join(sfbdir, "__init__.py"), os.F_OK)):
+    sys.path.insert(0, os.path.dirname(sfbdir))
 #Check for argument specifying the GPU device before anything imports cupy.
 #CuPy selects its device from CUDA_VISIBLE_DEVICES (unlike PyCUDA's CUDA_DEVICE), so this
 #must be set before any transitive cupy import below.
