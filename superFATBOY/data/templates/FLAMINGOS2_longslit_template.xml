@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<queries>
+<!-- Flamingos-2 (Gemini South) longslit, two bands in one file.  Each band is its own <dataset> with a
+        tag ("jh", "hk"); options and params further down can be scoped to one band with tag="jh" / tag="hk" (see
+        wavelengthCalibrate).  Each band has its own science object, standard star (<calib type="standard">,
+        used by calibStarDivide), flats and arcs; the darks are listed under the first dataset and shared.
+
+        Flamingos-2 data are dispersed along the columns: property dispersion = vertical on every block.
+        flat_type lamp_on / lamp_off pairs feed findSlitlets/flatDivideSpec flat_method = dome_on-off.
+        The <object> inside a calib ties that flat or arc to one science target.
+        Files are named S<date>S<index>.fits - the prefix carries the night sub-directory and date.
+-->
+  <dataset dir="/path/to/F2/data/" datatype="spectrum" tag="jh">
+    <object type="auto" name="lmcx1_jh" prefix="2009dec01/S2009">
+      <index start="0165" stop="192"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+    </object>
+
+    <calib type="standard" name="hip30037_jh" prefix="2009dec01/S2009">
+      <index start="0208" stop="0212"/>
+      <property name="specmode" value="longslit"/>
+      <property name="sky_method" value="step"/>
+      <property name="dispersion" value="vertical"/>
+    </calib>
+
+    <calib name="dark3s" type="dark" prefix="2009dec01/S2009">
+      <index start="0270" stop="0277"/>
+    </calib>
+
+    <calib name="dark30s" type="dark" prefix="2009dec01/S2009">
+      <index start="0306" stop="0313"/>
+    </calib>
+
+    <calib name="dark60s" type="dark" prefix="2009dec01/S2009">
+      <index start="0315" stop="0322"/>
+    </calib>
+
+    <calib name="hip30037_jh_flat_on" type="flat" prefix="2009dec01/S2009">
+      <value>0214</value>
+      <property name="flat_type" value="lamp_on"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+      <object>
+        <value>hip30037_jh</value>
+      </object>
+    </calib>
+
+    <calib name="hip30037_jh_flat_off" type="flat" prefix="2009dec01/S2009">
+      <value>0215</value>
+      <property name="flat_type" value="lamp_off"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+      <object>
+        <value>hip30037_jh</value>
+      </object>
+    </calib>
+
+    <calib name="hip30037_jh_arc" type="arclamp" prefix="2009dec01/S2009">
+      <value>0213</value>
+      <property name="arclamp_type" value="lamp_on"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+      <object>
+        <value>hip30037_jh</value>
+      </object>
+    </calib>
+
+    <calib name="lmcx1_jh_flat_on" type="flat" prefix="2009dec01/S2009">
+      <index start="0200" stop="0201"/>
+      <property name="flat_type" value="lamp_on"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+      <object>
+        <value>lmcx1_jh</value>
+      </object>
+    </calib>
+
+    <calib name="lmcx1_jh_flat_off" type="flat" prefix="2009dec01/S2009">
+      <value>0202</value>
+      <property name="flat_type" value="lamp_off"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+      <object>
+        <value>lmcx1_jh</value>
+      </object>
+    </calib>
+
+    <calib name="lmcx1_jh_arc" type="arclamp" prefix="2009dec01/S2009">
+      <value>193</value>
+      <property name="arclamp_type" value="lamp_on"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+      <object>
+        <value>lmcx1_jh</value>
+      </object>
+    </calib>
+  </dataset>
+
+  <dataset dir="/path/to/F2/data/" datatype="spectrum" tag="hk">
+
+    <object type="auto" name="lmcx1_hk" prefix="2009dec01/S2009">
+      <index start="0227" stop="254"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+    </object>
+
+    <calib type="standard" name="hip30037_hk" prefix="2009dec01/S2009">
+      <index start="0216" stop="0220"/>
+      <index start="0261" stop="0264"/>
+      <property name="specmode" value="longslit"/>
+      <property name="sky_method" value="step"/>
+      <property name="dispersion" value="vertical"/>
+    </calib>
+
+    <calib name="dark3s" type="dark" prefix="2009dec01/S2009">
+      <index start="0270" stop="0277"/>
+    </calib>
+
+    <calib name="dark30s" type="dark" prefix="2009dec01/S2009">
+      <index start="0306" stop="0313"/>
+    </calib>
+
+    <calib name="dark60s" type="dark" prefix="2009dec01/S2009">
+      <index start="0315" stop="0322"/>
+    </calib>
+
+    <calib name="hip30037_hk_flat_on" type="flat" prefix="2009dec01/S2009">
+      <value>0222</value>
+      <value>0267</value>
+      <property name="flat_type" value="lamp_on"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+      <object>
+        <value>hip30037_hk</value>
+      </object>
+    </calib>
+
+    <calib name="hip30037_hk_flat_off" type="flat" prefix="2009dec01/S2009">
+      <value>0223</value>
+      <value>0268</value>
+      <property name="flat_type" value="lamp_off"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+      <object>
+        <value>hip30037_hk</value>
+      </object>
+    </calib>
+
+    <calib name="hip30037_hk_arc" type="arclamp" prefix="2009dec01/S2009">
+      <value>0221</value>
+      <value>0265</value>
+      <property name="arclamp_type" value="lamp_on"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+      <object>
+        <value>hip30037_hk</value>
+      </object>
+    </calib>
+
+    <calib name="lmcx1_hk_flat_on" type="flat" prefix="2009dec01/S2009">
+      <value>0256</value>
+      <property name="flat_type" value="lamp_on"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+      <object>
+        <value>lmcx1_hk</value>
+      </object>
+    </calib>
+
+    <calib name="lmcx1_hk_flat_off" type="flat" prefix="2009dec01/S2009">
+      <value>0257</value>
+      <property name="flat_type" value="lamp_off"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+      <object>
+        <value>lmcx1_hk</value>
+      </object>
+    </calib>
+
+    <calib name="lmcx1_hk_arc" type="arclamp" prefix="2009dec01/S2009">
+      <value>255</value>
+      <property name="arclamp_type" value="lamp_on"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+      <object>
+        <value>lmcx1_hk</value>
+      </object>
+    </calib>
+  </dataset>
+</queries>
+
+<processes>
+  <process name="noisemap">
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="darkSubtract">
+    <option name="prompt_for_missing_dark" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="createCleanSkies">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="createMasterArclamps">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="findSlitlets">
+    <option name="flat_method" value="dome_on-off"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="cosmicRaysSpec">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="cosmic_ray_algorithm" value="dcr"/>
+    <option name="cosmic_ray_method" value="mask"/>
+  </process>
+
+  <process name="flatDivideSpec">
+    <option name="flat_method" value="dome_on-off"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="flat_selection" value="all"/>
+  </process>
+
+  <process name="badPixelMaskSpec">
+    <option name="write_calib_output" value="yes"/>
+    <!-- a text file listing one bad pixel mask per band (full paths), e.g. bpm_jh.fits and bpm_hk.fits -->
+    <option name="default_bad_pixel_mask" value="f2_bpms.dat"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="skySubtractSpec">
+    <option name="sky_method" value="dither"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="rectify">
+    <option name="fit_order" value="3"/>
+    <option name="sky_fit_order" value="4"/>
+    <option name="continuum_trace_xinit" value="1390"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="drihizzle_kernel" value="turbo"/>
+    <option name="drihizzle_dropsize" value="1"/>
+  </process>
+
+  <process name="doubleSubtract">
+    <option name="find_shift_constrain_boxsize" value="50"/>
+    <option name="find_shift_box_xlo" value="605"/>
+    <option name="find_shift_box_xhi" value="1995"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="shiftAdd">
+    <option name="find_shift_constrain_boxsize" value="50"/>
+    <option name="find_shift_box_xlo" value="605"/>
+    <option name="find_shift_box_xhi" value="1995"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="wavelengthCalibrate">
+<!-- Wavelength units are those of the line list: Angstrom for every shipped list except hklines_mod.dat (microns).
+        min_wavelength, max_wavelength and wavelength_scale_guess (units per pixel) must use the same units. -->
+    <option name="calibrate_slitlets_individually" value="yes"/>
+<!-- HeNeAr arcs (use_arclamps = yes).  Other line lists and starting guesses (see docs/instruments.md,
+        "Line lists by instrument"):
+    sky lines instead of the arcs (set use_arclamps = no):
+    <option name="line_list" value="OHlines.dat" tag="jh"/>
+    <option name="line_list" value="OHlines_hires_250.dat" tag="hk"/>
+    K-band R3000 grism:
+    <option name="wavelength_scale_guess" value="-3.5"/>
+    <option name="min_wavelength" value="18000"/>
+    <option name="max_wavelength" value="24000"/>
+-->
+    <option name="line_list" value="HeNeAr_vac.dat"/>
+    <option name="wavelength_scale_guess" value="-6.6" tag="jh"/>
+    <option name="wavelength_scale_guess" value="-7.5" tag="hk"/>
+    <option name="max_wavelength" value="19000" tag="jh"/>
+    <option name="max_wavelength" value="22500" tag="hk"/>
+    <option name="min_wavelength" value="7800" tag="jh"/>
+    <option name="min_wavelength" value="12500" tag="hk"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="debug_mode" value="no"/>
+  </process>
+
+  <process name="extractSpectra">
+    <option name="extract_method" value="auto"/>
+    <option name="extract_weighting" value="linear"/>
+<!-- large dithers (100 arcsec here) leave wide, lightly exposed wings in the shift-added frame; ignore them
+        when looking for the spectrum -->
+    <option name="extract_min_exposure_fraction" value="0.5"/>
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="calibStarDivide">
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+</processes>
+
+<parameters>
+  <param name="outputdir" value="/path/to/output"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="gain_keyword" value="GAIN"/>
+  <param name="readnoise_keyword" value="RDNOISE"/>
+  <param name="grism_keyword" value="GRISMPOS"/>
+  <param name="object_keyword" value="OBJECT"/>
+  <param name="ra_keyword" value="RAOFFSET"/>
+  <param name="dec_keyword" value="DECOFFSE"/>
+  <param name="pixscale_keyword" value="PIXSCALE"/>
+  <param name="relative_offset_arcsec" value="yes"/>
+    <!--
+  <param name="gpumode" value="no"/>
+  -->
+</parameters>
+</fatboy>

@@ -116,6 +116,8 @@
   </process>
 
   <process name="wavelengthCalibrate">
+<!-- Wavelength units are those of the line list: Angstrom for every shipped list except hklines_mod.dat (microns).
+        min_wavelength, max_wavelength and wavelength_scale_guess (units per pixel) must use the same units. -->
 <!-- the following line list works for the HgAr lamp with OSIRIS in 2019
         if you use the Neon lamp you will need a different line list -->
     <option name="line_list" value="osiris_HgAr_air_nist.dat"/>
@@ -126,6 +128,13 @@
     <option name="wavelength_scale_guess" value="3.8"/>
     <option name="min_wavelength" value="2400"/>
     <option name="max_wavelength" value="8880" />
+<!-- Other line lists and starting guesses (see docs/instruments.md, "Line lists by instrument"):
+  R2500U with the Xe lamp:
+    <option name="line_list" value="Xenon_optical_air.dat"/>
+    <option name="wavelength_scale_guess" value="-0.57"/>
+    <option name="min_wavelength" value="3440"/>
+    <option name="max_wavelength" value="4650"/>
+-->
     <option name="use_arclamps" value="yes"/>
     <option name="write_output" value="yes"/>
     <option name="write_calib_output" value="yes"/>

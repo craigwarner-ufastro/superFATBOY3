@@ -1,3 +1,4 @@
+#Units: Angstrom (air or vacuum not recorded).  superFATBOY is unit agnostic: give min_wavelength, max_wavelength and wavelength_scale_guess in the same units as this list.
 10026.47	50.0
 10026.47	50.0
 10059.6		1.0

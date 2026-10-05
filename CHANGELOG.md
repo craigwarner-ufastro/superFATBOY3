@@ -26,6 +26,7 @@ the matching section here. New options are listed with their default.
 | `wavecal.py` standalone, v2.4.7 | 24 LUCI arc slitlets in a loop | Same grades as the pipeline, RMS within 0.004 px, slit 10 replaced the same way |
 | SINFONI 30 Dor (sinfoni_test_30Dor), verified v2.4.12 | GPU + CPU | Full chain to registered/stacked datacubes, no tracebacks; slitmask identical to the py2 original; stacked image and cube correlate 0.9998 / 0.9987 with py2 (flux 0.6% lower). GPU vs CPU: 1.000000 / 0.999998. `SINFONI_IFU_template.xml` |
 | MEGARA LCB (mt1), verified v2.4.12 | GPU + CPU | From the raw data (bolt): 622 fibers traced (identical to py2), 56 sky fibers identified, 622/622 wavelength-calibrated (610 excellent), sky subtracted. GPU vs CPU: 87/139 files identical, the rest within 5e-6 of the data range. `MEGARA_LCB_template.xml` |
+| Flamingos-2 longslit (lmcx1, JH + HK), verified v2.4.16 | GPU + CPU | Full chain through calibStarDivide, no errors; wavelength solutions 0.05-0.11 px. GPU vs CPU: in-band spectra within 2% (apertures 1-2 px apart), HK standard rectified one row taller on the CPU (fitted distortion differs slightly). `FLAMINGOS2_longslit_template.xml` |
 | Python venv (`setup_venv.sh`: numpy 2.2, scipy 1.15, astropy 6.1, CuPy 14), v2.4.13 | KAST (sarik_quack1) GPU + CPU | No tracebacks, wavelength RMS 0.065 / 0.048 px. Against the system install (numpy 1.26, scipy 1.11), same code: identical through skySubtracted; blue arm identical to 1e-7 through extraction. Red arm differs from rectify on because scipy 1.15 replaced the Fortran MINPACK behind `leastsq` with a C translation (1e-9 px differences; isolated by crossing numpy/scipy versions - numpy 2 itself changes nothing): the noisy red skyline trace (0.7 px sigma) accepts/rejects a few points differently, so the distortion fit and the faint red spectrum shift (4% median). Expect the same between any two scipy versions on either side of 1.15. |
 | FourStar, others | - | Not yet run through the refactored pipeline |
 
@@ -94,6 +95,10 @@ the matching section here. New options are listed with their default.
   noisemap, carried on through rectification). Now `np.sqrt(np.abs(...))`, 8 sites; also in main. (2.4.3)
 
 ### fatboyDataUnit / datatypes
+- `readHeader()`: COMMENT/HISTORY/blank cards from the frame's previous header are copied card by card (skipping ones
+  already there). Assigning them by key handed astropy all of a file's COMMENT lines as one multi-line value, which
+  it refuses ("FITS header values must contain standard printable ASCII characters") - every Gemini/Flamingos-2
+  frame has four, so badPixelMaskSpec failed on every frame of lmcx1. Also in main. (2.4.16)
 - `fatboySpectrum.printAllSlitmasks()` is a debugging method and always prints when called; its calls in resample and
   the SINFONI processes are commented out or gated on `debug_mode` (the 2.4.11 verbosity gate inside it removed). (2.4.14)
 - `initialize()`: when NAXIS1/NAXIS2 are missing from the header the shape is now read from the data
@@ -250,6 +255,11 @@ the matching section here. New options are listed with their default.
   `--no-editable`); a relative `--venv` is made absolute; prints a note when scipy >= 1.15 (also in requirements.txt). (2.4.15)
 
 ### Line lists (data/linelists)
+- docs/instruments.md: every shipped list with its line count, range and medium, and a "Line lists by instrument"
+  table (lamp and sky lists, scale guesses, wavelength ranges, source configs); the spectroscopy templates carry
+  the alternatives as commented-out options. (2.4.16)
+- Every shipped line list starts with a `#Units:` comment (Angstrom, or microns for `hklines_mod.dat`; air or vacuum where
+  known); the templates note that min/max wavelength and the scale guess use the line list's units. (2.4.16)
 - New `Redman_UArNe_lines_MIRADAS.dat`: the Redman UArNe list with the 50 lines that sit at a consistent offset from
   the MIRADAS solutions flagged -1, from the SOL, SOS and MOS order-20 test data. On data not used for the cleaning: SOS
   median RMS 0.24 -> 0.20 px, MOS order 20 (split by slitlet) 0.22 -> 0.16 px; no slitlet worse. Correcting the lines
@@ -355,6 +365,16 @@ the matching section here. New options are listed with their default.
 - Negative-index slice wraparound near the array edges (8 sites, pre-existing). (Sept 15)
 
 ### extractSpectra
+- findSpectra: the Gaussian fit that sets each aperture starts at the peak inside the detected range instead of its
+  middle, and a fit with a negative amplitude or a centre outside its window falls back to the detected range (with
+  a warning) instead of +/- 3 sigma of the bad fit. On the Flamingos-2 HK standard a one-sided shelf put the middle
+  16 px off the peak and the fit diverged to a 151 px aperture; now 1120-1132 (sigma 2.0, as JH). Same code in main.
+  (2.4.16)
+- New `extract_min_exposure_fraction` (default `0`, off): finding spectra ignores cross-dispersion positions with
+  less than this fraction of the maximum exposure (their 1-d cut values are set to the median of the rest, so the
+  background statistics are unchanged). On Flamingos-2 lmcx1 HK an amplified stripe in the wing of the shift-added
+  frame (a third of the exposure) outranked LMC X-1 - both the current and the original ranking pick the narrower,
+  flat-topped peak. 0.5 finds the target in HK and leaves JH's aperture within 5 px. (2.4.16)
 - Gaussian weighting referenced undefined `extract_xlo`/`extract_xhi`. (Sept 15)
 
 ### calibStarDivide
@@ -415,6 +435,7 @@ the matching section here. New options are listed with their default.
   mean bias -12.9 -> -0.2, recall ~95%. (2.3.43)
 
 ### badPixelMask / badPixelMaskSpec
+- badPixelMaskSpec failed on every Gemini/Flamingos-2 frame when loading a default mask; fixed in fatboyDataUnit.readHeader (2.4.16).
 - `.astype()` on plain floats; `bpm_replace_median_neighbor_gpu` result discarded. (Sept 16)
 - Sigma clipping used undefined `sig`; missing imcombine imports; `combineSourceFrames` call. (2.3.43)
 

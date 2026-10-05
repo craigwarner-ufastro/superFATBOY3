@@ -203,9 +203,20 @@
         wavelength_calibration_file wc_miradas_sos.xml specifies
         the wavelength scale initial guesses for each slitlet -->
   <process name="wavelengthCalibrate">
+<!-- Wavelength units are those of the line list: Angstrom for every shipped list except hklines_mod.dat (microns).
+        min_wavelength, max_wavelength and wavelength_scale_guess (units per pixel) must use the same units. -->
     <option name="calibrate_slitlets_individually" value="yes"/>
     <option name="line_list" value="Redman_UArNe_lines.dat"/>
     <option name="wavelength_scale_guess" value="0.25"/>
+<!-- Other line lists and starting guesses (see docs/instruments.md, "Line lists by instrument"):
+  The same UArNe list with lines that are consistently off for MIRADAS flagged (lower fit RMS):
+    <option name="line_list" value="Redman_UArNe_lines_MIRADAS.dat"/>
+  Other lamps / sky lines:
+    <option name="line_list" value="MIRADAS_UArHg_lines.dat"/>
+    <option name="line_list" value="NeAr_lines_IR.dat"/>
+    <option name="line_list" value="ThAr_lines_IR.dat"/>
+    <option name="line_list" value="OHlines_hires_4000.dat"/>
+-->
     <option name="fit_order" value="3"/>
     <option name="write_output" value="yes"/>
     <option name="wavelength_calibration_file" value="wc_miradas_sos.xml"/>

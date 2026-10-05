@@ -1,3 +1,4 @@
+#Units: Angstrom (air or vacuum not recorded).  superFATBOY is unit agnostic: give min_wavelength, max_wavelength and wavelength_scale_guess in the same units as this list.
 #Telluric Emission lines in JH spectra with relative intensities
   10015.555    2.97897  
   10289.457    4.18211  

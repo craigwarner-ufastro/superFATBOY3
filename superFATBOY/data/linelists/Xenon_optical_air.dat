@@ -1,3 +1,4 @@
+#Units: Angstrom, air wavelengths.  superFATBOY is unit agnostic: give min_wavelength, max_wavelength and wavelength_scale_guess in the same units as this list.
 #Xenon lines, air wavelengths (Angstrom), 2865-8232 A.  Columns: wavelength, relative intensity, optional flag
 #(-1 = blended, not used in the fit), comment.
 #Wavelengths: NIST ASD observed wavelengths (Xe I) and the NIST Handbook of Basic Atomic Spectroscopic Data

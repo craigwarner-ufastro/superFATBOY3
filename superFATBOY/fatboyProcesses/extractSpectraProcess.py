@@ -401,6 +401,8 @@ class extractSpectraProcess(fatboyProcess):
         self._optioninfo.setdefault('extract_nspec', 'Maximum number of spectra per slitlet to extract')
         self._options.setdefault('extract_min_flux_pct', '0.001')
         self._optioninfo.setdefault('extract_min_flux_pct', 'If the flux dips below this percent of the peak flux\nthen it will be considered a break between continua\nwhen auto-detecting.')
+        self._options.setdefault('extract_min_exposure_fraction', '0')
+        self._optioninfo.setdefault('extract_min_exposure_fraction', 'When finding spectra (auto/semi), ignore pixels whose exposure\nis below this fraction of the maximum (e.g. 0.5): the edges of a\nshift-added frame, where few frames overlap.  0 = use all pixels.')
         self._options.setdefault('extract_xlo', None)
         self._optioninfo.setdefault('extract_xlo', 'Coordinate for extraction box for 1-d cut to auto-detect')
         self._options.setdefault('extract_xhi', None)
@@ -783,6 +785,18 @@ class extractSpectraProcess(fatboyProcess):
             else:
                 data = maskNegativesAndZerosCPU(fdu.getData(tag="cleanFrame"), zeroRep=1.e-6, negRep=0.0)
 
+        #Optionally ignore cross-dispersion positions with little exposure when looking for spectra: in the wings of a
+        #shift-added frame few frames overlap and artifacts are amplified (Flamingos-2 lmcx1 HK: a stripe there
+        #outranked the target).  Those positions of the 1-d cut are set to the median of the rest, so the background
+        #statistics are not changed.
+        min_exp_frac = float(self.getOption("extract_min_exposure_fraction", fdu.getTag()))
+        expmap = None
+        expFDU = calibs['continuum_source'] if ('continuum_source' in calibs) else fdu
+        if (min_exp_frac > 0 and expFDU.hasProperty("exposure_map")):
+            expmap = expFDU.getData(tag="exposure_map", force_cpu=True)
+            if (expmap is None or expmap.shape != data.shape):
+                expmap = None
+
         #Loop over nslits
         for j in range(nslits):
             if (useESfile):
@@ -817,6 +831,18 @@ class extractSpectraProcess(fatboyProcess):
                 #Instead of taking median, sum so we get short spectra but do a
                 #5 pixel boxcar median smoothing to get rid of hot pixels
                 oned = mediansmooth1d(np.sum(slit[extract_xlo:extract_xhi, :], 0), 5)
+
+            if (expmap is not None):
+                if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
+                    eprof = np.median(expmap[ylos[j] : yhis[j] + 1, extract_xlo:extract_xhi], 1)
+                else:
+                    eprof = np.median(expmap[extract_xlo:extract_xhi, ylos[j] : yhis[j] + 1], 0)
+                lowExp = eprof < min_exp_frac*eprof.max()
+                if (len(lowExp) == len(oned) and lowExp.any() and not lowExp.all()):
+                    if (hasattr(oned, 'get')):
+                        oned = oned.get()
+                    oned = np.array(oned)
+                    oned[lowExp] = np.median(oned[~lowExp])
 
             if (extract_method == "full"):
                 specList.append(np.array([0, ysize, j + 1]))
@@ -881,7 +907,11 @@ class extractSpectraProcess(fatboyProcess):
                             ylo = y[k][1] - ylos[j]
                     p = np.zeros(4, dtype=np.float64)
                     p[0] = np.max(oned[ylo:yhi])
-                    p[1] = ycen - ylo
+                    #Start the fit at the peak inside the range found, not its middle: a shelf on one side of the
+                    #profile can put the middle far from the peak (Flamingos-2 HK standard: 16 px) and the fit then
+                    #wandered off to a broad negative Gaussian
+                    ypk = int(np.argmax(oned[int(y[i][0]) : int(y[i][1]) + 1])) + int(y[i][0])
+                    p[1] = ypk - ylo
                     p[2] = width / (2 * math.sqrt(2 * math.log(2)))
                     p[3] = gpu_arraymedian(oned[ylo:yhi])
                     #lsq = leastsq(gaussResiduals, p, args=(np.arange(len(oned[ylo:yhi]), dtype=np.float64), oned[ylo:yhi]))
@@ -891,10 +921,19 @@ class extractSpectraProcess(fatboyProcess):
                         print("extractSpectraProcess::findSpectra> Warning: Could not fit spectrum in slitlet " + str(j + 1))
                         self._log.writeLog(__name__, "Could not fit spectrum in slitlet " + str(j + 1), type=fatboyLog.WARNING)
                         break
-                    fwhm = abs(lsq[0][2]) * 2 * math.sqrt(2 * math.log(2))
-                    xwidth = abs(extract_nsigma * lsq[0][2]) #Width for extract box, default = 3sigma.
-                    y[i][0] = int(lsq[0][1] - xwidth + ylo) + ylos[j]
-                    y[i][1] = int(lsq[0][1] + xwidth + ylo) + ylos[j]
+                    if (lsq[0][0] <= 0 or lsq[0][1] < 0 or lsq[0][1] > yhi - ylo):
+                        #The fit converged on something other than this spectrum (negative amplitude or centre outside
+                        #the fit window): keep the range that was found instead of +/- nsigma of a bad fit
+                        print("extractSpectraProcess::findSpectra> Warning: Gaussian fit to spectrum " + str(y[i][:2]) + " in slitlet " + str(j + 1) + " failed; using the detected range.")
+                        self._log.writeLog(__name__, "Gaussian fit to spectrum " + str(y[i][:2]) + " in slitlet " + str(j + 1) + " failed; using the detected range.", type=fatboyLog.WARNING)
+                        fwhm = 0
+                        y[i][0] = int(y[i][0]) + ylos[j]
+                        y[i][1] = int(y[i][1]) + ylos[j]
+                    else:
+                        fwhm = abs(lsq[0][2]) * 2 * math.sqrt(2 * math.log(2))
+                        xwidth = abs(extract_nsigma * lsq[0][2]) #Width for extract box, default = 3sigma.
+                        y[i][0] = int(lsq[0][1] - xwidth + ylo) + ylos[j]
+                        y[i][1] = int(lsq[0][1] + xwidth + ylo) + ylos[j]
                     if (extract_method == "semi"):
                         #if semi-automatic, add extract_ylo back in here instead of above 8/16/18
                         y[i] += extract_ylo

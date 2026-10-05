@@ -504,6 +504,10 @@ Finds the spectra in each rectified, wavelength-calibrated frame and extracts th
 
 When your science frames have no bright continuum, add a bright standard or other continuum as `<calib type="continuum_source">` and its trace is used to locate the spectra.
 
+Each detected spectrum is then fitted with a Gaussian, started at its peak, and extracted over `extract_gauss_width` sigma
+(default 3) either side of the centre. If the fit fails or converges on something else (a negative amplitude, or a centre
+outside the fit window) the detected range is used instead and a warning is logged.
+
 **2. Extract** (`extract_weighting`):
 
 | Value | Behaviour |
@@ -518,6 +522,7 @@ When your science frames have no bright continuum, add a bright standard or othe
 | `extract_sigma` | `2` | Minimum significance above the background in the cut |
 | `extract_min_width` | `5` | Minimum width in pixels of a spectrum |
 | `extract_min_flux_pct` | `0.001` | A dip below this percent of the peak flux separates two continua |
+| `extract_min_exposure_fraction` | `0` | When finding spectra, ignore positions across the slit whose exposure is below this fraction of the maximum (try `0.5` for dithered data with large offsets). In the wings of a shift-added frame only a few frames overlap, so artifacts there are amplified and can outrank the real spectrum. `0` uses every position. |
 | `gaussian_box_size` | `25` | Half-size of the box used for the Gaussian fit |
 | `write_fits_table` | `no` | Also write the spectra as a FITS binary table |
 | `write_plots` | `no` | Save QA plots as PNG |

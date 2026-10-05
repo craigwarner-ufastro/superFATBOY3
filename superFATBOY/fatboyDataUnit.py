@@ -632,9 +632,20 @@ class fatboyDataUnit:
             self._keywords.setdefault('pixscale_keyword', ['PIXSCALE'])
             self._keywords.setdefault('rotpa_keyword', ['ROT_PA', 'ROTPA', 'INSTPA'])
 
-        #Update values in oldheader
+        #Update values in oldheader.  COMMENT/HISTORY/blank cards can repeat, and astropy returns all of them as one
+        #multi-line value that cannot be assigned back (Gemini headers have 4 COMMENT lines), so copy those card by
+        #card, skipping ones this header already has.
+        commentary = ('COMMENT', 'HISTORY', '')
         for key in oldheader:
+            if (key in commentary):
+                continue
             self._header[key] = oldheader[key]
+        if (hasattr(oldheader, 'cards')):
+            existing = set((c.keyword, str(c.value)) for c in self._header.cards if c.keyword in commentary)
+            for card in oldheader.cards:
+                if (card.keyword in commentary and (card.keyword, str(card.value)) not in existing):
+                    self._header.append((card.keyword, card.value), end=True)
+                    existing.add((card.keyword, str(card.value)))
 
         ##Look at _keywords that are lists and find which applies if any
         for key in list(self._keywords):

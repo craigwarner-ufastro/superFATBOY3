@@ -2,7 +2,7 @@
 
 *[Docs home](README.md)*
 
-**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.15.
+**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.16.
 Run `superFatboy3.py -list` yourself for the live list, or regenerate this file with
 `python3 docs/gen_options_reference.py`. For prose descriptions of what each process does, see the
 [process guide](processes/README.md).
@@ -337,6 +337,7 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `debug_mode` | `no` | Show plots of each slitlet and print out debugging information. |
 | `extract_gauss_width` | `None` | Width in sigma of the extraction box based on Gaussian fit to 1-d cut (default 3) |
 | `extract_method` | `auto` | auto \| full \| manual \| semi \| filename.xml |
+| `extract_min_exposure_fraction` | `0` | When finding spectra (auto/semi), ignore pixels whose exposure is below this fraction of the maximum (e.g. 0.5): the edges of a shift-added frame, where few frames overlap.  0 = use all pixels. |
 | `extract_min_flux_pct` | `0.001` | If the flux dips below this percent of the peak flux then it will be considered a break between continua when auto-detecting. |
 | `extract_min_width` | `5` | Minimum width to be defined as a spectrum |
 | `extract_nspec` | `1` | Maximum number of spectra per slitlet to extract |

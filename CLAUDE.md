@@ -26,6 +26,25 @@ Since v2.4.5-2.4.7: line lists and `makeLineList.py` are documented in `docs/ins
 module in `docs/api.md` (its example is *(tested)* on the LUCI arc), and the wavelength-calibration fallbacks, second
 pass and fit functions in `docs/processes/spectroscopy.md`.
 
+## Remaining instruments, one XML at a time; Flamingos-2 lmcx1 (2026-10-05, v2.4.16)
+
+Craig copies an old XML from bolt (`/net/bolt/home/warner/superFATBOY/superFATBOY/*.xml`, also `/net/bolt/data2/warner/superFATBOY/`;
+their bolt-local paths `/data1`, `/data2`, `/home/warner` map to `/net/bolt/...`) into `xml/`, runs it, and hands it over. Make a
+`claude_<name>_{gpu,cpu}.xml` copy (debug_mode no, `prompt_for_missing_dark` no, own outputdir and quick_start_file), run serially,
+compare with any old reduction stored next to the data, then add `xml/verified/<name>.xml` + `-cpu.xml`, a template, and the
+validated-table rows (CHANGELOG, docs/instruments.md, docs/quickstart.md, README). Still to do: CIRCE, Flamingos-2 imaging, GMOS
+(needs a `gmosSpectrum` datatype Craig will find), FIRE, FISICA, MMT-Pol, RHO, SUBARU (nick-subaru).
+- **lmcx1** (F2 longslit JH+HK): every Gemini frame has 4 standard COMMENT cards; `readHeader` assigned commentary keys as one
+  multi-line value -> astropy ValueError on every badPixelMaskSpec (fixed: copied card by card). The HK science spectrum was
+  found on an amplified stripe in the low-exposure wing of the shift-added frame (ABBA nods 100" apart):
+  `extract_min_exposure_fraction` (default 0 = off, 0.5 in the template) replaces low-exposure positions of the 1-d cut with
+  the median. findSpectra's Gaussian started at the middle of a lopsided detected range and diverged (151 px aperture):
+  now starts at the peak and falls back to the detected range on a negative/out-of-window fit - regression on KAST, LUCI,
+  MIRADAS SOS: 120 spectra byte-identical. GPU vs CPU not byte-identical here (noise maps 1e-7, CR cleaning 1e-4 -> skyline
+  distortion fit -> HK standard rectified one row taller on CPU); in-band spectra within 2%.
+- Line lists: `#Units:` header in every shipped list (pipeline is unit agnostic; `hklines_mod.dat` is microns), table of
+  lists by instrument in docs/instruments.md, commented alternatives in every spectroscopy template.
+
 ## Virtual environment (setup_venv.sh, v2.4.13)
 
 `./setup_venv.sh [--venv DIR] [--cuda auto|11|12|none] [--ccbin /usr/bin/g++-9]` builds a venv with
@@ -94,6 +113,7 @@ runs (not just "compiles") have validated:
   v2.4.12 (`xml/verified/`, templates `SINFONI_IFU_template.xml`, `MEGARA_LCB_template.xml`). The user's working SINFONI
   XML has `debug_mode=yes` and an `overwite_files` typo - test copies/verified copies fix both. Bugs it took: v2.4.10
   (extractSpectra negative sigma, fiber QA image, collapseFibers GPU), v2.4.12 (megaraSkySubtract math.sqrt + GPU/host mixing).
+- **Flamingos-2 longslit** (`xml/lmcx1.xml`, JH+HK) verified GPU + CPU v2.4.16, `FLAMINGOS2_longslit_template.xml`.
 - **Not yet run through the refactored pipeline at all**: FourStar, and whatever other instruments have
   templates/data but no session log entry here. Don't assume these work.
 - `/home/cwarner/work/xml/verified/verified_configs.md` is the authoritative list of

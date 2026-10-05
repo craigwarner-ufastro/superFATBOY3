@@ -164,11 +164,19 @@
         scale guess (Angstroms per pixel, negative = wavelength decreases with x) are for the H+K
         setup of the verified data: change them for your grating and filter. -->
   <process name="wavelengthCalibrate">
+<!-- Wavelength units are those of the line list: Angstrom for every shipped list except hklines_mod.dat (microns).
+        min_wavelength, max_wavelength and wavelength_scale_guess (units per pixel) must use the same units. -->
     <option name="calibrate_slitlets_individually" value="yes"/>
     <option name="line_list" value="OHlines_hires_100.dat"/>
     <option name="min_wavelength" value="13000"/>
     <option name="max_wavelength" value="26000"/>
     <option name="wavelength_scale_guess" value="-4.5"/>
+<!-- Other line lists and starting guesses (see docs/instruments.md, "Line lists by instrument"):
+  NeArXe arclamps (set use_arclamps = yes; NeArXe.dat is not shipped - copy it next to this file):
+    <option name="line_list" value="NeArXe.dat"/>
+  Denser OH list for higher resolution:
+    <option name="line_list" value="OHlines_hires_250.dat"/>
+-->
     <option name="use_arclamps" value="no"/>
     <option name="write_output" value="yes"/>
     <option name="write_calib_output" value="yes"/>

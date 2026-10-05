@@ -1,3 +1,4 @@
+#Units: Angstrom (air or vacuum not recorded).  superFATBOY is unit agnostic: give min_wavelength, max_wavelength and wavelength_scale_guess in the same units as this list.
 #Redman et al. UArNe line list (Redman_UArNe_lines.dat) cleaned for MIRADAS: lines that sit at a consistent offset from the
 #MIRADAS solutions (a wavelength wrong for MIRADAS, or a blend at its resolution) are flagged -1 - kept in the template,
 #left out of the fit.  Offsets measured in the SOL, SOS and MOS order-20 test datasets.  On data not used for the cleaning

@@ -26,6 +26,7 @@ unhandled errors and sane, finite output. Each has a matching template XML file 
 | **LUCI** (LBT) | Near-IR multi-object spectroscopy (MOS) | [`LUCI_MOS_template.xml`](../superFATBOY/data/templates/LUCI_MOS_template.xml) | `spectrum` | 24 slitlets (region file, group trace, flexure correction), A-B nodded H+K frames, through spectral extraction: 19 spectra, 24 wavelength solutions. The standard star (different mask, no calibrations) is not included |
 | **MEGARA** (GTC) | Fiber IFU (LCB, 623 fibers), HR-I | [`MEGARA_LCB_template.xml`](../superFATBOY/data/templates/MEGARA_LCB_template.xml) | `megaraSpectrum` | 3 science frames from raw: 622 fibers traced (identical to the Python 2 version), 56 sky fibers identified, all fibers wavelength-calibrated (median 0.05 px), sky subtracted. GPU and CPU agree to 5e-6 of the data range |
 | **SINFONI** (VLT) | Near-IR image-slicer IFU (32 slitlets), H+K | [`SINFONI_IFU_template.xml`](../superFATBOY/data/templates/SINFONI_IFU_template.xml) | `spectrum` | 30 Doradus and a standard star, full chain to registered, stacked datacubes; slitmask identical to the Python 2 version, stacked image within 0.6% of it |
+| **Flamingos-2** (Gemini South) | Near-IR longslit, JH and HK in one file (two datasets) | [`FLAMINGOS2_longslit_template.xml`](../superFATBOY/data/templates/FLAMINGOS2_longslit_template.xml) | `spectrum` | LMC X-1 and a standard in JH and HK, ABBA nods 100" apart: dark, dome on-off flats, bad pixel masks, dither sky subtraction, rectification, double subtraction, shift-add, HeNeAr wavelength calibration (0.05-0.11 px), extraction, standard-star division |
 
 How strong is the evidence?
 
@@ -95,18 +96,60 @@ Files in [`superFATBOY/data/linelists/`](../superFATBOY/data/linelists/) and
 [`superFATBOY/data/config/`](../superFATBOY/data/config/) can be named in an XML file without a path; superFATBOY looks
 there if the file is not found as given. `superFatboy3.py -config` lists them.
 
-| Files | Purpose |
-|---|---|
-| `Redman_UArNe_lines.dat`, `MIRADAS_UArHg_lines.dat` | MIRADAS arclamp line lists |
-| `Redman_UArNe_lines_MIRADAS.dat` | `Redman_UArNe_lines.dat` cleaned for MIRADAS with `makeLineList.py --clean`: 50 lines with a consistent offset flagged -1, lowering the fit RMS by up to about a quarter where those lines fall (see the [MIRADAS guide](miradas.md#wavelengthcalibrate)) |
-| `OHlines.dat`, `OHlines_hires_*.dat` | OH sky-line lists at several resolutions (near-IR sky calibration) |
-| `henearjhuse_air.dat`, `HeNeAr_vac.dat`, `hklines_mod.dat` | near-IR and optical arc and sky-line lists |
-| `NeAr_lines_IR.dat`, `ThAr_lines_IR.dat`, `Xenon_IR.dat` | infrared arclamp lists |
-| `KAST_hehgcd.txt`, `KAST_neon.txt` | KAST blue and red arclamps |
-| `osiris_HgAr_air_nist.dat` | OSIRIS HgAr lamp |
-| `Xenon_optical_air.dat` | Xe I and Xe II, 2860-8230 A (air), with the strong blue Xe I lines (4501, 4525, 4583, 4624, 4671 A) and intensities measured from a GTC/OSIRIS xenon arc between 3446 and 4606 A (see the file header for how each intensity was derived) |
-| `megara_ThArNe_list.dat` | MEGARA ThArNe lamp |
-| `wc_miradas_sol.xml`, `wc_miradas_sos.xml`, `wc_miradas_mos_NN.xml` | MIRADAS per-slitlet wavelength-calibration starting guesses (see the [MIRADAS guide](miradas.md)) |
+| File | Lines | Range (A) | Medium | Purpose |
+|---|---|---|---|---|
+| `OHlines.dat` | 95 | 10016-18524 | ? | OH sky lines, J and H, low resolution (FLAMINGOS-1, FISICA, Flamingos-2) |
+| `OHlines_hires_100.dat`, `_250`, `_500`, `_4000` | 400 / 600 / 838 / 2596 | 10003-24999 | ? | OH sky lines J through K; the number is the number of lines kept (fewer = only the brightest, for lower resolution) |
+| `henearjhuse_air.dat` | 65 | 9123-18428 | air | HeNeAr lamp, J and H (FLAMINGOS-1, FISICA) |
+| `HeNeAr_vac.dat` | 142 | 9126-45176 | vacuum | HeNeAr lamp, J through L (Flamingos-2) |
+| `hklines_mod.dat` | 95 | 1.1-2.4 **microns** | ? | H and K lamp lines; note the unit |
+| `NeAr_lines_IR.dat` | 241 | 9489-25794 | ? | NeAr lamp, near-IR |
+| `ThAr_lines_IR.dat` | 3938 | 9660-25991 | ? | ThAr lamp, near-IR |
+| `Xenon_IR.dat` | 128 | 10027-24832 | ? | Xe lamp, near-IR (SINFONI) |
+| `Redman_UArNe_lines.dat` (also `.txt`) | 11741 | 8334-44051 | ? | UArNe lamp (Redman et al.), MIRADAS |
+| `Redman_UArNe_lines_MIRADAS.dat` | 11741 | 8334-44051 | ? | `Redman_UArNe_lines.dat` cleaned for MIRADAS with `makeLineList.py --clean`: 50 lines with a consistent offset flagged -1, lowering the fit RMS by up to about a quarter where those lines fall (see the [MIRADAS guide](miradas.md#wavelengthcalibrate)) |
+| `MIRADAS_UArHg_lines.dat` | 11696 | 8334-44051 | ? | UArHg lamp, MIRADAS |
+| `KAST_hehgcd.txt` | 16 | 3261-5461 | air | KAST blue arm HeHgCd lamps |
+| `KAST_neon.txt` | 42 | 5770-8635 | air | KAST red arm Ne (and Ar) lamps |
+| `osiris_HgAr_air_nist.dat` | 26 | 3651-9123 | air | OSIRIS HgAr lamp (NIST) |
+| `Xenon_optical_air.dat` | 196 | 2865-8232 | air | Xe I and Xe II, with the strong blue Xe I lines (4501, 4525, 4583, 4624, 4671 A) and intensities measured from a GTC/OSIRIS xenon arc between 3446 and 4606 A (see the file header for how each intensity was derived) |
+| `megara_ThArNe_list.dat` | 299 | 5111-8998 | ? | MEGARA ThArNe lamp, all VPH filters (sections by filter in the file) |
+| `wc_miradas_sol.xml`, `wc_miradas_sos.xml`, `wc_miradas_mos_NN.xml` | | | | MIRADAS per-slitlet wavelength-calibration starting guesses (see the [MIRADAS guide](miradas.md)) |
+
+"?" = not recorded in the file; check before mixing a list with data calibrated in the other medium.
+
+superFATBOY does not assume a wavelength unit: `min_wavelength`, `max_wavelength` and `wavelength_scale_guess` (units per
+pixel) just have to be in the units of the line list - Angstrom for every shipped list except `hklines_mod.dat`, which is
+in microns. Each list starts with a `#Units:` comment saying which.
+
+### Line lists by instrument
+
+What has been used with each spectrograph, and the starting guesses that went with it (`wavelength_scale_guess` in
+Angstrom per pixel - its sign follows the direction of increasing wavelength on the detector - and
+`min_wavelength`/`max_wavelength` in Angstrom). The templates carry the alternatives as commented-out options. Lists
+marked *not shipped* live with the user's configurations; copy them next to your XML file.
+
+| Instrument | Setup | Lamp list | Sky list | Scale guess | min - max | From |
+|---|---|---|---|---|---|---|
+| FLAMINGOS-1 | JH grism, MOS | `henearjhuse_air.dat` | `OHlines.dat` | 4.8 (lamp), 4.9 (sky) | 8500 - 19500 | specBench (sky: with `wc_specbench.xml`) |
+| FLAMINGOS-1 | HK grism | `hklines_mod.dat` | `OHlines_hires_*.dat` | | | (to be filled in) |
+| Flamingos-2 | JH grism, longslit | `HeNeAr_vac.dat` | `OHlines.dat` | -6.6 | 7800 - 19000 | lmcx1 |
+| Flamingos-2 | HK grism, longslit | `HeNeAr_vac.dat` | `OHlines_hires_*.dat` | -7.5 | 12500 - 22500 | lmcx1 |
+| Flamingos-2 | K, R3000 | `HeNeAr_vac.dat` | | -3.5 | 18000 - 22500/24000 | flamingos2_XID6592 |
+| FISICA | JH | `henearjhuse_air.dat` | `OHlines.dat` | 4.9 | | daveFisica (with `wc_specbench.xml`) |
+| LUCI (LBT) | H+K, MOS | `NeArXe.dat` (*not shipped*) | `OHlines_hires_100.dat` | -4.5 | 13000 - 26000 | caden_luci_test (sky) |
+| SINFONI (VLT) | H+K | `Xenon_IR.dat` | `OHlines_hires_250.dat` | -5.0 | 14000 - 25000 | sinfoni_test_30Dor (lamp); `hklines_mod.dat` also tried |
+| MIRADAS | SOL / SOS / MOS | `Redman_UArNe_lines.dat` or `_MIRADAS.dat`; `NeAr_lines_IR.dat`, `ThAr_lines_IR.dat` | `OHlines_hires_4000.dat` | 0.25 | per order: `wc_miradas_*.xml` | verified configs |
+| KAST (Lick) | blue arm | `KAST_hehgcd.txt` | | 1.0 | 3200 - 5700 | sarik_quack1 |
+| KAST (Lick) | red arm | `KAST_neon.txt` | | 1.2 | 5500 - 9000 | sarik_quack1 |
+| OSIRIS (GTC) | R1000B-type, longslit | `osiris_HgAr_air_nist.dat` | | 3.8 | 2400 - 8880 | sarik_osiris |
+| OSIRIS (GTC) | R2500U | `Xenon_optical_air.dat` | | -0.57 | 3440 - 4650 | avrajit-osiris |
+| MEGARA (GTC) | LCB, HR-I | `megara_ThArNe_list.dat` | | -0.1274 | 8380 - 8890 | mt1 (its local `megara-ThArNe-list.txt` is the HR-I subset of the shipped list) |
+| MEGARA (GTC) | LCB, LR-V | `megara_ThArNe_list.dat` | | -0.251 | 5000 - 6180 | J1107 (paul-megara) |
+| GMOS (Gemini) | B600 / R400-type, 3 CCDs | `CuAr_GMOS_S_SJ.txt`, `CuAr_homemade.txt` (*not shipped*) | | 0.5 / 1.03 | 3300 - 7000 | OBJ_1 (`n_segments` 3, `wc_gmos.xml`), R0329 |
+| FIRE (Magellan) | echelle | | | | | (to be filled in) |
+
+Imaging-only instruments (CIRCE, RHO, FourStar, EMIR imaging) need no line list.
 
 ### Making a line list: `makeLineList.py`
 

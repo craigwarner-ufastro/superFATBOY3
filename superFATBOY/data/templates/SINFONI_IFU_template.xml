@@ -168,6 +168,8 @@
 
 <!-- Xe arclamp, H+K grating -->
   <process name="wavelengthCalibrate">
+<!-- Wavelength units are those of the line list: Angstrom for every shipped list except hklines_mod.dat (microns).
+        min_wavelength, max_wavelength and wavelength_scale_guess (units per pixel) must use the same units. -->
     <option name="line_list" value="Xenon_IR.dat"/>
     <option name="fit_order" value="3"/>
     <option name="calibrate_slitlets_individually" value="yes"/>
@@ -175,6 +177,12 @@
     <option name="wavelength_scale_guess" value="-5.0"/>
     <option name="min_wavelength" value="14000"/>
     <option name="max_wavelength" value="25000"/>
+<!-- Other line lists and starting guesses (see docs/instruments.md, "Line lists by instrument"):
+  Sky lines instead of the Xe lamp (set use_arclamps = no):
+    <option name="line_list" value="OHlines_hires_250.dat"/>
+  H and K lamp list (note: this list is in microns):
+    <option name="line_list" value="hklines_mod.dat"/>
+-->
     <option name="use_arclamps" value="yes"/>
     <option name="write_output" value="yes"/>
     <option name="write_calib_output" value="yes"/>

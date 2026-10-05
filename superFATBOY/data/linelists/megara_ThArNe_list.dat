@@ -1,3 +1,4 @@
+#Units: Angstrom (air or vacuum not recorded).  superFATBOY is unit agnostic: give min_wavelength, max_wavelength and wavelength_scale_guess in the same units as this list.
 #Use with all MEGARA data
 #BLUE filter
 #5125.7663	6800.0	# ArII from NIST

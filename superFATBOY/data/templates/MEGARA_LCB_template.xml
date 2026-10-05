@@ -118,11 +118,19 @@
 
 <!-- HR-I VPH, ThArNe arcs.  Change the range and scale for another VPH -->
   <process name="wavelengthCalibrate">
+<!-- Wavelength units are those of the line list: Angstrom for every shipped list except hklines_mod.dat (microns).
+        min_wavelength, max_wavelength and wavelength_scale_guess (units per pixel) must use the same units. -->
     <option name="calibrate_slitlets_individually" value="yes"/>
     <option name="line_list" value="megara_ThArNe_list.dat"/>
     <option name="wavelength_scale_guess" value="-0.1274"/>
     <option name="min_wavelength" value="8380"/>
     <option name="max_wavelength" value="8890"/>
+<!-- Other line lists and starting guesses (see docs/instruments.md, "Line lists by instrument"):
+  LR-V (the line list covers all VPH filters):
+    <option name="wavelength_scale_guess" value="-0.251"/>
+    <option name="min_wavelength" value="5000"/>
+    <option name="max_wavelength" value="6180"/>
+-->
     <option name="use_arclamps" value="yes"/>
     <option name="write_output" value="yes"/>
     <option name="write_noisemaps" value="yes"/>

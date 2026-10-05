@@ -1,3 +1,4 @@
+#Units: microns (air or vacuum not recorded).  superFATBOY is unit agnostic: give min_wavelength, max_wavelength and wavelength_scale_guess in the same units as this list.
 1.08282 0.40
 1.09243 0.24	-1
 1.09733 0.35	-1

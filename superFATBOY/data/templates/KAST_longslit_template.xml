@@ -138,6 +138,8 @@
   </process>
 
   <process name="wavelengthCalibrate">
+<!-- Wavelength units are those of the line list: Angstrom for every shipped list except hklines_mod.dat (microns).
+        min_wavelength, max_wavelength and wavelength_scale_guess (units per pixel) must use the same units. -->
 <!-- line_list/wavelength_scale_guess/min_wavelength/max_wavelength are all arm-specific -
         KAST_hehgcd.txt (He+Hg+Cd) and KAST_neon.txt are the arclamp line lists that shipped
         with this test dataset's blue/red arcs respectively; substitute your own arc lamp's
@@ -151,6 +153,10 @@
     <option name="min_wavelength" value="5500" tag="red"/>
     <option name="max_wavelength" value="5700" tag="blue"/>
     <option name="max_wavelength" value="9000" tag="red"/>
+<!-- Other line lists and starting guesses (see docs/instruments.md, "Line lists by instrument"):
+  Only the HeHgCd (blue) and Ne (red) lamps have been used; for another lamp build a list with makeLineList.py, e.g.
+  makeLineList.py -e "Ar I" -r 5500 9000 -o KAST_argon.dat
+-->
     <option name="use_arclamps" value="yes"/>
     <option name="write_output" value="yes"/>
     <option name="write_calib_output" value="yes"/>
