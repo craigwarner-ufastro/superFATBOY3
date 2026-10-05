@@ -67,6 +67,9 @@ the matching section here. New options are listed with their default.
 ## Framework
 
 ### fatboyDatabase
+- Temp dirs: at startup each run removes `<tempdir>-<pid>` dirs left by crashed or killed runs (lock naming this host
+  and a process that no longer exists; an unlocked one only when over an hour old; another host's lock is left alone).
+  Before, the per-run dirs added in 2.4.1 piled up after crashes. (2.4.17)
 - Unattended runs no longer hang on an error: the "press ENTER" prompt is opt-in via
   `interactive_on_error` (default `no`). A process exception disables just that frame. (2.3.x, Sept 11)
 - Ingestion: a bad input file is isolated and logged; more than `max_init_failures` (default 3)

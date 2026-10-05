@@ -283,12 +283,35 @@ class fatboyDatabase:
         return True
     #end tempdirInUse
 
+    #Remove <tempdir>-<pid> dirs left by runs that crashed or were killed, so they do not pile up.  Only dirs whose
+    #lock names this host and a process that no longer exists are removed; a dir with no lock (a run that is just
+    #starting) is removed only when it is over an hour old, and one locked from another host is left alone.
+    def removeStaleTempdirs(self):
+        for d in glob.glob(self._tempdir+"-*"):
+            suffix = d[len(self._tempdir)+1:]
+            if (not suffix.isdigit() or not os.path.isdir(d)):
+                continue
+            lock = self.readTempdirLock(d)
+            if (lock is None):
+                try:
+                    stale = (time.time()-os.path.getmtime(d) > 3600)
+                except OSError:
+                    continue
+            else:
+                stale = (lock[0] == socket.gethostname() and not self.tempdirInUse(d))
+            if (stale):
+                shutil.rmtree(d, ignore_errors=True)
+                print("fatboyDatabase::setupTempdir> Removed temp dir "+d+" left by an earlier run.")
+                self._log.writeLog(__name__, "Removed temp dir "+d+" left by an earlier run.")
+    #end removeStaleTempdirs
+
     #Claim the temp dir for this run.  One left by a finished or crashed run is cleared and reused; one in use
     #by another live run (e.g. a second dataset started from the same directory) is left alone and this run
     #uses <tempdir>-<pid> instead.
     def setupTempdir(self):
         if (self.getParam('tempdir') is not None):
             self._tempdir = str(self.getParam('tempdir'))
+        self.removeStaleTempdirs()
         for attempt in range(2):
             if (self.tempdirInUse(self._tempdir)):
                 newdir = self._tempdir+"-"+str(os.getpid())

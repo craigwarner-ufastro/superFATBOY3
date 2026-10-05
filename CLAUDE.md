@@ -336,7 +336,8 @@ mask profile does NOT work (width mismatch, MAD 0.6-3 px) - use centers. traceOr
 **Temp dir (v2.4.1)**: two runs from the same directory used to share (and delete) `temp-fatboy`; now locked per
 run (`setupTempdir`, `fatboy.lock`), the second run gets `temp-fatboy-<pid>`. Tested with two concurrent findSlitlets
 runs forced to page data out (`memory_image_limit`=5): identical outputs, both dirs cleaned. Parallel test runs from
-one directory no longer need staggering. **Flexure vs bleeding** was checked by measuring lower and upper half-max
+one directory no longer need staggering. Since v2.4.17 each run also removes `temp-fatboy-<pid>` dirs whose lock names a dead
+process on this host (crashed/killed runs), so they no longer pile up. **Flexure vs bleeding** was checked by measuring lower and upper half-max
 edges separately (rigid shift = both move together; bleeding = width grows, worse in bright-line columns).
 
 ## Calib star, LA Cosmic, 3-d drizzle, undefined names (2026-10-02, v2.3.43-44)

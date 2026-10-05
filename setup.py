@@ -6,7 +6,7 @@ from setuptools import setup, find_packages, Extension
 import os, numpy
 
 name = 'superFATBOY'
-version = '2.4.16'
+version = '2.4.17'
 cmod_name = 'superFATBOY.fatboyclib'
 sources = ['superFATBOY/fatboyclibmodule.cpp']
 
