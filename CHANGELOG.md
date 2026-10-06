@@ -238,6 +238,9 @@ the matching section here. New options are listed with their default.
 - `MODE_RAW` output with `outfile` referenced undefined `out`/`outtype`. (2.3.43)
 
 ### gpu_imcombine / imcombine
+- GPU chunked combine: the last (uneven) chunk allocated `inp = np.empty(...)` while the others use `cp.empty`, so any
+  combine that splits into chunks with rows not divisible by the chunk count (large frames / many frames, or a small
+  `memory_image_limit`) failed with `Implicit conversion to a NumPy array is not allowed`. Now `cp.empty`. (2.4.28)
 - CPU imcombine, `reject = sigclip` / `sigma`: a pixel left with only 1-2 valid (unmasked) inputs, or with nearly
   identical values, has a zero or slightly negative variance from rounding; its sqrt was NaN, so every input was
   rejected (sigclip: output 0) or the result was halved (sigma: 496 for a 994 input). Variances are now clamped at
@@ -338,6 +341,12 @@ the matching section here. New options are listed with their default.
   (ERROR and no master dark if none are usable). (2.4.24)
 
 ### darkSubtract / flatDivideSpec
+- darkSubtract / biasSubtract `execute`: with `memory_image_limit` set (large datasets) and a master dark/bias re-read from
+  disk (restart with files already on disk), reading the master made the memory manager page the science frame out;
+  the next `fdu.getData()` came back as numpy next to the CuPy master and raised `Unsupported type <class
+  'numpy.ndarray'>` (the frame was discarded). Both arrays are now fetched once and held by reference. Reproduced on RHO
+  (`memory_image_limit=5`, master darks kept, frames deleted): 3 failures before, 0 after; darkSubtracted, flatDivided and
+  alignedStacked byte-identical to the run without a memory limit. biasSubtract has the same change but was not run. (2.4.28)
 - `prompt_for_missing_dark=no` now does what the docs say when no dark has the frame's number of reads: it falls back to the
   dark with the nearest exposure time and ANY nreads (preferring the nearest exposure time), and prints/logs a loud
   `SUBSTITUTING dark ...` warning. Before, the frame (flats, arcs) was discarded, which then crashed flatDivideSpec's

@@ -319,7 +319,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
         if (j == chunks-1 and chunks*csize != totcols):
             endpos = totcols
             startpos = j*csize
-            inp = np.empty((endpos-j*csize, origsz[1], nframes), outtype)
+            inp = cp.empty((endpos-j*csize, origsz[1], nframes), outtype)
             csize = endpos-startpos
         else:
             endpos = (j+1)*csize

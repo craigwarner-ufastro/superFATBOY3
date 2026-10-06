@@ -130,10 +130,15 @@ class darkSubtractProcess(fatboyProcess):
             self.updateNoisemap(fdu, masterDark)
 
         #make sure both are floating point before subtracting
+        #Hold local references to both arrays: reading one from disk can make the memory manager page the other
+        #out (memory_image_limit), and getData() would then hand back a numpy copy next to a CuPy one.
+        data = fdu.getData()
+        mdata = masterDark.getData()
         if (self._fdb.getGPUMode()):
-            fdu.updateData(cp.asarray(fdu.getData().astype(np.float32)))
-            masterDark.updateData(cp.asarray(masterDark.getData().astype(np.float32)))
-        fdu.updateData(fdu.getData().astype(np.float32)-masterDark.getData().astype(np.float32))
+            data = cp.asarray(data.astype(np.float32))
+            mdata = cp.asarray(mdata.astype(np.float32))
+            masterDark.updateData(mdata)
+        fdu.updateData(data.astype(np.float32)-mdata.astype(np.float32))
         fdu._header.add_history('Dark subtracted using '+masterDark._id)   
         return True
     #end execute
