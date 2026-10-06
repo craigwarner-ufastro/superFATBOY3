@@ -281,6 +281,11 @@ class wavelengthCalibrateSingleProcess(wavelengthCalibrateProcess):
                     (cand["rmsWave"], cand["rmsPix"], cand["quality"], cand["coverage"]) = self.wavecalQuality(cand["coeffs"], cand["fit_order"], cand["reflines"], cand["residLines"], len(oned), fdu)
                     cand["label"] = None
                     cand["masterFlux"] = masterFlux
+                    reject = self.primaryRejection(cand, scale, len(oned), fdu)
+                    if (reject is not None):
+                        print("wavelengthCalibrateProcess::wavelengthCalibrate> Rejecting the solution from the configured guess"+pass_name+fdu.getFullId()+" ("+cand["quality"]+"): "+reject)
+                        cand = None
+                        failReason = "fallback solution rejected: "+reject
 
             #Fallbacks: when nothing matched, the best good-enough solution of the first method that gives one;
             #when the solution is graded wavecal_retry_grade or worse, any clearly better one (as the pipeline's second pass)
@@ -558,10 +563,12 @@ class wavelengthCalibrateSingleProcess(wavelengthCalibrateProcess):
 
 def extract2DFromImageWithSlitmask(image, slitmask, slitlet=1, segment=1, n_segments=1, horizontal=True, gpumode=False):
     fdu = fatboySpectrum(image)
+    fdu.setGPUMode(gpumode)
     fdu.readHeader()
     fdu.initialize()
 
     slitmask = fatboySpectrum(slitmask)
+    slitmask.setGPUMode(gpumode)
     slitmask.readHeader()
     slitmask.initialize()
 
@@ -589,6 +596,7 @@ def extract1DFromImage(image, ylo=-1, yhi=-1, slitlet=1, segment=1, n_segments=1
     segment -= 1
     if (type(image) == str):
         skyFDU = fatboySpectrum(image)
+        skyFDU.setGPUMode(gpumode)
         skyFDU.readHeader()
         skyFDU.initialize()
     else:
@@ -647,6 +655,7 @@ def extract1DFromImage(image, ylo=-1, yhi=-1, slitlet=1, segment=1, n_segments=1
 
 def read1DFromImage(image):
     skyFDU = fatboySpectrum(image)
+    skyFDU.setGPUMode(False)
     skyFDU.readHeader()
     skyFDU.initialize()
     return skyFDU

@@ -405,6 +405,8 @@ of known wavelengths and relative intensities. The heart of the algorithm:
 | `use_initial_guess_on_fail` | `no` | If a solution cannot be found, fall back to the initial guess rather than skipping the slitlet |
 | `slitlets_to_debug`, `slitlets_to_write_plots` | `None` | Restrict diagnostics to these slitlets, for example `3,5,7` |
 | `wavecal_fallback` | `learned,neighbor,trend,pattern,blind` | Other starting guesses, tried in this order when the 3 brightest lines can't be matched with the configured guess, or (second pass) when the solution is graded `wavecal_retry_grade` or worse; `none` turns them off. See **Fallbacks and the second pass** below. |
+| `wavecal_min_lines` | `0` (auto) | Fewest lines a solution may be fit with: 0 = max(8, 2*(`fit_order`+1)). Applies to the configured-guess match too: a fit with only `fit_order`+1 lines has zero residual and is graded excellent even when wrong. A rejected solution goes on to the `wavecal_fallback` guesses. |
+| `wavecal_max_scale_deviation` | `0.5` | A solution from the configured guess whose mean dispersion differs from `wavelength_scale_guess` by more than this fraction is rejected as a wrong match (0 = no check). |
 | `wavecal_retry_grade` | `poor` | Once every slitlet has been tried, slitlets that failed or were graded this or worse are tried again with all the fallbacks (`none`: only failed ones) |
 | `wavecal_blind_scale_range` | `0.5,2` | Scales searched by the pattern and blind fallbacks, as factors of `wavelength_scale_guess` |
 | `wavelength_fit_function` | `polynomial` | `polynomial`, `legendre` or `chebyshev`, of order `fit_order` (see **Fit functions** below) |

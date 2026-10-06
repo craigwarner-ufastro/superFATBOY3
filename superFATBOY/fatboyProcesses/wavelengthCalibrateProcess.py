@@ -2588,6 +2588,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
                         cand = None
                     if (cand is not None):
                         cand["method"] = method
+                        cand["tag"] = fdu.getTag()
                         yield cand
                         if (self.acceptableFallback(cand)):
                             break
@@ -2596,8 +2597,28 @@ class wavelengthCalibrateProcess(fatboyProcess):
     #A solution from a fallback guess must be good to be trusted (a wrong guess can still match 3 lines in a dense
     #line list): satisfactory or better, with at least max(2*(fit_order+1), 8) lines
     def acceptableFallback(self, cand):
-        return (cand["quality"] in ["excellent", "good", "satisfactory"] and len(cand["reflines"]) >= max(2*(cand["fit_order"]+1), 8))
+        minLines = int(self.getOption("wavecal_min_lines", cand.get("tag")))
+        if (minLines <= 0):
+            minLines = max(2*(cand["fit_order"]+1), 8)
+        return (cand["quality"] in ["excellent", "good", "satisfactory"] and len(cand["reflines"]) >= minLines)
     #end acceptableFallback
+
+    #Reason a solution found with the configured guess is not trusted (too few lines for the fit, or a dispersion far
+    #from the guess), or None
+    def primaryRejection(self, cand, guessScale, nx, fdu):
+        nlines = len(cand["reflines"])
+        minLines = int(self.getOption("wavecal_min_lines", fdu.getTag()))
+        if (minLines <= 0):
+            minLines = max(2*(cand["fit_order"]+1), 8)
+        if (nlines < minLines):
+            return "only "+str(nlines)+" lines for the fit (need "+str(minLines)+")"
+        maxDev = float(self.getOption("wavecal_max_scale_deviation", fdu.getTag()))
+        if (maxDev > 0 and guessScale is not None and guessScale != 0):
+            mean = (polyFunction(cand["coeffs"], float(nx-1), cand["fit_order"])-polyFunction(cand["coeffs"], 0.0, cand["fit_order"]))/float(nx-1)
+            if (abs(mean/guessScale-1) > maxDev):
+                return "dispersion "+formatNum(mean)+" differs from the guess "+formatNum(guessScale)+" by more than "+str(int(round(maxDev*100)))+"%"
+        return None
+    #end primaryRejection
 
     #Is solution new better than old?  Clearly lower RMS with nearly as many lines, or many more lines with no worse RMS.
     def betterSolution(self, new, old):
@@ -2714,6 +2735,10 @@ class wavelengthCalibrateProcess(fatboyProcess):
         self._optioninfo.setdefault('wavelength_fit_function', 'Function fit to the lines: polynomial, legendre or chebyshev (of order fit_order).  The same\nfunctions of pixel, so PORDER/PCOEFF still hold the equivalent polynomial; legendre/chebyshev also\nwrite WCFUNC and their own coefficients NCOEFF_i (MOS: WCFUNxx, NCFi_Sxx), pixels 0..WCXMAX mapped to [-1,1].')
         self._options.setdefault('wavecal_blind_scale_range', '0.5,2')
         self._optioninfo.setdefault('wavecal_blind_scale_range', 'Range of scales searched by the pattern and blind fallbacks, as factors of wavelength_scale_guess')
+        self._options.setdefault('wavecal_min_lines', 0)
+        self._optioninfo.setdefault('wavecal_min_lines', 'Fewest lines a wavelength solution may be fit with and still be accepted (also for the first-guess match;\nfallback solutions always need at least this many).  0 = automatic, max(8, 2*(fit_order+1)): a fit with\nonly fit_order+1 lines has zero residual and is graded excellent even when wrong.')
+        self._options.setdefault('wavecal_max_scale_deviation', 0.5)
+        self._optioninfo.setdefault('wavecal_max_scale_deviation', 'A solution found with the configured guess whose mean dispersion differs from the guess by more than\nthis fraction is rejected (and the wavecal_fallback guesses tried) - it matched the wrong lines.  0 = no check.')
         self._options.setdefault('wavecal_quality_thresholds', '0.1,0.2,0.3,0.4')
         self._optioninfo.setdefault('wavecal_quality_thresholds', 'RMS of each wavelength fit in PIXELS separating excellent, good, satisfactory,\nmarginal and poor (printed per slitlet, in the qa_*.dat file and the WCQUAL header keyword)')
         self._options.setdefault('write_noisemaps', 'no')
@@ -3271,7 +3296,15 @@ class wavelengthCalibrateProcess(fatboyProcess):
                             cand = self.solveFromMatch(fdu, oned, currLines, dumPeak, idx, wclines, wccentroids, lineParams, lineWidths, linePeaks, dummySize, dummyFlux, dummyWave, dummyOrder, fluxScale, masterWave, masterFlux, masterFlag, gaussWidth, scale, nonlinear, coeffs, min_wavelength, max_wavelength, min_lines_nonlinear, min_threshold, min_intensity_pct, use_tolerance, (shift_tol if use_tolerance else None), fit_order, pass_name)
                             (cand["rmsWave"], cand["rmsPix"], cand["quality"], cand["coverage"]) = self.wavecalQuality(cand["coeffs"], cand["fit_order"], cand["reflines"], cand["residLines"], len(oned), fdu)
                             cand["label"] = None
-                        else:
+                            reject = self.primaryRejection(cand, scale, len(oned), fdu)
+                            if (reject is not None):
+                                msg = "Rejecting the solution from the configured guess"+pass_name+fdu.getFullId()+" ("+cand["quality"]+"): "+reject
+                                print("wavelengthCalibrateProcess::wavelengthCalibrate> "+msg)
+                                self._log.writeLog(__name__, msg, type=fatboyLog.WARNING)
+                                cand = None
+                                failReason = "fallback solution rejected: "+reject
+                                success = False
+                        if (not success):
                             #Fallbacks for a bad initial guess (wavecal_fallback): the best good-enough solution from the
                             #first method that gives one
                             for alt in self.fallbackCandidates(ctx, fallbackMethods, j, seg, solvedCuts, configGuess, learnedFlux, scale):

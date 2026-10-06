@@ -449,6 +449,10 @@ the matching section here. New options are listed with their default.
   (2.3.43)
 
 ### wavelengthCalibrate
+- **Primary-match gate** (2.4.33): a solution from the configured guess is rejected (and the `wavecal_fallback` guesses tried) with fewer
+  than `wavecal_min_lines` lines (default auto = max(8, 2*(fit_order+1)); a cubic through 4 lines has zero residual and graded
+  excellent while wrong) or with a mean dispersion more than `wavecal_max_scale_deviation` (0.5) from the guess; fallbacks use the same minimum.
+  Also in standalone `wavecal`.
 - `measured_lines_*.dat` also gives each line's mean offset from the solutions (wavelength units and px), its standard
   deviation and number of fits, for every line matched (also those clipped); same in standalone `wavecal`. A consistent
   offset means a wrong list wavelength or an unresolved blend. (2.4.9)
