@@ -100,6 +100,16 @@ the matching section here. New options are listed with their default.
   noisemap, carried on through rectification). Now `np.sqrt(np.abs(...))`, 8 sites; also in main. (2.4.3)
 
 ### fatboyDataUnit / datatypes
+- **General fix for numpy/CuPy mixing around disk caching**: in a GPU-mode run a frame's array type changed silently when
+  the memory manager (`memory_image_limit`) paged it out and read it back (CuPy before, numpy after), and master calibrations
+  re-used from a previous run (`overwrite_files=no`, e.g. after Ctrl-C) came back as numpy although the same calibrations
+  built in memory are CuPy. Any code combining two `getData()` results then failed with `Unsupported type
+  <class 'numpy.ndarray'>`. `writeToAndForget` now records whether the data was on the GPU and `getData()` puts it back
+  there on reload; master dark/flat/bias/sky/arclamp calibrations read from disk in GPU mode are CuPy as when built in
+  memory. Test: RHO, `memory_image_limit=5`, master darks re-used, with the earlier darkSubtract-only fix reverted: 0 failures
+  (was 3 failed / 6 errors), darkSubtracted/flatDivided/alignedStacked byte-identical to the unlimited-memory run.
+  Raw science frames still start as numpy until a process moves them, as before. Specific sites remain correct and are
+  kept (renormalize, darkSubtract, biasSubtract). (2.4.30)
 - `renormalize`: in a GPU-mode run, a master flat re-read from disk (e.g. after a Ctrl-C and rerun, `overwrite_files=no`)
   holds numpy data while the bad pixel mask was already converted to CuPy, so `data*(1-bpm)` raised
   `Unsupported type <class 'numpy.ndarray'>` for every frame in badPixelMask. The data is now matched to the mask's type.

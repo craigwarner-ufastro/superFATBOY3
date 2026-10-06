@@ -44,6 +44,7 @@ class fatboyDataUnit:
     _objectTags = [] #a list of objects that a calibration frame is associated with
     _properties = dict() #Properties defined in XML file, e.g. flattype = "lamp on".  Also data from previous steps
     _gpumode = True #Use GPU
+    _GPU_RELOAD_OBSTYPES = ('master_dark', 'master_flat', 'master_bias', 'master_sky', 'master_arclamp')
     _processHistory = [] #Track processes applied to this fdu
 
     _fdb = None #fatboyDatabase callback
@@ -275,6 +276,16 @@ class fatboyDataUnit:
                 #Byteswap
                 self._data = self._data.byteswap()
                 self._data = self._data.view(self._data.dtype.newbyteorder('<'))
+
+            #In a GPU-mode run, give back what a caller would have had without the disk round trip: data that was on the
+            #GPU when the memory manager paged it out, and master calibrations (dark, flat, bias, sky, arclamp) re-used
+            #from a previous run, which are CuPy arrays when they are built in memory.
+            if (self._gpumode and hasCuda):
+                backToGPU = self.hasProperty('memory_managed_gpu') and self.getProperty('memory_managed_gpu') is True
+                if (self.hasProperty('memory_managed_gpu')):
+                    self.removeProperty('memory_managed_gpu')
+                if (backToGPU or self.obstype in self._GPU_RELOAD_OBSTYPES):
+                    self._data = cp.asarray(self._data)
 
             self._shape = self._data.shape
             self.reformatData() #in case actual data disagrees with header, check to reformat data from (1,2048,2048) to (2048,2048) here too
@@ -1223,6 +1234,9 @@ class fatboyDataUnit:
             return
         if (os.access(outfile, os.F_OK)):
             os.unlink(outfile)
+        #Remember whether the data lived on the GPU, so paging it out is invisible to callers:
+        #getData() puts it back on the GPU when it is read from disk again.
+        self.setProperty('memory_managed_gpu', bool(hasCuda and isinstance(self._data, cp.ndarray)))
         self.writeTo(outfile)
         if (self.filename != self.getTempdir()+"/current_"+self.getFullId()):
             self.setProperty('origFilename', self.filename)
