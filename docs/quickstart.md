@@ -126,6 +126,7 @@ and what has been validated.
 | [`MEGARA_LCB_template.xml`](../superFATBOY/data/templates/MEGARA_LCB_template.xml) | MEGARA (GTC), fiber IFU (LCB) | Overscan trim, 622 fibers traced on the trace map, fiber identification from the raw headers, ThArNe calibration, sky fibers subtracted |
 | [`SINFONI_IFU_template.xml`](../superFATBOY/data/templates/SINFONI_IFU_template.xml) | SINFONI (VLT), near-IR image-slicer IFU | Linearity from a lamp series, 32 slitlets, Xe arc calibration, slitlet identification, 3-d datacubes, PSF, register and stack |
 | [`FLAMINGOS2_longslit_template.xml`](../superFATBOY/data/templates/FLAMINGOS2_longslit_template.xml) | Flamingos-2 (Gemini South), near-IR longslit | Two bands (JH, HK) as two tagged datasets, each with its own standard; dome on-off flats, large-nod double subtraction, HeNeAr arcs |
+| [`FLAMINGOS2_imaging_template.xml`](../superFATBOY/data/templates/FLAMINGOS2_imaging_template.xml) | Flamingos-2 (Gemini South), near-IR imaging | Off-source skies listed in a file (on-source dithers shown as the alternative); crowded-field triangles settings |
 
 No template for your instrument? Start from the general template for your observing mode - `GENERAL_imaging_IR`, `GENERAL_imaging_optical`, `GENERAL_spectroscopy_longslit_IR`, `GENERAL_spectroscopy_longslit_optical`, `GENERAL_spectroscopy_MOS_IR` or `GENERAL_spectroscopy_MOS_optical` (each `_template.xml`, same folder). See [Instruments and templates](instruments.md#general-templates).
 

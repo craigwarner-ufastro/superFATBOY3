@@ -645,30 +645,32 @@ extern "C" {
       }
       /************end LA cosmic (lacos) methods **************/
 
-      __global__ void linInterp_float(float *data, float *output, int* gpm, float x, int rows, int cols, int *ict, int *nfound) {
+      __global__ void linInterp_float(float *data, float *output, int* gpm, float x, int rows, int cols, int *ict, int *nfound, int radius, int minNeighbors) {
+        //Replace each good pixel equal to x with the median of the neighbours within radius (up to 5x5) that are not x,
+        //if there are at least minNeighbors of them.  Matches linterp_cpu.
         const int i = blockDim.x*blockIdx.x + threadIdx.x;
         if (i >= rows*cols) return;
         int row = i/cols;
         int col = i % cols;
         if (data[i] != x || gpm[i] == 0) {
-          //return if data is nonzero or it is a bad pixel
+          //return if data is not x or it is a bad pixel
           output[i] = data[i];
           return;
         }
-        float temp[8];
+        float temp[24];
         atomicAdd(&nfound[0], 1);
         int npts = 0;
-        int start_row = row >= 1 ? row-1 : 0;
-        int end_row = row < rows-1 ? row+1 : rows-1;
-        int start_col = col >= 1 ? col-1 : 0;
-        int end_col = col < cols-1 ? col+1 : cols-1;
+        int start_row = row >= radius ? row-radius : 0;
+        int end_row = row < rows-radius ? row+radius : rows-1;
+        int start_col = col >= radius ? col-radius : 0;
+        int end_col = col < cols-radius ? col+radius : cols-1;
         for (int j = start_row; j <= end_row; j++) {
           for (int k = start_col; k <= end_col; k++) {
-            if (j == 0 && k == 0) continue;
+            if (j == row && k == col) continue;
             if (data[cols*j+k] != x) temp[npts++] = data[cols*j+k];
           }
         }
-        if (npts < 2) {
+        if (npts < minNeighbors || npts == 0) {
           //not enough neighboring pixels found!
           output[i] = data[i];
           return;
@@ -3613,7 +3615,10 @@ def linResiduals(p, x, out):
 #end linResiduals
 
 #GPU-ized linear interpolation across a data value (0's for all practical purposes)
-def linterp_gpu(data, x, gpm, iter=100, log=None):
+#GPU interpolation across a data value (0's for all practical purposes): each good pixel equal to x becomes the median
+#of its neighbours within radius (1 = 3x3, 2 = 5x5) that are not x, if there are at least min_neighbors; repeated up to
+#iter passes so holes fill from their edges inward.  Same rules as linterp_cpu.
+def linterp_gpu(data, x, gpm, iter=100, log=None, radius=1, min_neighbors=2):
     t = time.time()
     if (not superFATBOY.threaded()):
         global fatboy_mod
@@ -3657,7 +3662,7 @@ def linterp_gpu(data, x, gpm, iter=100, log=None):
         output_gpu = cp.empty(data.shape, np.float32)
         ict_gpu = cp.asarray(ict)
         nfound_gpu = cp.asarray(nfound)
-        linInterp((blocks,1), (block_size,1,1), (cp.asarray(data.astype(np.float32)), output_gpu, cp.asarray(gpm), np.float32(x), np.int32(rows), np.int32(cols), ict_gpu, nfound_gpu))
+        linInterp((blocks,1), (block_size,1,1), (cp.asarray(data.astype(np.float32)), output_gpu, cp.asarray(gpm), np.float32(x), np.int32(rows), np.int32(cols), ict_gpu, nfound_gpu, np.int32(min(max(int(radius), 1), 2)), np.int32(max(int(min_neighbors), 1))))
         output = output_gpu.get()
         ict = ict_gpu.get()
         nfound = nfound_gpu.get()
@@ -3672,13 +3677,18 @@ def linterp_gpu(data, x, gpm, iter=100, log=None):
     return output
 #end linterp_gpu
 
-#CPU linear interpolation across a data value (0's for all practical purposes)
-def linterp_cpu(data, x, gpm, iter=100, log=None):
+#CPU interpolation across a data value (0's for all practical purposes): same rules as linterp_gpu - each good pixel
+#equal to x becomes the median of its neighbours within radius (1 = 3x3, 2 = 5x5) that are not x, if there are at least
+#min_neighbors (median of an even number = mean of the middle two, in float32 as on the GPU).
+def linterp_cpu(data, x, gpm, iter=100, log=None, radius=1, min_neighbors=2):
+    data = np.asarray(data, dtype=np.float32)
     nx = data.shape[0]
     ny = data.shape[1]
-    z = -1
-    initys = np.arange(nx*ny).reshape(nx,ny) % ny
-    initxs = np.arange(nx*ny).reshape(nx,ny) // ny
+    radius = min(max(int(radius), 1), 2)
+    min_neighbors = max(int(min_neighbors), 1)
+    xval = np.float32(x)
+    gpm = np.asarray(gpm).astype(bool)
+    newData = data
     p = 0
 
     #set log type
@@ -3695,39 +3705,29 @@ def linterp_cpu(data, x, gpm, iter=100, log=None):
     write_fatboy_log(log, logtype, "Interpolating across " + str(x) + "'s", __name__)
 
     #iterate
-    while (z != 0 and p < iter):
+    while (p < iter):
         p+=1
         print("\tPass "+str(p))
-        b = (data == x)*gpm.astype('bool')
-        ys = initys[b]
-        xs = initxs[b]
+        xs, ys = np.where((data == xval) & gpm)
         newData = data.copy()
         if (len(xs) == 0):
-            z = 0
             break
         ict = 0
-        for i in range(xs.size):
-            j = xs[i]
-            l = ys[i]
-            temp = []
-            for k in range(-2,3,1):
-                for r in range(-2,3,1):
-                    if (k == 0 and r == 0):
-                        continue
-                    xc = k+j
-                    yc = r+l
-                    if (xc >= 0 and xc < nx and yc >= 0 and yc < nx):
-                        if (data[xc,yc] != 0):
-                            temp.append(data[xc,yc])
-            if (len(temp) != 0):
-                temp = np.array(temp)
-                newData[j,l] = gpu_arraymedian(temp, kernel=fatboyclib.median)
-                ict+=1
-        data = newData
+        for j, l in zip(xs, ys):
+            block = data[max(j-radius, 0):j+radius+1, max(l-radius, 0):l+radius+1]
+            temp = np.sort(block[block != xval])
+            npts = temp.size
+            if (npts < min_neighbors or npts == 0):
+                continue
+            if (npts % 2 == 0):
+                newData[j,l] = (temp[npts//2]+temp[npts//2-1])/np.float32(2)
+            else:
+                newData[j,l] = temp[npts//2]
+            ict+=1
         print("\t\t"+str(len(xs))+" found; "+str(ict)+" replaced.")
         write_fatboy_log(log, logtype, "Pass "+str(p)+": "+str(len(xs))+" found; "+str(ict)+" replaced.", __name__, printCaller=False, tabLevel=1)
-
-        if (ict == 0):
+        data = newData
+        if (ict == 0 or ict == len(xs)):
             break
     return newData
 #end linterp_cpu

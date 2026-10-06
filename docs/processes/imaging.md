@@ -147,6 +147,8 @@ frames are handled.
 | `conserve_memory` | `no` | `yes` on machines with little RAM |
 | `keep_skies` | `no` | Keep the master skies on disk |
 | `sky_offsource_method`, `sky_offsource_range` | `auto`, `240` | Identify off-source frames by offset (arcsec) from the first frame, or from a six-column file |
+| `interp_zeros_sky` | `yes` | Fill the holes left in the master sky by masked objects |
+| `interp_zeros_box_size`, `interp_zeros_min_neighbors` | `3`, `2` | A hole pixel becomes the median of the non-zero pixels in a 3x3 (or 5x5) box around it, if there are at least this many; repeated so large holes fill from their edges. GPU and CPU give identical results |
 
 Off-source skies should be added to `<queries>` as `<calib type="sky">`, optionally tied to objects with an `<object>` child.
 Output: `skySubtracted/ss_*.fits`.

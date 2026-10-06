@@ -16,7 +16,7 @@ Full documentation is in [`docs/`](docs/README.md):
 - [API guide](docs/api.md): scripting superFATBOY and writing your own processes and datatypes
 - [Line lists](docs/instruments.md#line-lists-and-wavelength-calibration-files-shipped-with-superfatboy): the shipped line lists, and `makeLineList.py` to build one from NIST
 
-Validated end-to-end in both GPU and CPU mode: FLAMINGOS-1 (imaging and MOS), OSIRIS, KAST and Flamingos-2 (longslit), MIRADAS (SOL, SOS, MOS), LUCI (MOS), MEGARA (fiber IFU) and SINFONI (image-slicer IFU).
+Validated end-to-end in both GPU and CPU mode: FLAMINGOS-1 (imaging and MOS), Flamingos-2 (imaging and longslit), OSIRIS and KAST (longslit), MIRADAS (SOL, SOS, MOS), LUCI (MOS), MEGARA (fiber IFU) and SINFONI (image-slicer IFU).
 Templates for these are in [`superFATBOY/data/templates/`](superFATBOY/data/templates/).
 
 ## Requirements

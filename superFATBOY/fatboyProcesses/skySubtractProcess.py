@@ -324,9 +324,9 @@ class skySubtractProcess(fatboyProcess):
         if (self.getOption('interp_zeros_sky', fdu.getTag()).lower() == 'yes'):
             goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("int32")
             if (self._fdb.getGPUMode()):
-                masterSky.updateData(linterp_gpu(masterSky.getData(), 0, goodPixelMask, log=self._log))
+                masterSky.updateData(linterp_gpu(masterSky.getData(), 0, goodPixelMask, log=self._log, radius=(int(self.getOption('interp_zeros_box_size', fdu.getTag()))-1)//2, min_neighbors=int(self.getOption('interp_zeros_min_neighbors', fdu.getTag()))))
             else:
-                masterSky.updateData(linterp_cpu(masterSky.getData(), 0, goodPixelMask, log=self._log))
+                masterSky.updateData(linterp_cpu(masterSky.getData(), 0, goodPixelMask, log=self._log, radius=(int(self.getOption('interp_zeros_box_size', fdu.getTag()))-1)//2, min_neighbors=int(self.getOption('interp_zeros_min_neighbors', fdu.getTag()))))
             del goodPixelMask
         return masterSky
     #end createMasterSkyRemoveObjects
@@ -373,9 +373,9 @@ class skySubtractProcess(fatboyProcess):
         if (self.getOption('interp_zeros_sky', fdu.getTag()).lower() == 'yes'):
             goodPixelMask = (1-fdu.getBadPixelMask().getData()).astype("int32")
             if (self._fdb.getGPUMode()):
-                masterSky.updateData(linterp_gpu(masterSky.getData(), 0, goodPixelMask, log=self._log))
+                masterSky.updateData(linterp_gpu(masterSky.getData(), 0, goodPixelMask, log=self._log, radius=(int(self.getOption('interp_zeros_box_size', fdu.getTag()))-1)//2, min_neighbors=int(self.getOption('interp_zeros_min_neighbors', fdu.getTag()))))
             else:
-                masterSky.updateData(linterp_cpu(masterSky.getData(), 0, goodPixelMask, log=self._log))
+                masterSky.updateData(linterp_cpu(masterSky.getData(), 0, goodPixelMask, log=self._log, radius=(int(self.getOption('interp_zeros_box_size', fdu.getTag()))-1)//2, min_neighbors=int(self.getOption('interp_zeros_min_neighbors', fdu.getTag()))))
             del goodPixelMask
 
         for skyfdu in skies:
@@ -925,6 +925,10 @@ class skySubtractProcess(fatboyProcess):
         self._options.setdefault('two_pass_sep_ellipse_growth', '2.5')
         self._optioninfo.setdefault('two_pass_sep_ellipse_growth', 'factor for growing ellipses found by sep')
         self._options.setdefault('interp_zeros_sky', 'yes')
+        self._options.setdefault('interp_zeros_box_size', '3')
+        self._optioninfo.setdefault('interp_zeros_box_size', '3 | 5: zeros in the master sky (masked objects) are replaced by\nthe median of the non-zero pixels in this box around them')
+        self._options.setdefault('interp_zeros_min_neighbors', '2')
+        self._optioninfo.setdefault('interp_zeros_min_neighbors', 'Minimum number of non-zero neighbours in the box to fill a zero\n(holes fill from their edges inward over repeated passes)')
         self._options.setdefault('fit_sky_subtracted_surf', 'no')
         self._options.setdefault('conserve_memory', 'no')
         self._optioninfo.setdefault('conserve_memory', 'Set to yes if running on a machine with low RAM')

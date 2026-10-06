@@ -79,6 +79,10 @@
     <option name="write_noisemaps" value="yes"/>
   </process>
 
+<!-- Bad pixels from the master flat.  If the flat lights only part of the chip (longslit), check the log's
+     "% of pixels found to be bad" warning: a large fraction (the Flamingos-2 JH flat flagged 87%) masks the target.
+     Supply your own masks instead, a text file listing one bad pixel mask FITS file per setup:
+    <option name="default_bad_pixel_mask" value="/path/to/bpms.dat"/> -->
   <process name="badPixelMaskSpec">
     <option name="write_calib_output" value="yes"/>
   </process>

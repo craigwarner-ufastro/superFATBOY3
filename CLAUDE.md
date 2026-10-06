@@ -26,6 +26,34 @@ Since v2.4.5-2.4.7: line lists and `makeLineList.py` are documented in `docs/ins
 module in `docs/api.md` (its example is *(tested)* on the LUCI arc), and the wavelength-calibration fallbacks, second
 pass and fit functions in `docs/processes/spectroscopy.md`.
 
+## Flamingos-2 imaging, imcombine/linterp GPU==CPU, triangles defaults, general templates (2026-10-05, v2.4.19-2.4.20)
+
+- **F2 imaging** (`xml/gc.xml` xregister, `xml/gc_triangles.xml` triangles; Galactic Center J/H/Ks at PA 0/180, data
+  `/net/bolt/data2/warner/F2-data/gc/`): translated from the old text setup (`group.dat` -> objects/calibs,
+  `tempFatboyParams.dat` -> options; `offskies.dat` is read directly by `sky_offsource_method`; old
+  `STACK_METHOD = Imcombine` = `stack_method = drihizzle_imcombine`). Matches the 2015 stacks next to the data (same
+  sizes, NCOMBINE 15/9/9/9/9/3, 276-295 of 300 bright stars within 0.05-0.19 px). J is 4-10% noisier than 2015 - not
+  the flat (15 s-only test identical), not alignment; old intermediates unreadable, left open. Template:
+  `FLAMINGOS2_imaging_template.xml`.
+- **triangles defaults** now `triangles_max_stars = 150`, sigma clipping on: crowded fields had chance matches (1-2.5 px
+  off, 35 s/frame); now 0.12 px from xregister. oriBench 0.01-0.11 px.
+- **GPU != CPU on gc traced to two CPU bugs**, both fixed: (1) imcombine sigclip/sigma: NaN sd at pixels with 1-2
+  valid inputs or identical values -> all rejected (0) or halved; variance clamped, < 3 valid values not clipped
+  (`_clipFewerThan3`; identical wherever the variance is positive; Craig signed off on touching imcombine). (2)
+  `linterp_cpu` (5x5, >=1 neighbour) vs `linterp_gpu` (3x3, >=2): unified, `radius`/`min_neighbors`, default 3x3/2,
+  byte-identical; options `interp_zeros_box_size`/`interp_zeros_min_neighbors` on skySubtract. After both: sky-subtracted
+  frames GPU vs CPU within 0.33 of p99 (was 52), stacks correlate 0.993-0.998 - accepted under Craig's bar (templates that
+  work, not optimal reductions of old data; data quirks like F2's bad quadrant don't block). Verified: `xml/verified/gc.xml`.
+- **General templates** `GENERAL_{imaging_IR, imaging_optical, spectroscopy_longslit_IR, spectroscopy_longslit_optical,
+  spectroscopy_MOS_IR, spectroscopy_MOS_optical}_template.xml` (underscores, same folder; IFU ones wait for daveFisica).
+  Craig's choices: optical = biases only (overscan trimming is instrument specific), no sky step for optical imaging,
+  `median` sky (comment `median_boxcar`) for optical spectroscopy, triangles everywhere. Smoke tests
+  (`xml/claude_smoke_*.xml`): imgIR/lsOpt/mosIR pass; lsIR on F2 lmcx1 needs a supplied bad pixel mask (computed one
+  flags 87%).
+- Helper scripts this session (scratchpad, will not survive): `gccmp.py` (stack comparison incl. sep star matching),
+  `imctest.py` (old vs new imcombine on synthetic stacks), `run_env.sh` (serial runner, env sys|venv|v114, waits for
+  other pipeline runs).
+
 ## Remaining instruments, one XML at a time; Flamingos-2 lmcx1 (2026-10-05, v2.4.16)
 
 Craig copies an old XML from bolt (`/net/bolt/home/warner/superFATBOY/superFATBOY/*.xml`, also `/net/bolt/data2/warner/superFATBOY/`;

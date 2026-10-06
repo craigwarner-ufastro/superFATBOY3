@@ -33,6 +33,13 @@ def space(x):
 
 nx = 64
 
+#Sigma clipping with masked inputs: keep = valid & within the clip limits, except at pixels where fewer than 3 valid
+#values remain, which are not clipped (a 1- or 2-value variance is zero or rounding noise and used to reject them all)
+def _clipFewerThan3(valid, within):
+    nvalid = reduce(np.add, valid, 0)
+    return np.where(nvalid < 3, valid, np.logical_and(valid, within))
+#end _clipFewerThan3
+
 def imcombine(frames, outfile=None, expmask=None, method='median', reject='none', lsigma=3, hsigma=3, weight='none', lthreshold=None, hthreshold=None, scale='none', zero='none', nlow=0, nhigh=0, mclip='mean', qsfile=None, nonzero=False, even=True, inmask=None, expkey='EXP_TIME', niter=5, log=None, mef=0, outtype=np.float32, mode=None, returnHeader=False, dataTag=None):
     t = time.time()
     _verbosity = fatboyLog.NORMAL
@@ -524,7 +531,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                     #nm1 = n-1
                     nm1 = tmask-1
                     nm1[nm1 == 0] = 1
-                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1)
+                    sd = np.sqrt(np.maximum(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1, 0))
                     lower = avg-lsigma*sd
                     upper = avg+hsigma*sd
                     out[startpos:endpos,:] = arraymedian(inp,axis="Y", lthreshold=lower, hthreshold=upper, nonzero=True)
@@ -537,7 +544,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                         avg = arraymedian(inp,axis="Y")
                     else:
                         avg = reduce(np.add,inp)*(1./nfiles)
-                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1))
+                    sd = np.sqrt(np.maximum(reduce(np.add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1), 0))
                     lower = avg-lsigma*sd
                     upper = avg+hsigma*sd
                     out[startpos:endpos,:] = arraymedian(inp,axis="Y", lthreshold=lower, hthreshold=upper)
@@ -548,7 +555,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             elif (reject == 'sigclip'):
                 if (not dothresh):
                     avg = reduce(np.add,inp)*(1./nfiles)
-                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1))
+                    sd = np.sqrt(np.maximum(reduce(np.add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1), 0))
                     if (mclip == 'median'):
                         avg = arraymedian(inp,axis="Y")
                     keep = np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
@@ -569,7 +576,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                             avgb = reduce(np.add,inpb)*(1./nb)
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sdb = np.sqrt(reduce(np.add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6)
+                            sdb = np.sqrt(np.maximum(reduce(np.add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6, 0))
                             if (mclip == 'median'):
                                 avgb = arraymedian(inpb,axis="Y",nonzero=True)
                             keepb = np.logical_and(inpb >= -lsigma*sdb+avgb, inpb <= sdb*hsigma+avgb)
@@ -583,7 +590,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                             avg = reduce(np.add,inp)/n
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6)
+                            sd = np.sqrt(np.maximum(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6, 0))
                             if (mclip == 'median'):
                                 avg = arraymedian(inp,axis="Y",nonzero=True)
                             keep = np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
@@ -611,10 +618,10 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                     #nm1 = n-1
                     nm1 = tmask-1
                     nm1[nm1 == 0] = 1
-                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1)
+                    sd = np.sqrt(np.maximum(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1, 0))
                     if (mclip == 'median'):
                         avg = arraymedian(inp,axis="Y",nonzero=True)
-                    keep = b*np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
+                    keep = _clipFewerThan3(np.broadcast_to(b, inp.shape), np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg))
                     n = reduce(np.add, keep, 0)
                     inp*=keep
                     #nm1 = n-1 for sd purposes
@@ -632,10 +639,10 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                             avgb = reduce(np.add,inpb)*(1./nb)
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sdb = np.sqrt(reduce(np.add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6)
+                            sdb = np.sqrt(np.maximum(reduce(np.add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6, 0))
                             if (mclip == 'median'):
                                 avgb = arraymedian(inpb,axis="Y",nonzero=True)
-                            keepb = keep[:,b]*np.logical_and(inpb >= -lsigma*sdb+avgb, inpb <= sdb*hsigma+avgb)
+                            keepb = _clipFewerThan3(keep[:,b], np.logical_and(inpb >= -lsigma*sdb+avgb, inpb <= sdb*hsigma+avgb))
                             inp[:,b]*=keepb
                             n[b] = reduce(np.add, keepb,0)
                             nm1 = n-1
@@ -646,10 +653,10 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                             avg = reduce(np.add,inp)/n
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6)
+                            sd = np.sqrt(np.maximum(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6, 0))
                             if (mclip == 'median'):
                                 avg = arraymedian(inp,axis="Y",nonzero=True)
-                            keep *= np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
+                            keep = _clipFewerThan3(keep, np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg))
                             inp*=keep
                             n = reduce(np.add, keep,0)
                             nm1 = n-1
@@ -750,7 +757,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             elif (reject == 'sigma'):
                 if (not dothresh):
                     avg = reduce(np.add,inp)*(1./nfiles)
-                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1))
+                    sd = np.sqrt(np.maximum(reduce(np.add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1), 0))
                     if (mclip == 'median'):
                         avg = arraymedian(inp,axis="Y")
                     b = np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
@@ -771,7 +778,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                     #nm1 = n-1
                     nm1 = tmask-1
                     nm1[nm1 == 0] = 1
-                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1)
+                    sd = np.sqrt(np.maximum(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1, 0))
                     if (mclip == 'median'):
                         avg = arraymedian(inp,axis="Y",nonzero=True)
                     b *= np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
@@ -785,7 +792,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
             elif (reject == 'sigclip'):
                 if (not dothresh):
                     avg = reduce(np.add,inp)*(1./nfiles)
-                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1))
+                    sd = np.sqrt(np.maximum(reduce(np.add,inp*inp)*(1./(nfiles-1))-avg*avg*nfiles/(nfiles-1), 0))
                     if (mclip == 'median'):
                         avg = arraymedian(inp,axis="Y")
                     keep = np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
@@ -806,7 +813,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                             avgb = reduce(np.add,inpb)*(1./nb)
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sdb = np.sqrt(reduce(np.add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6)
+                            sdb = np.sqrt(np.maximum(reduce(np.add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6, 0))
                             if (mclip == 'median'):
                                 avgb = arraymedian(inpb,axis="Y",nonzero=True)
                             keepb = np.logical_and(inpb >= -lsigma*sdb+avgb, inpb <= sdb*hsigma+avgb)
@@ -820,7 +827,7 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                             avg = reduce(np.add,inp)/n
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6)
+                            sd = np.sqrt(np.maximum(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6, 0))
                             if (mclip == 'median'):
                                 avg = arraymedian(inp,axis="Y",nonzero=True)
                             keep = np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
@@ -845,10 +852,10 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                     #nm1 = n-1
                     nm1 = tmask-1
                     nm1[nm1 == 0] = 1
-                    sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1)
+                    sd = np.sqrt(np.maximum(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*tmask/nm1, 0))
                     if (mclip == 'median'):
                         avg = arraymedian(inp,axis="Y",nonzero=True)
-                    keep = b*np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
+                    keep = _clipFewerThan3(np.broadcast_to(b, inp.shape), np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg))
                     n = reduce(np.add, keep, 0)
                     inp*=keep
                     #nm1 = n-1 for sd purposes
@@ -866,10 +873,10 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                             avgb = reduce(np.add,inpb)*(1./nb)
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sdb = np.sqrt(reduce(np.add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6)
+                            sdb = np.sqrt(np.maximum(reduce(np.add,inpb*inpb)*(1./nm1b)-avgb*avgb*nb/nm1b+1.e-6, 0))
                             if (mclip == 'median'):
                                 avgb = arraymedian(inpb,axis="Y",nonzero=True)
-                            keepb = keep[:,b]*np.logical_and(inpb >= -lsigma*sdb+avgb, inpb <= sdb*hsigma+avgb)
+                            keepb = _clipFewerThan3(keep[:,b], np.logical_and(inpb >= -lsigma*sdb+avgb, inpb <= sdb*hsigma+avgb))
                             inp[:,b]*=keepb
                             n[b] = reduce(np.add, keepb,0)
                             nm1 = n-1
@@ -880,10 +887,10 @@ def imcombine(frames, outfile=None, expmask=None, method='median', reject='none'
                             avg = reduce(np.add,inp)/n
                             nold = n+0
                             #1.e-6 for floating point rounding errors
-                            sd = np.sqrt(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6)
+                            sd = np.sqrt(np.maximum(reduce(np.add,inp*inp)*(1./nm1)-avg*avg*n/nm1+1.e-6, 0))
                             if (mclip == 'median'):
                                 avg = arraymedian(inp,axis="Y",nonzero=True)
-                            keep *= np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg)
+                            keep = _clipFewerThan3(keep, np.logical_and(inp >= -lsigma*sd+avg, inp <= sd*hsigma+avg))
                             inp*=keep
                             n = reduce(np.add, keep,0)
                             nm1 = n-1

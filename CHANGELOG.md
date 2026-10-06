@@ -27,16 +27,12 @@ the matching section here. New options are listed with their default.
 | SINFONI 30 Dor (sinfoni_test_30Dor), verified v2.4.12 | GPU + CPU | Full chain to registered/stacked datacubes, no tracebacks; slitmask identical to the py2 original; stacked image and cube correlate 0.9998 / 0.9987 with py2 (flux 0.6% lower). GPU vs CPU: 1.000000 / 0.999998. `SINFONI_IFU_template.xml` |
 | MEGARA LCB (mt1), verified v2.4.12 | GPU + CPU | From the raw data (bolt): 622 fibers traced (identical to py2), 56 sky fibers identified, 622/622 wavelength-calibrated (610 excellent), sky subtracted. GPU vs CPU: 87/139 files identical, the rest within 5e-6 of the data range. `MEGARA_LCB_template.xml` |
 | Flamingos-2 longslit (lmcx1, JH + HK), verified v2.4.16 | GPU + CPU | Full chain through calibStarDivide, no errors; wavelength solutions 0.05-0.11 px. GPU vs CPU: in-band spectra within 2% (apertures 1-2 px apart), HK standard rectified one row taller on the CPU (fitted distortion differs slightly). `FLAMINGOS2_longslit_template.xml` |
+| Flamingos-2 imaging (gc, Galactic Center), verified v2.4.20 | GPU + CPU | Translated from the old text setup; matches the 2015 stacks (same sizes and frame counts, bright stars within 0.05-0.19 px). GPU vs CPU after the imcombine/linterp fixes: sky-subtracted frames within 0.33 of p99, stacks correlate 0.993-0.998. `FLAMINGOS2_imaging_template.xml` |
 | Python venv (`setup_venv.sh`: numpy 2.2, scipy 1.15, astropy 6.1, CuPy 14), v2.4.13 | KAST (sarik_quack1) GPU + CPU | No tracebacks, wavelength RMS 0.065 / 0.048 px. Against the system install (numpy 1.26, scipy 1.11), same code: identical through skySubtracted; blue arm identical to 1e-7 through extraction. Red arm differs from rectify on because scipy 1.15 replaced the Fortran MINPACK behind `leastsq` with a C translation (1e-9 px differences; isolated by crossing numpy/scipy versions - numpy 2 itself changes nothing): the noisy red skyline trace (0.7 px sigma) accepts/rejects a few points differently, so the distortion fit and the faint red spectrum shift (4% median). Expect the same between any two scipy versions on either side of 1.15. |
 | FourStar, others | - | Not yet run through the refactored pipeline |
 
 ## Open issues
 
-- **CPU imcombine `reject = sigclip` with `nonzero`** returns 0 where only 1-2 valid inputs remain: the first pass's
-  variance rounds to zero or below, its sqrt is NaN and every input is rejected (later passes have a +1e-6 guard).
-  The GPU combine keeps those values. Same in main. On Flamingos-2 gc it puts ~24k holes in the CPU skies (masked
-  Galactic Center stars), which zero interpolation then fills differently, so GPU and CPU stacks differ
-  (correlation 0.95-0.998). Proposed fix pending sign-off (imcombine is the core co-add code).
 - **sinfoniCollapseSlitlets** `padx`/`pady` (use-derivatives centroiding branch, not the default
   2-d Gaussian): commented out as a likely copy/paste from sinfoniCharacterizePSF, which pads for both
   methods. Re-check when SINFONI data is run.
@@ -123,6 +119,10 @@ the matching section here. New options are listed with their default.
   are disabled with an ERROR (unchanged behavior, documented here).
 
 ### fatboyLibs
+- `linterp_gpu` / `linterp_cpu` (filling zeros in master skies) used different rules: GPU 3x3 box and at least 2
+  neighbours, CPU 5x5 box and at least 1 (and it tested neighbours for != 0, not != x, and bounded columns by
+  the row count). Both now take `radius` (1 = 3x3, 2 = 5x5) and `min_neighbors`, default 3x3 / 2 (the previous
+  GPU behaviour), and give byte-identical results (synthetic test, all four combinations). (2.4.20)
 - `extractSpectra` (rewrite): the illumination-profile floor is only used for a positive sigma. With a zero or
   negative sigma (older configs, e.g. SINFONI's `slitlet_autodetect_sigma=-5`) it misjudged the floor and merged
   slitlets: SINFONI found 27 instead of 31 (32 after autocorrect, as the py2 original). (2.4.10)
@@ -225,6 +225,13 @@ the matching section here. New options are listed with their default.
 - `MODE_RAW` output with `outfile` referenced undefined `out`/`outtype`. (2.3.43)
 
 ### gpu_imcombine / imcombine
+- CPU imcombine, `reject = sigclip` / `sigma`: a pixel left with only 1-2 valid (unmasked) inputs, or with nearly
+  identical values, has a zero or slightly negative variance from rounding; its sqrt was NaN, so every input was
+  rejected (sigclip: output 0) or the result was halved (sigma: 496 for a 994 input). Variances are now clamped at
+  0, and with masked inputs a pixel with fewer than 3 valid values is not clipped. Output unchanged wherever the
+  variance is positive (synthetic 5- and 9-frame tests: identical at every pixel with >= 3 valid inputs); the
+  changed pixels now match the GPU combine. On Flamingos-2 gc this removed ~24k holes per CPU sky frame (masked
+  Galactic Center stars). Same code in main. (2.4.20)
 - `nfint.astype()` on a plain int. (Sept 16)
 - GPU `gpumean`/`gpustd` were never defined: any GPU combine with mean/sigma zero, scale, or weight
   crashed. Implemented to match the CPU selection (inclusive thresholds, optional nonzero, ddof=1).
@@ -263,6 +270,11 @@ the matching section here. New options are listed with their default.
   `--no-editable`); a relative `--venv` is made absolute; prints a note when scipy >= 1.15 (also in requirements.txt). (2.4.15)
 
 ### Templates (data/templates)
+- General templates smoke-tested on verified data, changing only the data block, keywords and setup-specific
+  values: IR imaging (oriBench), optical longslit (KAST blue: 0.053 A RMS, spectrum found) and IR MOS (LUCI: 24/24
+  slitlets calibrated) run through. IR longslit on Flamingos-2 lmcx1 JH runs but finds no spectrum: the bad pixel
+  mask computed from F2's partial lamp-on flat flags 87% of the chip; with a supplied mask (as the verified
+  config) it works. The IR spectroscopy templates now say to supply `default_bad_pixel_mask` in that case. (2.4.20)
 - New general templates for instruments without their own: `GENERAL_imaging_IR`, `GENERAL_imaging_optical`,
   `GENERAL_spectroscopy_longslit_IR`, `GENERAL_spectroscopy_longslit_optical`, `GENERAL_spectroscopy_MOS_IR`,
   `GENERAL_spectroscopy_MOS_optical` (`_template.xml`): basic steps only. Optical: biases (no overscan trimming), no
@@ -420,6 +432,8 @@ the matching section here. New options are listed with their default.
   in main; the GPU kernel was right). Options now have descriptions. (2.4.0)
 
 ### skySubtract (imaging)
+- New `interp_zeros_box_size` (`3`, or `5`) and `interp_zeros_min_neighbors` (`2`) for `interp_zeros_sky`; GPU and
+  CPU now fill the master sky's holes the same way. (2.4.20)
 - Restored the dropped `fatboyLibs` import. (Sept 16)
 
 ### skySubtractSpec

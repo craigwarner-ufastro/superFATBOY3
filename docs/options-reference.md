@@ -2,7 +2,7 @@
 
 *[Docs home](README.md)*
 
-**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.19.
+**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.20.
 Run `superFatboy3.py -list` yourself for the live list, or regenerate this file with
 `python3 docs/gen_options_reference.py`. For prose descriptions of what each process does, see the
 [process guide](processes/README.md).
@@ -809,6 +809,8 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `create_calib_only` | `no` |  |
 | `default_master_sky` | `None` |  |
 | `fit_sky_subtracted_surf` | `no` |  |
+| `interp_zeros_box_size` | `3` | 3 \| 5: zeros in the master sky (masked objects) are replaced by the median of the non-zero pixels in this box around them |
+| `interp_zeros_min_neighbors` | `2` | Minimum number of non-zero neighbours in the box to fill a zero (holes fill from their edges inward over repeated passes) |
 | `interp_zeros_sky` | `yes` |  |
 | `keep_skies` | `no` |  |
 | `onsource_sorting_key` | `full` | full \| index \| a FITS keyword to sort onsource skies by time. For CIRCE data, MJD is recommended. |
