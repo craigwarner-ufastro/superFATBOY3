@@ -158,7 +158,7 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
             logtype = LOGTYPE_ASCII
         elif(isinstance(log, fatboyLog)):
             logtype = LOGTYPE_FATBOY
-            _verbosity = log.verbosity
+            _verbosity = log._verbosity
 
     if (mode is None):
         if (isinstance(input, fatboyDataUnit)):

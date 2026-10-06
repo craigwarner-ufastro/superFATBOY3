@@ -232,12 +232,12 @@ class circeImage(fatboyImage):
         fatboyImage.setIdentifier(self, groupType, fileprefix, sindex=sindex, keyword=keyword)
         ##CIRCE specific
         sramp = str(self.ramp)
-        np.zeros = '0000'
-        sramp = np.zeros[len(sramp):]+sramp
+        zeroPad = '0000'
+        sramp = zeroPad[len(sramp):]+sramp
         if (self._expmode == self.EXPMODE_URG):
             #trailing index should be section number not ramp number for URG data
             sramp = str(self.section)
-            sramp = np.zeros[len(sramp):]+sramp
+            sramp = zeroPad[len(sramp):]+sramp
         self._identFull = self._id+'.'+self._index+sramp+'.fits'
         self._identFull = self._identFull.replace('..','.') #for case of blank index in calibs
     #end setIdentifier

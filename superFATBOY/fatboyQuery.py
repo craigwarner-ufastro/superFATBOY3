@@ -240,8 +240,8 @@ class fatboyQuery:
                             if (len(tokens) > 4):
                                 #output prefix and start index both given
                                 sfileindex = str(int(tokens[4])-startIdx+int(sfileindex))
-                                np.zeros = '0000'
-                                sfileindx = np.zeros[len(sfileindex):]+sfileindex
+                                zeroPad = '0000'
+                                sfileindx = zeroPad[len(sfileindex):]+sfileindex
                                 ident = tokens[3]
                             elif (len(tokens) > 3):
                                 #output prefix given

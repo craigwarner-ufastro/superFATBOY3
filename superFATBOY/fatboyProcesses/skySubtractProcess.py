@@ -178,6 +178,8 @@ class skySubtractProcess(fatboyProcess):
         print("skySubtractProcess::createSepImage> Finding objects and creating object masks for "+fdu.getFullId())
         self._log.writeLog(__name__, "Finding objects and creating object masks for "+fdu.getFullId())
 
+        #sep's default pixel stack (300000) overflows on big/crowded frames ("internal pixel buffer full")
+        sep.set_extract_pixstack(max(300000, int(ssdata.size)))
         t = time.time()
         bkg = sep.Background(ssdata, mask=fdu.getBadPixelMask().getData().astype(bool))
         print("\tsep background = "+str(bkg.globalback)+" rms = "+str(bkg.globalrms))

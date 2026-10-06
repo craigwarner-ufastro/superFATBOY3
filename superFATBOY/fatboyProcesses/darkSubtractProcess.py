@@ -52,6 +52,19 @@ class darkSubtractProcess(fatboyProcess):
                 dark.disable()
             return masterDark
 
+        #Drop darks whose data could not be read (getData disables a bad frame); combine the rest
+        goodDarks = []
+        for dark in darks:
+            if (dark.inUse and dark.getData() is not None):
+                goodDarks.append(dark)
+            else:
+                print("darkSubtractProcess::createMasterDark> WARNING: Dark "+dark.getFullId()+" is unusable.  Not including it in the master dark.")
+                self._log.writeLog(__name__, "Dark "+dark.getFullId()+" is unusable.  Not including it in the master dark.", type=fatboyLog.WARNING)
+        if (len(goodDarks) == 0):
+            print("darkSubtractProcess::createMasterDark> ERROR: No usable darks for "+fdu.getFullId())
+            self._log.writeLog(__name__, "No usable darks for "+fdu.getFullId(), type=fatboyLog.ERROR)
+            return None
+        darks = goodDarks
         #Select cpu/gpu option
         if (self._fdb.getGPUMode()):
             (data, header) = gpu_imcombine.imcombine(darks, outfile=mdfilename, method="median", mef=darks[0]._mef, returnHeader=True, log=self._log)
@@ -161,6 +174,8 @@ class darkSubtractProcess(fatboyProcess):
             self.recursivelyExecute(darks, prevProc)
             #convenience method
             masterDark = self.createMasterDark(fdu, darks)
+            if (masterDark is None):
+                return calibs
             self._fdb.appendCalib(masterDark)
             calibs['masterDark'] = masterDark
             return calibs
@@ -180,6 +195,8 @@ class darkSubtractProcess(fatboyProcess):
             self.recursivelyExecute(darks, prevProc)
             #convenience method
             masterDark = self.createMasterDark(fdu, darks)
+            if (masterDark is None):
+                return calibs
             self._fdb.appendCalib(masterDark)
             calibs['masterDark'] = masterDark
             return calibs
@@ -344,6 +361,8 @@ class darkSubtractProcess(fatboyProcess):
                 self.recursivelyExecute(darks, prevProc)
                 #convenience method
                 masterDark = self.createMasterDark(fdu, darks)
+                if (masterDark is None):
+                    return calibs
                 masterDark.setHistory('master_dark::'+fdu._id+'::'+str(fdu.exptime), 'yes')
                 self._fdb.appendCalib(masterDark)
                 calibs['masterDark'] = masterDark

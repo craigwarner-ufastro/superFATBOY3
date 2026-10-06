@@ -310,6 +310,19 @@ the matching section here. New options are listed with their default.
 
 ## Processes
 
+### CIRCE / skySubtract / darkSubtract (found running the CIRCE Crab and Sextans A data)
+- **`np.zeros = '0000'`** (circeImage.setIdentifier, remergeCirce, fatboyQuery manual prefixes): the Python 2 code had a local
+  `zeros = '0000'` zero-padding string; the `np.` sweep turned it into an assignment to NumPy's `zeros`, so after the first
+  CIRCE frame was identified every `np.zeros(...)` anywhere raised `'str' object is not callable` (first hit in
+  skySubtract's `createSepImage`). Now a local `zeroPad`. Swept the tree for other `np.`/`math.`/`cp.` attribute
+  assignments: none. (2.4.24)
+- `gpu_pysurfit`: `log.verbosity` -> `log._verbosity` (AttributeError in skySubtract's sky-surface fit on every frame). (2.4.24)
+- skySubtract `createSepImage`: sep's default pixel stack (300000) overflowed on large frames ("internal pixel buffer
+  full") and the object mask was lost; the stack is now the image size. (2.4.24)
+- darkSubtract `createMasterDark`: a dark whose data cannot be read (CIRCE frame missing its ramp) no longer crashes the
+  master dark with `'NoneType' object is not subscriptable`; it is skipped with a WARNING and the rest are combined
+  (ERROR and no master dark if none are usable). (2.4.24)
+
 ### darkSubtract / flatDivideSpec
 - `prompt_for_missing_dark=no` now does what the docs say when no dark has the frame's number of reads: it falls back to the
   dark with the nearest exposure time and ANY nreads (preferring the nearest exposure time), and prints/logs a loud
