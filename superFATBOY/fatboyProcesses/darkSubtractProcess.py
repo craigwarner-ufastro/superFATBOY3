@@ -14,7 +14,7 @@ class darkSubtractProcess(fatboyProcess):
     def createMasterDark(self, fdu, darks):
         mdfilename = None
         #use darks[0] for exptime in case this is a dark for a different exptime than the fdu
-        mdname = "masterDarks/mdark-"+str(darks[0].exptime)+"s-"+str(fdu.nreads)+"rd-"+darks[0]._id
+        mdname = "masterDarks/mdark-"+str(darks[0].exptime)+"s-"+str(darks[0].nreads)+"rd-"+darks[0]._id
         outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
         if (fdu.getTag(mode="composite") is not None):
             mdname += "-"+fdu.getTag(mode="composite").replace(" ","_")
@@ -26,7 +26,7 @@ class darkSubtractProcess(fatboyProcess):
         #Check to see if master dark exists already from a previous run
         prevmdfilename = outdir+"/"+mdname+".fits"
         #Noisemap file
-        nmfile = outdir+"/masterDarks/NM_mdark-"+str(darks[0].exptime)+"s-"+str(fdu.nreads)+"rd-"+darks[0]._id+".fits"
+        nmfile = outdir+"/masterDarks/NM_mdark-"+str(darks[0].exptime)+"s-"+str(darks[0].nreads)+"rd-"+darks[0]._id+".fits"
         if (os.access(prevmdfilename, os.F_OK) and self._fdb.getParam('overwrite_files', fdu.getTag()).lower() == "yes"):
             os.unlink(prevmdfilename)
         elif (os.access(prevmdfilename, os.F_OK)):
@@ -126,8 +126,12 @@ class darkSubtractProcess(fatboyProcess):
     #end execute
 
     ## OVERRIDE getCalibs
-    def getCalibs(self, fdu, prevProc = None):
+    def getCalibs(self, fdu, prevProc = None, ignoreNreads = False):
         calibs = dict()
+        #ignoreNreads: last-resort retry that accepts a dark with a different number of reads (set below)
+        nreadsMatch = fdu.nreads
+        if (ignoreNreads):
+            nreadsMatch = None
 
         mdfilename = self.getCalib("masterDark", fdu.getTag())
         if (mdfilename is not None):
@@ -179,8 +183,9 @@ class darkSubtractProcess(fatboyProcess):
             self._fdb.appendCalib(masterDark)
             calibs['masterDark'] = masterDark
             return calibs
-        print("darkSubtractProcess::getCalibs> Master Dark for exposure time "+str(fdu.exptime)+", nreads "+str(fdu.nreads)+", and section "+str(fdu.section)+" not found!")
-        self._log.writeLog(__name__, "Master Dark for exposure time "+str(fdu.exptime)+", nreads "+str(fdu.nreads)+", and section "+str(fdu.section)+" not found!", type=fatboyLog.WARNING)
+        if (not ignoreNreads):
+            print("darkSubtractProcess::getCalibs> Master Dark for exposure time "+str(fdu.exptime)+", nreads "+str(fdu.nreads)+", and section "+str(fdu.section)+" not found!")
+            self._log.writeLog(__name__, "Master Dark for exposure time "+str(fdu.exptime)+", nreads "+str(fdu.nreads)+", and section "+str(fdu.section)+" not found!", type=fatboyLog.WARNING)
         #5) Check default_master_dark for matching exptime/nreads/section
         defaultMasterDarks = []
         if (self.getOption('default_master_dark', fdu.getTag()) is not None):
@@ -278,7 +283,7 @@ class darkSubtractProcess(fatboyProcess):
             expDiff = None
             masterDark = None
             appendCalib = False
-            masterDarks = self._fdb.getMasterCalibs(obstype="master_dark", nreads=fdu.nreads, section=fdu.section, tag=fdu.getTag())
+            masterDarks = self._fdb.getMasterCalibs(obstype="master_dark", nreads=nreadsMatch, section=fdu.section, tag=fdu.getTag())
             for mdark in masterDarks:
                 if (expDiff is None):
                     #first match
@@ -294,7 +299,7 @@ class darkSubtractProcess(fatboyProcess):
                 #read header and initialize
                 mdark.readHeader()
                 mdark.initialize()
-                if (mdark.nreads == fdu.nreads and mdark.section == fdu.section):
+                if ((ignoreNreads or mdark.nreads == fdu.nreads) and mdark.section == fdu.section):
                     if (expDiff is None):
                         #first match
                         expDiff = abs(mdark.exptime - fdu.exptime)
@@ -307,7 +312,7 @@ class darkSubtractProcess(fatboyProcess):
                         appendCalib = True
             #first check individual darks
             currentDark = None
-            darks = self._fdb.getCalibs(obstype=fatboyDataUnit.FDU_TYPE_DARK, nreads=fdu.nreads, section=fdu.section, tag=fdu.getTag())
+            darks = self._fdb.getCalibs(obstype=fatboyDataUnit.FDU_TYPE_DARK, nreads=nreadsMatch, section=fdu.section, tag=fdu.getTag())
             for dark in darks:
                 if (expDiff is None):
                     #first match
@@ -334,7 +339,7 @@ class darkSubtractProcess(fatboyProcess):
                 #create master dark from darks with closest exp time
                 print("darkSubtractProcess::getCalibs> Using exptime "+str(currentDark.exptime)+" instead.")
                 print("darkSubtractProcess::getCalibs> Creating Master Dark for exposure time "+str(currentDark.exptime)+" and "+str(currentDark.nreads)+" reads...")
-                darks = self._fdb.getCalibs(obstype=fatboyDataUnit.FDU_TYPE_DARK, exptime=currentDark.exptime, nreads=fdu.nreads, section=fdu.section, tag=fdu.getTag())
+                darks = self._fdb.getCalibs(obstype=fatboyDataUnit.FDU_TYPE_DARK, exptime=currentDark.exptime, nreads=currentDark.nreads, section=fdu.section, tag=fdu.getTag())
                 #First recursively process (linearity correction probably)
                 self.recursivelyExecute(darks, prevProc)
                 #convenience method
@@ -343,6 +348,14 @@ class darkSubtractProcess(fatboyProcess):
                 self._fdb.appendCalib(masterDark)
                 calibs['masterDark'] = masterDark
                 return calibs
+        if (not ignoreNreads and self.getOption('prompt_for_missing_dark', fdu.getTag()).lower() != "yes"):
+            #Nothing with matching nreads: retry accepting the closest exposure time with any nreads, warning loudly
+            calibs = self.getCalibs(fdu, prevProc, ignoreNreads=True)
+            if ('masterDark' in calibs):
+                md = calibs['masterDark']
+                msg = "No dark with nreads="+str(fdu.nreads)+" for "+fdu.getFullId()+" (exptime "+str(fdu.exptime)+"); SUBSTITUTING dark "+str(md.getFilename())+" (exptime "+str(md.exptime)+", nreads "+str(md.nreads)+").  Check that this is appropriate!"
+                print("\n*** darkSubtractProcess::getCalibs> WARNING: "+msg+" ***\n")
+                self._log.writeLog(__name__, msg, type=fatboyLog.WARNING)
         return calibs
     #end getCalibs
 

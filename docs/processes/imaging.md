@@ -59,7 +59,7 @@ exposure time; see below.
 | Option | Default | Meaning |
 |---|---|---|
 | `default_master_dark` | `None` | A master dark file, a comma-separated list, or an ASCII file listing them. Used when the raw darks do not include a match for some frame; the one matching exposure time and number of reads is chosen. |
-| `prompt_for_missing_dark` | `no` | If no dark matches a frame's exposure time: `yes` asks you which file to use; `no` uses the dark with the nearest exposure time. **Use `no` for unattended runs.** |
+| `prompt_for_missing_dark` | `no` | If no dark matches a frame's exposure time: `yes` asks you which file to use; `no` uses the dark with the nearest exposure time (matching number of reads first; if none, any number of reads, with a loud WARNING). **Use `no` for unattended runs.** |
 
 You can also supply master darks as `<calib name="masterDark" value="file.fits"/>` inside the process block, which ties them to a
 particular object with a `tag`. Output: `darkSubtracted/ds_*.fits`; master darks (with `write_calib_output`) in `masterDarks/`.

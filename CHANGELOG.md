@@ -304,6 +304,13 @@ the matching section here. New options are listed with their default.
 
 ## Processes
 
+### darkSubtract / flatDivideSpec
+- `prompt_for_missing_dark=no` now does what the docs say when no dark has the frame's number of reads: it falls back to the
+  dark with the nearest exposure time and ANY nreads (preferring the nearest exposure time), and prints/logs a loud
+  `SUBSTITUTING dark ...` warning. Before, the frame (flats, arcs) was discarded, which then crashed flatDivideSpec's
+  `createMasterFlat` with `IndexError: list index out of range` (FISICA: 60 s 1-read flats, 60 s 8-read darks). Master dark
+  names now use the dark's own nreads. `createMasterFlat` returns a clean ERROR when every flat was discarded. (2.4.22)
+
 ### findSlitlets
 - `tracePeakLocalMax` (MEGARA fibers) crashed writing its QA image (`only length-1 arrays can be converted to
   Python scalars`): `ycoords[i]` holds every fiber at that x, and the 2.3.x scalar-`.astype` sweep made the cast a

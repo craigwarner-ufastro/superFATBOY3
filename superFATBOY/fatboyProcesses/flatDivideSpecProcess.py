@@ -20,6 +20,11 @@ class flatDivideSpecProcess(fatboyProcess):
     def createMasterFlat(self, fdu, flats, properties):
         masterFlat = None
         mffilename = None
+        if (len(flats) == 0):
+            #every flat was discarded while being processed (e.g. missing dark)
+            print("flatDivideSpecProcess::createMasterFlat> ERROR: No usable flats left for "+fdu.getFullId()+" (all were discarded while processing).  Check the flat frames and their dark subtraction.")
+            self._log.writeLog(__name__, "No usable flats left for "+fdu.getFullId()+" (all were discarded while processing)", type=fatboyLog.ERROR)
+            return None
         flatmethod = properties['flat_method']
         #use flats[0] for filter in case this is a flat for a different filter than the fdu
         mfname = "masterFlats/mflat-"+str(flatmethod)+"-"+str(flats[0].filter).replace(" ","_")+"-"+str(flats[0]._id)
