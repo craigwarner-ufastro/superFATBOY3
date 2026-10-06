@@ -111,7 +111,13 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
     for j in range(order+2):
         terms+=j
     p = np.zeros(terms)
-    p[0] = d2[inmask].mean()
+    if (inmask.any()):
+        p[0] = d2[inmask].mean()
+    else:
+        msg = "No unmasked pixels to fit; the fitted surface will be zero."
+        print("\tWARNING: "+msg)
+        write_fatboy_log(log, logtype, msg, __name__, printCaller=False, tabLevel=1, messageType=fatboyLog.WARNING)
+    lsq = (p,)
 
     keep = np.ones(d2.shape).astype(bool)
     nkeep = (keep*inmask).sum()
@@ -132,6 +138,14 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
         if (_verbosity == fatboyLog.VERBOSE):
             print("\t\tMasking: ",time.time()-tt,"; Total: ",time.time()-t)
         tt = time.time()
+        if (len(d2b) < len(p)):
+            #Fewer unmasked points than parameters: cannot fit.  Keep the current parameters.
+            msg = "Only "+str(len(d2b))+" unmasked point(s) for "+str(len(p))+" fit parameters; not fitting.  The fitted surface may be zero."
+            print("\t\tWARNING: "+msg)
+            write_fatboy_log(log, logtype, msg, __name__, printCaller=False, tabLevel=1, messageType=fatboyLog.WARNING)
+            if (curriter == 0):
+                lsq = (p,)
+            break
         lsq = leastsq(pysurfaceResiduals, p, args=(xb,yb,d2b,order))
         if (_verbosity == fatboyLog.VERBOSE):
             print("\t\tCalc Fit: ",time.time()-tt,"; Total: ",time.time()-t)
@@ -149,6 +163,14 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
         resid = d2b-fit[b]
         tempmean = resid.mean()
         tempstddev = resid.std(ddof=1)
+        if (not np.isfinite(tempstddev) or tempstddev <= 0):
+            #No dispersion: everything was masked (or the data is constant), so there is nothing to sigma clip.
+            #Stop with the current fit (zero surface if nothing was ever fit) instead of clipping every point.
+            msg = "Residuals have zero dispersion (all pixels masked or constant data); not sigma clipping.  The fitted surface may be zero."
+            print("\t\tWARNING: "+msg)
+            write_fatboy_log(log, logtype, msg, __name__, printCaller=False, tabLevel=1, messageType=fatboyLog.WARNING)
+            curriter+=1
+            break
         print("\t\tData - fit    mean: "+str(tempmean) + "   sigma: "+str(tempstddev))
         write_fatboy_log(log, logtype, "Data - fit    mean: "+str(tempmean) + "   sigma: "+str(tempstddev), __name__, printCaller=False, tabLevel=1)
         keep *= np.logical_and((d2-fit-tempmean)*(1./tempstddev) <= upper, (d2-fit-tempmean)*(1./tempstddev) >= -lower)

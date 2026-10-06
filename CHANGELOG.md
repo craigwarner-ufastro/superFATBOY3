@@ -26,7 +26,7 @@ the matching section here. New options are listed with their default.
 | `wavecal.py` standalone, v2.4.7 | 24 LUCI arc slitlets in a loop | Same grades as the pipeline, RMS within 0.004 px, slit 10 replaced the same way |
 | SINFONI 30 Dor (sinfoni_test_30Dor), verified v2.4.12 | GPU + CPU | Full chain to registered/stacked datacubes, no tracebacks; slitmask identical to the py2 original; stacked image and cube correlate 0.9998 / 0.9987 with py2 (flux 0.6% lower). GPU vs CPU: 1.000000 / 0.999998. `SINFONI_IFU_template.xml` |
 | MEGARA LCB (mt1), verified v2.4.12 | GPU + CPU | From the raw data (bolt): 622 fibers traced (identical to py2), 56 sky fibers identified, 622/622 wavelength-calibrated (610 excellent), sky subtracted. GPU vs CPU: 87/139 files identical, the rest within 5e-6 of the data range. `MEGARA_LCB_template.xml` |
-| Flamingos-2 longslit (lmcx1, JH + HK), verified v2.4.16 | GPU + CPU | Full chain through calibStarDivide, no errors; wavelength solutions 0.05-0.11 px. GPU vs CPU: in-band spectra within 2% (apertures 1-2 px apart), HK standard rectified one row taller on the CPU (fitted distortion differs slightly). `FLAMINGOS2_longslit_template.xml` |
+| Flamingos-2 longslit (lmcx1, JH + HK), verified v2.4.16 | GPU + CPU | Full chain through calibStarDivide, no errors; wavelength solutions 0.05-0.11 px. GPU vs CPU: in-band spectra within 2% (apertures 1-2 px apart), HK standard rectified one row taller on the CPU (fitted distortion differs slightly). `FLAMINGOS2_longslit_2009_template.xml` |
 | Flamingos-2 imaging (gc, Galactic Center), verified v2.4.20 | GPU + CPU | Translated from the old text setup; matches the 2015 stacks (same sizes and frame counts, bright stars within 0.05-0.19 px). GPU vs CPU after the imcombine/linterp fixes: sky-subtracted frames within 0.33 of p99, stacks correlate 0.993-0.998. `FLAMINGOS2_imaging_template.xml` |
 | RHO 14" optical imaging (h_persei_rho, B V R I), verified v2.4.21 | GPU + CPU | 4 filters x 10 dithered frames, dark / lamp-on dome flat / bad pixel mask / cosmic rays / triangles + drizzle stack, ~20 s (GPU) / ~31 s (CPU). All 209 output FITS byte-identical GPU vs CPU; every frame in every stack (objmap 10), shift errors 0.1-0.2 px. `RHO_imaging_template.xml` |
 | Python venv (`setup_venv.sh`: numpy 2.2, scipy 1.15, astropy 6.1, CuPy 14), v2.4.13 | KAST (sarik_quack1) GPU + CPU | No tracebacks, wavelength RMS 0.065 / 0.048 px. Against the system install (numpy 1.26, scipy 1.11), same code: identical through skySubtracted; blue arm identical to 1e-7 through extraction. Red arm differs from rectify on because scipy 1.15 replaced the Fortran MINPACK behind `leastsq` with a C translation (1e-9 px differences; isolated by crossing numpy/scipy versions - numpy 2 itself changes nothing): the noisy red skyline trace (0.7 px sigma) accepts/rejects a few points differently, so the distortion fit and the faint red spectrum shift (4% median). Expect the same between any two scipy versions on either side of 1.15. |
@@ -256,6 +256,15 @@ the matching section here. New options are listed with their default.
   used undefined `expfile`. (2.3.43)
 
 ### pysurfit / gpu_pysurfit
+- **gpu_pysurfit fitted the wrong model**: it passed `surfaceResiduals` (no constant term) to `leastsq`, so `p[0]` was never
+  fitted and stayed at its initial guess, while the clipping kernel and the CPU path both include it. The GPU surface was
+  off by hundreds of counts (e.g. CIRCE sky-subtracted frames left a median of -217 vs 0 on the CPU, rms 205 vs 147), which
+  made GPU runs of `fit_sky_subtracted_surf` (skySubtract) differ from CPU and gave spurious detections downstream. Now
+  `surfaceResidualsWithOffset` (the original used `pysurfaceResiduals`): GPU == CPU exactly on synthetic planes and
+  quadratics with outliers (max difference 0.000, was up to 575). (2.4.29)
+- CPU `pysurfit`: no unmasked data / zero residual dispersion (e.g. a sep object mask covering the whole frame) crashed
+  `leastsq` ("func input vector length N=3 must not exceed func output vector length M=0"); now a WARNING and a zero surface,
+  as the GPU path already did. (2.4.29)
 - GPU std uses `ddof=1` like the CPU. `.sum()/N` replaced by `.mean()`. (Sept 11)
 - `pysurfit` input-type detection and output message referenced undefined names. (2.3.43)
 

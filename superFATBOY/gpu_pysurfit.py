@@ -269,7 +269,7 @@ def pysurfit(input, out=None, order=1, niter=3, lower=2.5, upper=2.5, inmask=Non
             print("\t\tMasking: ",time.time()-tt,"; Total: ",time.time()-t)
         tt = time.time()
         
-        lsq = leastsq(surfaceResiduals, p, args=(xb_cpu, yb_cpu, d2b_cpu, order))
+        lsq = leastsq(surfaceResidualsWithOffset, p, args=(xb_cpu, yb_cpu, d2b_cpu, order))
         p = lsq[0]
         
         if (_verbosity == fatboyLog.VERBOSE):
