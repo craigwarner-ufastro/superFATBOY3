@@ -188,16 +188,28 @@ The `triangles` method is the default and is used by the imaging templates. It h
 Flamingos-2 Galactic Center frames (thousands of stars) the unlimited, unclipped shifts were 1-2.5 px off, at about 35 s
 per frame; with the defaults they agree with `xregister` to 0.12 px (median), in a few seconds per filter.
 
+**Verification (v2.4.32).** A triangle shift is only accepted if it is also confirmed by the stars themselves: after the triangles vote
+(`triangles_verify = yes`, the default), the two star lists are matched at the candidate shift with a coarse-to-fine mutual nearest-neighbour
+match (`triangles_match_radius`, 2.5 px), and at least `triangles_min_stars` (3) stars must coincide with a chance probability
+below 10^-`triangles_min_significance` (6) once a look-elsewhere correction for the number of possible shifts is applied. Candidate shifts are
+ranked by their triangle votes; if the runner-up has more than half the votes the frame is declared ambiguous and fails. Stars alone are never
+enough: on 1194 frame pairs that cannot match (mirrored, transposed or from other fields) every false acceptance came from star coincidences
+without triangle support, and there were none with it. The original estimate is kept when it agrees with the verified shift (within 1.5 px), so
+frames that were right do not change; where it disagreed it was wrong (Crab nebula frames were off by 63-335 px). Before matching,
+`triangles_remove_stationary = yes` drops detections that sit at the same pixel in many frames of a dithered sequence (detector or sky-model
+artifacts that otherwise produce a competing zero shift); an undithered sequence is left alone. `tri_register` also no longer modifies the
+frames it is given (it used to subtract sep's background map from them in place, so triangles-aligned stacks had a smooth background removed).
+
 **Sparse fields and large dithers.** Triangles can only match stars the two frames share. When the field has few
 stars (tens at 3 sigma) and the dither moves a frame by a large fraction of the chip, a frame far from the reference
-may share fewer than three stars with it, and no triangle can match. A frame with no match is **discarded with an
-ERROR** naming it (it is never given a shift of 0, 0), and a shift based on a **single** matching triangle is reported
-as a loud WARNING, because a chance match looks identical to a right one. Set `triangles_chain_overlapping_frames =
-yes` to rescue such frames: a frame that cannot be matched to the reference (or only by one triangle) is matched
-against other frames that already have a shift, nearest in the sequence first (up to 10 candidates), and the shifts
-are composed. Frames that match the reference directly are unchanged, so the option only adds registered frames. On
-CIRCE SextansA (22 stars in the reference, dithers up to 720 px) 12 of 32 frames had no match; with the option all 32
-are registered, within 4 px of cross-correlation (27 within 2 px). Lowering `sep_detect_thresh` can also help.
+may share fewer than three stars with it, and no triangle can match. A frame with no confirmed match is **discarded with an
+ERROR** naming it (it is never given a shift of 0, 0). Set `triangles_chain_overlapping_frames = yes` to rescue such frames: a frame that cannot be
+registered against the reference is matched, with the same verification, against other frames that already have a shift, nearest in the sequence
+first (up to 10 candidates), and the shifts are composed. Frames that match the reference directly are unchanged, so the option only adds
+registered frames. On CIRCE SextansA (22 stars in the reference, dithers up to 720 px) 13 of 32 frames had no confirmed match; with the option all 32
+are registered, within 4 px of cross-correlation (26 within 2 px). Lowering `sep_detect_thresh` can also help. At dithers of ~1000 px the shift
+is only accurate to a few pixels because plate scale and rotation matter (a warning reports the scatter of the matched stars); a full
+distortion model is not attempted.
 
 | Option | Default | Meaning |
 |---|---|---|

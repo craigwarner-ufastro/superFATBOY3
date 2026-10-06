@@ -106,6 +106,11 @@ class alignStackProcess(fatboyProcess):
             triangles_max_angle = float(self.getOption('triangles_max_angle', fdu.getTag()))
             triangles_sigma = float(self.getOption('triangles_sigma', fdu.getTag()))
             triangles_chain = self.getOption('triangles_chain_overlapping_frames', fdu.getTag()).lower() == 'yes'
+            triangles_verify = self.getOption('triangles_verify', fdu.getTag()).lower() == 'yes'
+            triangles_min_stars = int(self.getOption('triangles_min_stars', fdu.getTag()))
+            triangles_min_significance = float(self.getOption('triangles_min_significance', fdu.getTag()))
+            triangles_match_radius = float(self.getOption('triangles_match_radius', fdu.getTag()))
+            triangles_remove_stationary = self.getOption('triangles_remove_stationary', fdu.getTag()).lower() == 'yes'
             triangles_use_sigma_clipping = False
             if (self.getOption('triangles_use_sigma_clipping', fdu.getTag()).lower() == 'yes'):
                 triangles_use_sigma_clipping = True
@@ -113,7 +118,7 @@ class alignStackProcess(fatboyProcess):
             outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
             if (not os.access(outdir+"/alignedStacked", os.F_OK)):
                 os.mkdir(outdir+"/alignedStacked",0o755)
-            shifts = triregister_method(frameList, xcenter=xcenter, ycenter=ycenter, xboxsize=xboxsize, yboxsize=yboxsize, refframe=refframe, log=self._log, sepDetectThresh=sepDetectThresh, method=trimethod, min_angle=triangles_min_angle, max_angle=triangles_max_angle, max_stars=max_stars, doplots=debug_plots, plotdir=outdir+"/alignedStacked/", atol=triangles_atol, rtol=triangles_rtol, sigma_clipping=triangles_use_sigma_clipping, sig_to_clip=triangles_sigma, chain_overlapping_frames=triangles_chain)
+            shifts = triregister_method(frameList, xcenter=xcenter, ycenter=ycenter, xboxsize=xboxsize, yboxsize=yboxsize, refframe=refframe, log=self._log, sepDetectThresh=sepDetectThresh, method=trimethod, min_angle=triangles_min_angle, max_angle=triangles_max_angle, max_stars=max_stars, doplots=debug_plots, plotdir=outdir+"/alignedStacked/", atol=triangles_atol, rtol=triangles_rtol, sigma_clipping=triangles_use_sigma_clipping, sig_to_clip=triangles_sigma, chain_overlapping_frames=triangles_chain, verify=triangles_verify, min_stars=triangles_min_stars, min_significance=triangles_min_significance, match_radius=triangles_match_radius, remove_stationary=triangles_remove_stationary)
         elif (alignMethod == "manual"):
             if (not os.access(shiftsFile, os.F_OK)):
                 print("alignStackProcess::alignFrames> ERROR: align_shifts_file "+shiftsFile+" not found! Alignment and stacking not done!")
@@ -291,6 +296,16 @@ class alignStackProcess(fatboyProcess):
         self._optioninfo.setdefault('triangles_atol', 'maximum absolute tolerance in pixels for matching triangles')
         self._options.setdefault('triangles_chain_overlapping_frames', 'no')
         self._optioninfo.setdefault('triangles_chain_overlapping_frames', 'yes | no.  Frames that cannot be matched to the reference frame (or only by one triangle) are matched against other already-registered frames, nearest in the sequence first, and the shifts are composed.  For large dithers over sparse fields where frames far from the reference share few stars.  Unmatched frames are always discarded with an ERROR.')
+        self._options.setdefault('triangles_verify', 'yes')
+        self._optioninfo.setdefault('triangles_verify', 'yes | no.  Accept a triangle shift only if it is also confirmed by stars: at least triangles_min_stars stars coincide at that shift with a chance probability below 10^-triangles_min_significance (look-elsewhere corrected).  Frames that fail are reported as ERROR and discarded (or rescued with triangles_chain_overlapping_frames).  no = the original triangle-only estimate.')
+        self._options.setdefault('triangles_min_stars', '3')
+        self._optioninfo.setdefault('triangles_min_stars', 'Minimum number of coinciding stars that must confirm a triangle shift (triangles_verify = yes)')
+        self._options.setdefault('triangles_min_significance', '6')
+        self._optioninfo.setdefault('triangles_min_significance', 'Minimum significance, -log10 of the chance probability of the star coincidences, to accept a shift (triangles_verify = yes).  Measured on 1194 frame pairs that cannot match (mirrored, transposed, other fields) there were no false acceptances with triangle support even at 0; real frames are typically 10-300.')
+        self._options.setdefault('triangles_match_radius', '2.5')
+        self._optioninfo.setdefault('triangles_match_radius', 'Pixels within which a reference star counts as coinciding with a star of the other frame (triangles_verify = yes)')
+        self._options.setdefault('triangles_remove_stationary', 'yes')
+        self._optioninfo.setdefault('triangles_remove_stationary', 'yes | no.  Before matching, drop detections that sit at the same pixel in many frames of a dithered sequence (detector or sky-model artifacts, which otherwise produce a competing zero shift).  Skipped for an undithered sequence.')
         self._options.setdefault('triangles_debug_plots', 'yes')
         self._options.setdefault('triangles_max_angle', '110')
         self._optioninfo.setdefault('triangles_max_angle', 'max angle for any triangle to have')

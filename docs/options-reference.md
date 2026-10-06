@@ -2,7 +2,7 @@
 
 *[Docs home](README.md)*
 
-**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.30.
+**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.31.
 Run `superFatboy3.py -list` yourself for the live list, or regenerate this file with
 `python3 docs/gen_options_reference.py`. For prose descriptions of what each process does, see the
 [process guide](processes/README.md).
@@ -131,12 +131,17 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `triangles_atol` | `2.0` | maximum absolute tolerance in pixels for matching triangles |
 | `triangles_chain_overlapping_frames` | `no` | yes \| no.  Frames that cannot be matched to the reference frame (or only by one triangle) are matched against other already-registered frames, nearest in the sequence first, and the shifts are composed.  For large dithers over sparse fields where frames far from the reference share few stars.  Unmatched frames are always discarded with an ERROR. |
 | `triangles_debug_plots` | `yes` |  |
+| `triangles_match_radius` | `2.5` | Pixels within which a reference star counts as coinciding with a star of the other frame (triangles_verify = yes) |
 | `triangles_max_angle` | `110` | max angle for any triangle to have |
 | `triangles_max_stars` | `150` | Use only the N brightest stars for triangles (none = all). In crowded fields all stars are slow and match by chance. |
 | `triangles_min_angle` | `30` | min angle for any triangle to have |
+| `triangles_min_significance` | `6` | Minimum significance, -log10 of the chance probability of the star coincidences, to accept a shift (triangles_verify = yes).  Measured on 1194 frame pairs that cannot match (mirrored, transposed, other fields) there were no false acceptances with triangle support even at 0; real frames are typically 10-300. |
+| `triangles_min_stars` | `3` | Minimum number of coinciding stars that must confirm a triangle shift (triangles_verify = yes) |
+| `triangles_remove_stationary` | `yes` | yes \| no.  Before matching, drop detections that sit at the same pixel in many frames of a dithered sequence (detector or sky-model artifacts, which otherwise produce a competing zero shift).  Skipped for an undithered sequence. |
 | `triangles_rtol` | `0.025` | maximum relative tolerance in pixels for matching triangles |
 | `triangles_sigma` | `3` | Sigma to use for sigma clipping |
 | `triangles_use_sigma_clipping` | `yes` | Use sigma clipping on shifts from fit triangles |
+| `triangles_verify` | `yes` | yes \| no.  Accept a triangle shift only if it is also confirmed by stars: at least triangles_min_stars stars coincide at that shift with a chance probability below 10^-triangles_min_significance (look-elsewhere corrected).  Frames that fail are reported as ERROR and discarded (or rescued with triangles_chain_overlapping_frames).  no = the original triangle-only estimate. |
 | `use_only_selected_indices` | `None` | If not None, this can be a list of indices or ASCII file listing indices of frames to align/stack. Others will be ignored. |
 | `write_calib_output` | `no` |  |
 | `write_output` | `no` |  |

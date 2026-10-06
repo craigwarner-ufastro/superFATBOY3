@@ -287,6 +287,19 @@ the matching section here. New options are listed with their default.
 - `pysurfit` input-type detection and output message referenced undefined names. (2.3.43)
 
 ### xregister / gpu_xregister / tri_register
+- **tri_register hardened** (triangles alignment): (1) every candidate shift is verified by the stars (>= `triangles_min_stars` coinciding stars,
+  significance >= `triangles_min_significance`) and only hypotheses with triangle support are accepted - 0 false acceptances in 1194 null frame pairs
+  (mirrored/transposed/other-field), where star-only candidates gave up to 49; (2) all triangle matches are clustered and ranked by votes instead of the
+  first match per reference triangle being averaged - Crab h1 frames that legacy placed 63-335 px wrong are now right; (3) ambiguous frames (runner-up with
+  more than half the votes) fail; (4) coarse-to-fine star matching handles field distortion at large dithers; (5) detections that recur at the same pixel in many
+  frames are removed before matching (`triangles_remove_stationary`); (6) the chain rescue uses the same verified matching. New options `triangles_verify`
+  (yes), `triangles_min_stars` (3), `triangles_min_significance` (6), `triangles_match_radius` (2.5), `triangles_remove_stationary` (yes); `triangles_verify = no`
+  gives the original triangle-only estimate. oriBench and the four RHO filters give bit-identical shifts; the F2 Galactic Center sets change by <= 0.04 px;
+  SextansA: 13 unmatched (all rescued by chaining, 26 of 32 within 2 px of cross-correlation, none wrong). (2.4.32)
+- **tri_register no longer modifies its input**: it called `sep.Background(...).subfrom()` on a view of the frame data, so every triangles-aligned stack had a smooth
+  background map subtracted (in a test, 567 of 579 counts of gradient; it would also remove diffuse emission on scales above sep's 64-pixel boxes). It now works on a
+  private contiguous copy, which also fixes a crash for any align box smaller than the frame (`array is not C-contiguous`). Stacks of triangles-aligned runs keep their
+  background: RHO stacks go from ~0.1-0.35 to 0.4-2.4 counts/s (the sky is retained, as the optical template states); shifts are unchanged. (2.4.32)
 - **tri_register / alignStack (triangles)**: a frame with no matching triangle used to get a silent shift of (0, 0) and
   was stacked at the wrong position. It now gets NaN and `alignStack` discards it with an ERROR naming it (and
   disables it); the rest are stacked. A shift based on a single matching triangle logs a loud WARNING. New option
