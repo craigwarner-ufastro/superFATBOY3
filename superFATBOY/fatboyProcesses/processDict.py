@@ -26,6 +26,9 @@ def getProcessDict():
     processDict['deboneCirce'] = deboneCirceProcess.deboneCirceProcess
     processDict['trimWindow'] = trimWindowProcess.trimWindowProcess
 
+    #FourStar specific
+    processDict['mosaicFourStar'] = mosaicFourStarProcess.mosaicFourStarProcess
+
     #Spectroscopy
     processDict['badPixelMaskSpec'] = badPixelMaskSpecProcess.BadPixelMaskSpecProcess
     processDict['calibStarDivide'] = calibStarDivideProcess.calibStarDivideProcess

@@ -2,7 +2,7 @@
 
 *[Docs home](README.md)*
 
-**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.25.
+**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.30.
 Run `superFatboy3.py -list` yourself for the live list, or regenerate this file with
 `python3 docs/gen_options_reference.py`. For prose descriptions of what each process does, see the
 [process guide](processes/README.md).
@@ -43,6 +43,7 @@ carry a noisemap also accept `write_noisemaps`. They are listed here only where 
 - [miradasDARFromData](#miradasdarfromdata)
 - [miradasRegisterWCS](#miradasregisterwcs)
 - [miradasStitchOrders](#miradasstitchorders)
+- [mosaicFourStar](#mosaicfourstar)
 - [noisemap](#noisemap)
 - [rectify](#rectify)
 - [remergeCirce](#remergecirce)
@@ -588,6 +589,14 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `order_weighting` | `none` | none \| normalize_flux \| flux_weighted \| noisemap_only |
 | `write_calib_output` | `no` |  |
 | `write_noisemaps` | `no` |  |
+| `write_output` | `no` |  |
+
+## mosaicFourStar
+
+| Option | Default | Notes |
+|---|---|---|
+| `create_calib_only` | `no` |  |
+| `write_calib_output` | `no` |  |
 | `write_output` | `no` |  |
 
 ## noisemap

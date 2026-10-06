@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<!-- CIRCE (GTC) near-IR imaging, H band.  Verified in GPU and CPU mode on the Crab nebula data (two pointings, 27 frames each).
+     datatype = circeImage: every CIRCE frame is a 2 x 2 set of sections that remergeCirce stitches together after
+     the sections have been reduced separately.
+
+     Chain: darkSubtract, flatDivide (dome on-off), badPixelMask, skySubtract, cosmicRays, remergeCirce, alignStack.
+
+     Things specific to this setup:
+       * sky_subtract_method = offsource_neb: the target fills the field (nebula), so the sky is built from separate off-source
+         frames (<calib type="sky">).  fit_sky_subtracted_surf = yes removes a residual plane afterwards.
+       * Large dithers over a sparse field leave frames far from the reference sharing few stars with it, so
+         alignStack uses triangles with triangles_chain_overlapping_frames = yes (frames that cannot be matched to the
+         reference are matched against neighbours in the sequence).  Frames that cannot be registered at all are
+         discarded with an ERROR; shifts based on a single triangle are warned about.
+       * sep (the source finder used for the object masks) can overflow on very structured frames; the code then retries at
+         twice the threshold and logs a WARNING.
+       * prompt_for_missing_dark = no: a dark with a different number of reads or exposure time is substituted with a warning.
+       * badPixelMask column_reject removes a bad column range (given in CIRCE section pixels). -->
+<queries>
+  <dataset dir="/path/to/CIRCE" tag="circe" datatype="circeImage">
+    <object type="auto" name="crab_h1" prefix="night2/CIRCE2014-12-15">
+      <index start="63" stop="71">
+      </index>
+    </object>
+
+    <object type="auto" name="crab_h2" prefix="night2/CIRCE2014-12-15">
+      <index start="81" stop="89">
+      </index>
+    </object>
+
+    <calib type="sky" name="crab_h_sky" prefix="night2/CIRCE2014-12-15">
+    <!--
+      <object>
+        <value>crab_h1</value>
+	<value>crab_h2</value>
+      </object>
+      -->
+      <index start="72" stop="80"/>
+    </calib>
+
+    <calib name="dark20s" type="dark" prefix="night1/CIRCE2014-12-14">
+      <value>68</value>
+    </calib>
+
+    <calib name="dark20s" type="dark" prefix="night2/CIRCE2014-12-15">
+      <index start="256" stop="267"/>
+    </calib>
+
+    <calib name="dark3s" type="dark" prefix="night1/CIRCE2014-12-14">
+      <value>61</value>
+    </calib>
+
+    <calib name="dark3s" type="dark" prefix="night2/CIRCE2014-12-15">
+      <index start="224" stop="232"/>
+    </calib>
+
+    <calib name="flat_h_on" type="flat" prefix="night1/CIRCE2014-12-14">
+      <index start="108" stop="110"/>
+      <property name="flat_type" value="lamp_on"/>
+    </calib>
+
+    <calib name="flat_h_off" type="flat" prefix="night1/CIRCE2014-12-14">
+      <value>105</value>
+      <property name="flat_type" value="lamp_off"/>
+    </calib>
+  </dataset>
+</queries>
+
+<processes>
+  <process name="darkSubtract">
+    <option name="prompt_for_missing_dark" value="no"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="flatDivide">
+    <option name="flat_method" value="dome_on-off"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="badPixelMask">
+    <option name="column_reject" value="320:384"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="skySubtract">
+    <option name="fit_sky_subtracted_surf" value="yes"/>
+    <option name="sky_subtract_method" value="offsource_neb"/>
+    <option name="sextractor_path" value="/usr/local/bin/sex"/>
+    <option name="sky_reject_type" value="sigclip"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="cosmicRays">
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="remergeCirce">
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="alignStack">
+    <option name="align_method" value="triangles"/>
+    <option name="triangles_chain_overlapping_frames" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+</processes>
+
+<parameters>
+  <param name="outputdir" value="/path/to/output"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="clean_up" value="no"/>
+  <param name="prefix_delimiter" value="none"/>
+  <param name="filter_keyword" value="FW1"/>
+  <param name="gpumode" value="yes"/>
+</parameters>
+</fatboy>

@@ -102,6 +102,7 @@ linearity → noisemap → darkSubtract → createCleanSkies → createMasterArc
 | `megaraIdentifyFibers`, `collapseFibers`, `megaraSkySubtract` | MEGARA fiber steps | [instruments](instruments.md#megara) |
 | `sinfoniCalcLinearity`, `sinfoniRemoveBadLines`, `sinfoniIdentifySlitlets`, `sinfoniCollapseSlitlets`, `sinfoniCreate3dDatacubes`, `sinfoniCharacterizePSF`, `sinfoniRegisterStack` | SINFONI IFU steps | [instruments](instruments.md#sinfoni) |
 | `remergeCirce`, `deboneCirce`, `mergeObjects` | CIRCE steps | [instruments](instruments.md#circe) |
+| `mosaicFourStar` | FourStar chip mosaic | [instruments](instruments.md#fourstar) |
 
 ## A note on algorithm robustness
 

@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<!-- FISICA near-IR slitlet (MOS-style) spectroscopy, JH grism.  Verified in GPU and CPU mode (rectified frames and wavelength solutions agree to
+     about 1%; one marginal spectrum can be found in a different frame) on the n1569 dataset: linearity, dark, clean skies and master arclamp, region-file slitlets, dome on-off flat, bad pixel
+     mask, dither sky subtraction, rectification, double subtraction, wavelength calibration with a HeNeAr lamp
+     (21 of 22 slitlets graded EXCELLENT, 0.02-0.05 px) and extraction; matches the 2019 reduction.
+
+     Things specific to this instrument/setup:
+       * The slitlets are drawn by hand on the data and given as a DS9 region file (findSlitlets region_file).
+       * Darks: only 60 s and 300 s darks with 8 reads exist, but the flats and arcs are 60 s with 1 read.  With
+         prompt_for_missing_dark = no the nearest exposure time with any number of reads is used (a loud
+         "SUBSTITUTING dark" warning is printed for each); set it to yes to be asked instead.
+       * Sky: off-source dithers (sky_method offsource_dither).  The <calib type="sky"> frames and the flats are tied to
+         the science object with <object> blocks.
+       * linearity_coeffs are for this detector.
+       * wavelength_scale_guess is in Angstrom per pixel; the line list henearjhuse_air.dat ships with the package. -->
+<queries>
+  <dataset dir="/path/to/fisica/data/" datatype="spectrum">
+
+    <object type="auto" name="n1569.sp.jh" prefix="n1569_test_jh">
+      <!-- <index start="1" stop="10"/> -->
+      <value>1</value>
+      <value>4</value>
+      <value>5</value>
+      <value>8</value>
+      <value>9</value>
+    </object>
+
+<!--
+    <object type="auto" name="n1569.sp.jh" prefix="n1569.sp.jh">
+      <index start="2" stop="6"/>
+    </object>
+    -->
+
+    <calib name="dark60s_8rd" type="dark" prefix="dark.sp.oct20.60s.8rd">
+      <index start="1" stop="9"/>
+    </calib>
+
+    <calib name="dark300s_8rd" type="dark" prefix="dark.sp.oct20.300s.8rd">
+      <index start="1" stop="9"/>
+    </calib>
+
+<!--
+    <calib name="sky_n1569.sp.jh" type="sky" prefix="n1569.sp.jh">
+      <index start="7" stop="11"/>
+      <object>
+        <value>n1569.sp.jh</value>
+      </object>
+    </calib>
+-->
+    <calib name="sky_n1569.sp.jh" type="sky" prefix="n1569_test_jh">
+      <value>2</value>
+      <value>3</value>
+      <value>6</value>
+      <value>7</value>
+      <value>10</value>
+    </calib>
+
+    <calib name="flat_on_n1569" type="flat" prefix="n1569.spq.jh">
+      <index start="2" stop="3"/>
+      <property name="flat_type" value="lamp_on"/>
+      <object>
+        <value>n1569.sp.jh</value>
+        <value>sky_n1569.sp.jh</value>
+      </object>
+    </calib>
+
+    <calib name="flat_off_n1569" type="flat" prefix="n1569.spq_off.jh">
+      <index start="5" stop="5"/>
+      <property name="flat_type" value="lamp_off"/>
+      <object>
+        <value>n1569.sp.jh</value>
+        <value>sky_n1569.sp.jh</value>
+      </object>
+    </calib>
+
+    <calib name="arc_jh_n1569" type="arclamp" prefix="n1569.arc.jh">
+      <index start="1" stop="2"/>
+      <property name="arclamp_type" value="lamp_on"/>
+    </calib>
+  </dataset>
+</queries>
+
+<processes>
+  <process name="linearity">
+    <option name="linearity_coeffs" value="1.00425 -1.01413e-6 4.18096e-11"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="noisemap">
+    <option name="write_output" value="no"/>
+  </process>
+
+  <process name="darkSubtract">
+    <option name="prompt_for_missing_dark" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="createCleanSkies">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="createMasterArclamps">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="findSlitlets">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <calib name="region_file" value="/path/to/fisica/data/mask_slitlets.reg"/>
+    <option name="fit_order" value="3"/>
+    <option name="trace_slitlets_individually" value="no"/>
+  </process>
+
+<!--
+  <process name="cosmicRaysSpec">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="cosmic_ray_algorithm" value="dcr"/>
+    <option name="cosmic_ray_method" value="mask"/>
+  </process>
+  -->
+
+  <process name="flatDivideSpec">
+    <option name="flat_method" value="dome_on-off"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="flat_selection" value="all"/>
+  </process>
+
+  <process name="badPixelMaskSpec">
+    <option name="write_calib_output" value="yes"/>
+    <option name="clipping_high" value="4.0"/>
+    <option name="clipping_low" value="0.25"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="skySubtractSpec">
+    <option name="sky_method" value="offsource_dither"/>
+<!--
+    <option name="sky_method" value="offsource_multi_dither"/>
+-->
+    <option name="sky_offsource_range" value="20"/>
+<!--
+    <option name="sky_offsource_method" value="/path/to/fisica/data/offsource.dat"/>
+-->
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="rectify">
+    <option name="fit_order" value="3"/>
+    <option name="mos_sky_fit_order" value="2"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="drihizzle_kernel" value="turbo"/>
+    <option name="drihizzle_dropsize" value="1"/>
+    <option name="continuum_trace_xinit" value="1600"/>
+    <option name="mos_double_subtract_continua" value="no"/>
+    <option name="use_arclamps" value="yes"/>
+  </process>
+
+  <process name="doubleSubtract">
+    <option name="find_shift_constrain_boxsize" value="50"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+<!--
+  <process name="slitletAlign">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+-->
+
+  <process name="wavelengthCalibrate">
+    <option name="calibrate_slitlets_individually" value="yes"/>
+<!--
+    <option name="line_list" value="/usr/local/lib/fatboycpu/config/OHlines.dat"/>
+-->
+    <option name="line_list" value="henearjhuse_air.dat"/>
+    <option name="wavelength_scale_guess" value="4.9"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="use_arclamps" value="yes"/>
+  </process> 
+
+  <process name="extractSpectra">
+    <option name="extract_method" value="auto"/>
+    <option name="extract_weighting" value="gaussian"/>
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+</processes>
+
+<parameters>
+  <param name="outputdir" value="/path/to/output"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="gain_keyword" value="GAIN_2"/>
+  <param name="readnoise_keyword" value="RDNOIS_2"/>
+  <param name="grism_keyword" value="GRISM"/>
+  <param name="object_keyword" value="OBJECT"/>
+  <param name="verbosity" value="normal"/>
+  <param name="gpumode" value="yes"/>
+</parameters>
+</fatboy>

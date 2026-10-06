@@ -120,3 +120,13 @@ frames in each file are handled as separate *sections* and merged later. The ima
 
 Useful `alignStack` methods for CIRCE (which were written for its bad-column and bright-star problems) are `xregister_constrained`, `xregister_sep_constrained` and `sep_centroid_constrained`:
 all use RA, Dec and pixel scale from the header to make an initial guess and then refine within a window.
+
+## FourStar
+
+FourStar (Magellan/Baade) writes each exposure as four chip files (`<prefix>_<exposure>_<dither>_c<chip>.fits`). The datatype `fourStarImage` reads the chip number from the file
+name and gives each chip its own *section*. The process is part of the package (no `processdir` or `datatypedir` needed).
+
+| Process | What it does |
+|---|---|
+| `mosaicFourStar` | Pastes the four 2048 x 2048 chips of an exposure into one 4196 x 4196 image (chip 1 and 2 at x = 0, 3 and 4 at x = 2148; 1 and 3 at y = 0, 2 and 4 at y = 2148; 100 px gaps, about 4.7% of the mosaic is zero), disables chips 2-4 and sets the section of the mosaic to -1. Run it first, before the other imaging steps. `write_output` writes `mosaicFourStar/mfs_*` |
+

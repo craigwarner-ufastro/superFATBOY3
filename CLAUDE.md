@@ -26,6 +26,36 @@ Since v2.4.5-2.4.7: line lists and `makeLineList.py` are documented in `docs/ins
 module in `docs/api.md` (its example is *(tested)* on the LUCI arc), and the wavelength-calibration fallbacks, second
 pass and fit functions in `docs/processes/spectroscopy.md`.
 
+## RHO, FISICA, CIRCE, F2 2017, FourStar, FIRE; GPU pysurfit, triangles chaining, paging fix (2026-10-05/06, v2.4.21-2.4.31)
+
+- **Verified now** (both modes, `xml/verified/` + templates in `data/templates/`): RHO (`h_persei_rho.xml`), FISICA (`daveFisica.xml`, JH slitlets),
+  CIRCE (`circeCrabData.xml`), Flamingos-2 longslit 2017 (`flamingos2_XID6592_spec-7-25-17.xml`; the old template is now `FLAMINGOS2_longslit_2009_template.xml`),
+  FourStar (`fourStar.xml`; `fourStarImage` + `mosaicFourStar` are in the package, no processdir/datatypedir), FIRE (`firetest.xml`, THROUGH RECTIFICATION only).
+  Remaining instruments (as far as I know): **GMOS** (needs a `gmosSpectrum` datatype Craig will find; `wc_gmos.xml` exists), **MMT-Pol**, **SUBARU** (`nick-subaru.xml`),
+  **FIRE wavelength calibration**, and unverified data in `xml/` or on bolt: EMIR spectroscopy (EMIR_2024 imaging template exists, no verified spectroscopy), `paul-megara.xml`,
+  `dfp_acq_test.xml` (DFP), `20110421_luci_2025.xml`, `alan_fire.xml` (second FIRE dataset), `brian_cl1806.xml`, `NGC2129_H.xml`, `SDSS1004_*`, `V404*`, `yigit.xml`, `rot_specBench.xml`.
+  IFU general templates still wait for daveFisica (which turned out to be MOS-style slitlets, not an IFU).
+- **gpu_pysurfit fitted the wrong model** (v2.4.29): `surfaceResiduals` has no constant term, so GPU `fit_sky_subtracted_surf` was wrong in every GPU imaging run
+  that used it (original used `pysurfaceResiduals`). Found because CIRCE GPU != CPU; fixed with `surfaceResidualsWithOffset`; CPU `pysurfit` guards degenerate fits.
+- **calcTrans3d float32** quantized the FISICA y transform (coefficients ~-24508) -> 55% zeros in GPU rectified frames; now double (v2.4.23).
+- **Dark fallback** (v2.4.22): `prompt_for_missing_dark=no` now accepts the nearest exposure time with ANY nreads (loud warning). **np.zeros = '0000'** in
+  circeImage/remergeCirce/fatboyQuery (a `zeros` string from `from numpy import *`) overwrote numpy's zeros (v2.4.24).
+- **Triangles** (v2.4.26): a frame with no match used to get a silent (0, 0); now NaN, `alignStack` discards it with an ERROR; single-triangle matches warn;
+  new `triangles_chain_overlapping_frames` (default no) rescues frames via already-registered neighbours (nearest in sequence first). SextansA: 12/32 unmatched without it, 0 with.
+  Triangle shifts with a huge scatter (e.g. 134.9 +/- 46 px from 19 triangles) are still averaged and accepted: a cluster/scatter check would be the next hardening.
+- **Paging fix** (v2.4.28-2.4.30): `memory_image_limit` page-outs and master calibrations re-read after Ctrl-C used to come back as numpy next to CuPy data
+  (`Unsupported type numpy.ndarray`). `writeToAndForget` records GPU residency and `getData()` restores it; master dark/flat/bias/sky/arclamp read from disk in GPU mode are CuPy.
+  `gpu_imcombine`'s last uneven chunk used `np.empty`. About 20 other two-`getData()` lines (spectroscopy noisemaps/sky) were not touched.
+- **FIRE facts** (for the wavelength calibration still to do): FIRE on Magellan/Baade, echelle orders 11-31 (21), 0.8-2.5 micron, R~6000 (0.6" slit), orders overlap in wavelength,
+  dispersion 0.42 A/px (order 31) to 1.18 A/px (order 11), ThAr lamp. Region k from the bottom = order 32-k; the top region (order 11) has almost no arc lines. Per-order
+  guesses are in `data/config/wc_fire_echelle.xml` (from FireHose `Arcs/ThAr_guess_v6.idl`, readable with `scipy.io.readsav`; also `eso_thar_FIRE.lst` has Ar lines below 9660 A that
+  `ThAr_lines_IR.dat` lacks). First test: 3 MARGINAL / 12 POOR / 4 skipped of 21 orders; only 3-8 lines matched per order (the lamp intensities in the list probably do not match).
+  The test arc used the 0.75" slit, the science the 0.6" slit.
+- **Gotchas learned**: (1) a "CPU" copy of an XML is only CPU if `gpumode` is really `no` - the user's XML had it commented out or `yes`; check the log for `GPU IMCOMBINE` lines.
+  An earlier "FISICA GPU == CPU byte-identical" claim was two GPU runs. (2) never put `pkill -f <pattern>` in the same bash command as the pattern (it kills the shell).
+  (3) `rm -rf <dir>/*` after `cd` is blocked; use absolute paths to dirs you created. (4) large temp files go in `/nvme/cwarner/claude/scratch` (`/tmp` is on the 73 GB root disk, filled once).
+  (5) bolt NFS hangs (`D` state) have been fixed by restarting nfs-server + `exportfs -a` on bolt; not a code problem.
+
 ## Flamingos-2 imaging, imcombine/linterp GPU==CPU, triangles defaults, general templates (2026-10-05, v2.4.19-2.4.20)
 
 - **F2 imaging** (`xml/gc.xml` xregister, `xml/gc_triangles.xml` triangles; Galactic Center J/H/Ks at PA 0/180, data
@@ -142,7 +172,7 @@ runs (not just "compiles") have validated:
   v2.4.12 (`xml/verified/`, templates `SINFONI_IFU_template.xml`, `MEGARA_LCB_template.xml`). The user's working SINFONI
   XML has `debug_mode=yes` and an `overwite_files` typo - test copies/verified copies fix both. Bugs it took: v2.4.10
   (extractSpectra negative sigma, fiber QA image, collapseFibers GPU), v2.4.12 (megaraSkySubtract math.sqrt + GPU/host mixing).
-- **Flamingos-2 longslit** (`xml/lmcx1.xml`, JH+HK) verified GPU + CPU v2.4.16, `FLAMINGOS2_longslit_template.xml`.
+- **Flamingos-2 longslit** (`xml/lmcx1.xml`, JH+HK) verified GPU + CPU v2.4.16, `FLAMINGOS2_longslit_2009_template.xml`.
 - **Not yet run through the refactored pipeline at all**: FourStar, and whatever other instruments have
   templates/data but no session log entry here. Don't assume these work.
 - `/home/cwarner/work/xml/verified/verified_configs.md` is the authoritative list of

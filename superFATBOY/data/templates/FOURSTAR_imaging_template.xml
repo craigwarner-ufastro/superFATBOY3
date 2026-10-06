@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<!-- FourStar (Magellan/Baade) near-IR imaging.  Verified in GPU and CPU mode (identical output) through the chip mosaic and
+     dark subtraction on a single test exposure; the later imaging steps (flatDivide, badPixelMask, skySubtract,
+     cosmicRays, alignStack) were not run for this instrument - add them as in FLAMINGOS1_imaging_template.xml or
+     GENERAL_imaging_IR_template.xml.
+
+     datatype = fourStarImage: each exposure is four chip files named <prefix>_<exposure>_<dither>_c<chip>.fits (fsr_0037_04_c1 ...
+     fsr_0037_04_c4).  Each chip is its own section of the same exposure.  The mosaicFourStar process (now part of the package,
+     no processdir/datatypedir needed) pastes the four 2048 x 2048 chips into one 4196 x 4196 image (100 pixel gaps between
+     chips, so about 4.7% of the mosaic is zero) and must come FIRST, before any step that needs the full frame.
+     Files can live in sub-directories: subdir= on <object> and <calib>.  Darks are matched by exposure time. -->
+<queries>
+  <dataset dir="/path/to/fourstar/data" datatype="fourStarImage">
+    <object type="auto" name="fsr" prefix="fsr" subdir="science_subdir"> 
+    </object>
+
+    <calib type="dark" name="dark6s" prefix="fsr" subdir="DARKS">
+    </calib>
+
+  </dataset>
+</queries>
+
+<processes>
+  <process name="mosaicFourStar">
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="darkSubtract">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="prompt_for_missing_dark" value="no"/>
+  </process>
+
+<!--
+  <process name="mosaicFourStar">
+    <option name="write_output" value="yes"/>
+  </process>
+-->
+</processes>
+
+<parameters>
+  <param name="outputdir" value="/path/to/output"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="clean_up" value="no"/>
+  <param name="prefix_delimiter" value="none"/>
+  <param name="gpumode" value="yes"/>
+</parameters>
+</fatboy>

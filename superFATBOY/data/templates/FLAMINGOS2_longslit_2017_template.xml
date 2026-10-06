@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<!-- Flamingos-2 (Gemini South) longslit, NEWER (2017-era) data, one band per file.  Verified in GPU and CPU mode on
+     XID6592 (7-25-17): 96 science frames plus a standard star, K-band (18000-22500 A) with a HeNeAr arc.
+     For OLDER (2009-era) Flamingos-2 longslit data (JH + HK in one file, ABBA nods, dome on-off flats) use
+     FLAMINGOS2_longslit_2009_template.xml instead.
+
+     What differs from the 2009 data:
+       * Header keywords: GRISMPOS (grism_keyword), RAOFFSET/DECOFFSE with relative_offset_arcsec = yes (ra/dec_keyword),
+         GAIN/RDNOISE, INSTRPA (rotpa_keyword), and the files are named S<date>S<index>.fits in Data/ and Calib/.
+       * Sky: skySubtractSpec sky_method = ifu_onsource_dither (sky from the other dither positions on source).
+       * Flats are dome lamp-on only (flatDivideSpec flat_method = dome_on), with findSlitlets using dome_on-off.
+       * One wavelength solution per run (HeNeAr_vac.dat, scale -3.5 A/px, 18000-22500 A here): change
+         wavelength_scale_guess, min_wavelength and max_wavelength for other grisms.
+       * doubleSubtract / shiftAdd (commented out below) are for ABBA nodding; this setup stops at extraction and the
+         standard-star division (calibStarDivide), which needs the <calib type="standard"> block.
+       * Darks are matched by exposure time; prompt_for_missing_dark = no substitutes the nearest one with a warning. -->
+<queries>
+  <dataset dir="/path/to/F2/night/" datatype="spectrum"> <!--tag="circe" datatype="circeImage"-->
+
+    <object type="auto" name="XID6592" prefix="Data/S20170725S0">
+        <index start="057" stop="152" />
+        <property name="specmode" value="longslit"/>
+        <property name="dispersion" value="vertical"/>
+    </object>
+
+    <calib type="standard" name="HD160461" prefix="Calib/S20170725S00">
+      <index start="40" stop="49"/>
+      <property name="specmode" value="longslit"/>
+      <property name="sky_method" value="step"/>
+      <property name="dispersion" value="vertical"/>
+    </calib>
+
+    <calib name="dark45s" type="dark" prefix="Calib/S20170722S0">
+      <index start="261" stop="267"/>
+    </calib>
+
+    <calib name="dark45s" type="dark" prefix="Calib/S20170715S0">
+      <index start="308" stop="310"/>
+    </calib>
+
+    <!--calib name="dark16s" type="dark" prefix="darks/S20170521S00">
+      <index start="33" stop="35"/>
+    </calib-->
+
+    <calib name="dark16s" type="dark" prefix="Calib/S20170715S0">
+      <index start="269" stop="275"/>
+    </calib>
+
+    <!--calib name="dark180s" type="dark" prefix="darks/S20170715S00">
+      <index start="261" stop="267"/>
+    </calib -->
+
+<!-- ***FLATS****-->
+    <calib name="flat" type="flat" prefix="Calib/S20170725S0">
+      <value>050</value>
+      <value>153</value>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+      <property name="flat_type" value="lamp_on"/>
+    </calib> 
+
+    <calib name="XID6592_arc" type="arclamp" prefix="Calib/S20170725S0">
+      <value>051</value>
+      <value>154</value>
+      <property name="arclamp_type" value="lamp_on"/>
+      <property name="specmode" value="longslit"/>
+      <property name="dispersion" value="vertical"/>
+    </calib>
+
+  </dataset>
+</queries>
+
+<processes>
+
+  <!--process name='linearity'>
+    <option name="linearity_coeffs" value="0.9701104 1.106431e-05 -7.3981e-10 2.490898e-14"/>
+  </process-->
+
+  <process name="noisemap">
+    <option name="write_output" value="yes"/>
+  </process>
+
+  <process name="darkSubtract">
+    <option name="prompt_for_missing_dark" value="no"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="createCleanSkies">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="createMasterArclamps">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="findSlitlets">
+    <option name="flat_method" value="dome_on-off"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="cosmicRaysSpec">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="cosmic_ray_algorithm" value="dcr"/>
+    <option name="cosmic_ray_method" value="mask"/>
+  </process>
+
+  <process name="flatDivideSpec">
+    <option name="flat_method" value="dome_on"/>
+    <!--option name="twilight_pair_ramps" value="yes"/-->
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="flat_selection" value="all"/>
+  </process>
+
+  <!--process name="badPixelMask">
+    <option name="column_reject" value="320:384"/>
+    <option name="write_calib_output" value="yes"/>
+  </process-->
+
+<!-- method = rough | remove_objects | offsource_rough | offsource | offsource_extended | offsource_neb -->
+
+  <process name="skySubtractSpec">
+    <option name="sky_method" value="ifu_onsource_dither"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="rectify">
+    <option name="fit_order" value="3"/>
+    <option name="sky_fit_order" value="3"/>
+    <option name="max_continua_per_slit" value="8"/>
+    <option name="continuum_trace_ylo" value="100"/>
+    <option name="continuum_trace_yhi" value="1800"/>
+    <option name="continuum_trace_xinit" value="1390"/>
+    <!--
+    <option name="continuum_trace_ylow" value="600"/>
+    <option name="continuum_trace_yhi" value="1700"/>
+    <option name="continuum_trace_xinit" value="900"/>
+    -->
+    <option name="write_calib_output" value="yes"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="drihizzle_kernel" value="turbo"/>
+    <option name="drihizzle_dropsize" value="1"/>
+  </process>
+
+<!--
+  <process name="doubleSubtract">
+    <option name="find_shift_constrain_boxsize" value="50"/>
+    <option name="find_shift_box_xlo" value="605"/>
+    <option name="find_shift_box_xhi" value="1995"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+<process name="shiftAdd">
+    <option name="find_shift_constrain_boxsize" value="50"/>
+    <option name="find_shift_box_xlo" value="605"/>
+    <option name="find_shift_box_xhi" value="1995"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+-->
+
+  <process name="wavelengthCalibrate">
+    <option name="calibrate_slitlets_individually" value="yes"/>
+    <option name="debug_mode" value="no"/>
+    <option name="line_list" value="HeNeAr_vac.dat"/>
+    <option name="wavelength_scale_guess" value="-3.5"/>
+    <option name="max_wavelength" value="22500"/>
+    <option name="min_wavelength" value="18000"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="extractSpectra">
+    <option name="extract_method" value="auto"/>
+    <option name="extract_weighting" value="gaussian"/>
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="calibStarDivide">
+    <option name="write_fits_table" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+</processes>
+
+
+<parameters>
+  <param name="outputdir" value="/path/to/output"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="clean_up" value="no"/>
+  <param name="prefix_delimiter" value="none"/>
+  <!--param name="filter_keyword" value="FW1"/-->
+<!--
+  <param name="memory_image_limit" value="60"/> 
+  -->
+  <param name="rotpa_keyword" value="INSTRPA"/>
+  <param name="gpumode" value="yes"/>
+  <param name="gain_keyword" value="GAIN"/>
+  <param name="readnoise_keyword" value="RDNOISE"/>
+  <param name="grism_keyword" value="GRISMPOS"/>
+  <param name="object_keyword" value="OBJECT"/>
+  <param name="ra_keyword" value="RAOFFSET"/>
+  <param name="dec_keyword" value="DECOFFSE"/>
+  <param name="pixscale_keyword" value="PIXSCALE"/>
+  <param name="relative_offset_arcsec" value="yes"/>
+  <param name="verbosity" value="normal"/>
+
+</parameters>
+</fatboy>

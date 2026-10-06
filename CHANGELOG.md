@@ -30,7 +30,12 @@ the matching section here. New options are listed with their default.
 | Flamingos-2 imaging (gc, Galactic Center), verified v2.4.20 | GPU + CPU | Translated from the old text setup; matches the 2015 stacks (same sizes and frame counts, bright stars within 0.05-0.19 px). GPU vs CPU after the imcombine/linterp fixes: sky-subtracted frames within 0.33 of p99, stacks correlate 0.993-0.998. `FLAMINGOS2_imaging_template.xml` |
 | RHO 14" optical imaging (h_persei_rho, B V R I), verified v2.4.21 | GPU + CPU | 4 filters x 10 dithered frames, dark / lamp-on dome flat / bad pixel mask / cosmic rays / triangles + drizzle stack, ~20 s (GPU) / ~31 s (CPU). All 209 output FITS byte-identical GPU vs CPU; every frame in every stack (objmap 10), shift errors 0.1-0.2 px. `RHO_imaging_template.xml` |
 | Python venv (`setup_venv.sh`: numpy 2.2, scipy 1.15, astropy 6.1, CuPy 14), v2.4.13 | KAST (sarik_quack1) GPU + CPU | No tracebacks, wavelength RMS 0.065 / 0.048 px. Against the system install (numpy 1.26, scipy 1.11), same code: identical through skySubtracted; blue arm identical to 1e-7 through extraction. Red arm differs from rectify on because scipy 1.15 replaced the Fortran MINPACK behind `leastsq` with a C translation (1e-9 px differences; isolated by crossing numpy/scipy versions - numpy 2 itself changes nothing): the noisy red skyline trace (0.7 px sigma) accepts/rejects a few points differently, so the distortion fit and the faint red spectrum shift (4% median). Expect the same between any two scipy versions on either side of 1.15. |
-| FourStar, others | - | Not yet run through the refactored pipeline |
+| FISICA (n1569, JH slitlet spectroscopy), verified v2.4.31 | GPU + CPU | Full chain through extraction, no errors; 21 of 22 slitlets EXCELLENT (0.02-0.05 px). Matches the 2019 reduction (same live spectra, flux correlation 0.996). GPU vs CPU: through sky subtraction identical, rectified within 0.2% (max 1.1%), wavelength-calibrated within 1%; one marginal spectrum is found in a different frame (10 vs 11, 12 vs 11). The nearest-dark fallback substitutes the 60 s 8-read dark for the 1-read flats/arcs. `FISICA_MOS_template.xml` |
+| CIRCE (Crab nebula, H band), verified v2.4.31 | GPU + CPU | 2 pointings x 27 frames, full chain to the drizzled stacks; `triangles_chain_overlapping_frames` registers every frame (3 unmatched against the reference, 6 chained, 0 discarded). GPU and CPU stacks identical (correlation 1.00000, median difference 2e-7, same shapes) after the GPU sky-surface fit fix. `CIRCE_imaging_template.xml` |
+| Flamingos-2 longslit, 2017 data (XID6592), verified v2.4.31 | GPU + CPU | 96 science frames + standard through calibStarDivide; HeNeAr wavelength solution 0.059 px (EXCELLENT); flux agrees with the earlier reduction (correlation 1.0000, same file counts); GPU vs CPU: rectified 5e-6, wavelength-calibrated 5e-5, extracted 1e-4. `FLAMINGOS2_longslit_2017_template.xml` (the 2009 template is renamed `FLAMINGOS2_longslit_2009_template.xml`) |
+| FourStar (one exposure, 4 chips), verified v2.4.31 | GPU + CPU | `mosaicFourStar` (now in the package) and dark subtraction: 4196 x 4196 mosaic, 4.7% zero = chip gaps, GPU and CPU identical. Later imaging steps not run. `FOURSTAR_imaging_template.xml` |
+| FIRE (echelle, 21 orders), through rectification, v2.4.31 | GPU + CPU | Flats, dither sky subtraction and rectification of the 21 curved orders: identical through sky subtraction, rectified within 7e-5 (CPU frame one row taller). Wavelength calibration NOT validated: published per-order guesses (`data/config/wc_fire_echelle.xml`) gave 3 MARGINAL / 12 POOR / 4 skipped of 21. `FIRE_echelle_template.xml` |
+| Others | - | Not yet run through the refactored pipeline |
 
 ## Open issues
 
@@ -100,6 +105,9 @@ the matching section here. New options are listed with their default.
   noisemap, carried on through rectification). Now `np.sqrt(np.abs(...))`, 8 sites; also in main. (2.4.3)
 
 ### fatboyDataUnit / datatypes
+- `fourStarImage` datatype and `mosaicFourStar` process moved into the package (were custom code in `MyFatboyProcesses/`, shown with the API demo);
+  registered in the datatype and process dictionaries, `np.zeros` instead of the bare `zeros` left from `from numpy import *`, chips read with
+  `force_cpu` so the mosaic is built in host memory in GPU runs. (2.4.31)
 - **General fix for numpy/CuPy mixing around disk caching**: in a GPU-mode run a frame's array type changed silently when
   the memory manager (`memory_image_limit`) paged it out and read it back (CuPy before, numpy after), and master calibrations
   re-used from a previous run (`overwrite_files=no`, e.g. after Ctrl-C) came back as numpy although the same calibrations
@@ -312,6 +320,10 @@ the matching section here. New options are listed with their default.
   `--no-editable`); a relative `--venv` is made absolute; prints a note when scipy >= 1.15 (also in requirements.txt). (2.4.15)
 
 ### Templates (data/templates)
+- New templates `FISICA_MOS_template.xml`, `CIRCE_imaging_template.xml`, `FLAMINGOS2_longslit_2017_template.xml`, `FOURSTAR_imaging_template.xml`,
+  `FIRE_echelle_template.xml` (through rectification; wavelength calibration block commented out). `FLAMINGOS2_longslit_template.xml` is renamed
+  `FLAMINGOS2_longslit_2009_template.xml`; both F2 longslit templates now say which data generation they are for. New config
+  `wc_fire_echelle.xml` (FIRE per-order starting guesses, not validated). (2.4.31)
 - New `RHO_imaging_template.xml` (Rosemary Hill Observatory 14", optical B V R I, one dark set per exposure time, lamp-on dome flats per filter, triangles). Verified GPU == CPU byte-identical. (2.4.21)
 - General templates smoke-tested on verified data, changing only the data block, keywords and setup-specific
   values: IR imaging (oriBench), optical longslit (KAST blue: 0.053 A RMS, spectrum found) and IR MOS (LUCI: 24/24

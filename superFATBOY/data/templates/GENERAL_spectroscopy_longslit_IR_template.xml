@@ -3,7 +3,7 @@
 <!-- GENERAL near-IR longslit spectroscopy template: a starting point for an instrument without its own template.
      Steps: dark, clean sky, master arclamp, slit, cosmic rays, flat, bad pixels, sky subtraction of A-B nods,
      rectification, double subtraction, shift-add, wavelength calibration, extraction, standard-star division.
-     Based on the verified Flamingos-2 longslit configuration; see FLAMINGOS2_longslit_template.xml (two bands,
+     Based on the verified Flamingos-2 longslit configuration; see FLAMINGOS2_longslit_2009_template.xml (two bands,
      each with its own standard). -->
 <queries>
 <!-- datatype = spectrum.  Every block needs specmode longslit; dispersion = horizontal (default) or vertical. -->

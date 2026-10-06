@@ -1,0 +1,30 @@
+<!-- FIRE echelle (Magellan/Baade): STARTING GUESSES for wavelengthCalibrate, one <order> per echelle region (slitlet 1 = lowest region on the
+     chip = echelle order 31 at about 0.80-0.89 micron; slitlet 21 = the top region = order 11 at about 2.3-2.5 micron; slitlet = 32 - order).
+     Derived from the per-order ThAr pixel/wavelength pairs of the FireHose pipeline (Simcoe et al.; ThAr_guess_v6.idl, cubic fit per order).
+     min/max_wavelength are in Angstrom over a rectified width of -100..2230 px; wavelength_scale_guess is Angstrom per pixel at the center
+     (it grows from 0.42 in the blue to 1.18 in the red).  FIRE orders overlap strongly in wavelength.
+     NOT VALIDATED: in a first test on the firetest data (ThAr_lines_IR.dat plus the FIRE blue Ar lines) these guesses gave 3 MARGINAL and
+     12 POOR fits and 4 skipped orders of 21 (3-8 lines matched per order), so use them as a starting point and check the QA output. -->
+<dataset wavelength_scale_guess="0.65" fit_order="3">
+    <order slitlet="1" min_wavelength="7932" max_wavelength="8932" wavelength_scale_guess="0.4203"/>
+    <order slitlet="2" min_wavelength="8226" max_wavelength="9227" wavelength_scale_guess="0.4342"/>
+    <order slitlet="3" min_wavelength="8516" max_wavelength="9550" wavelength_scale_guess="0.4492"/>
+    <order slitlet="4" min_wavelength="8825" max_wavelength="9896" wavelength_scale_guess="0.4648"/>
+    <order slitlet="5" min_wavelength="9158" max_wavelength="10232" wavelength_scale_guess="0.4776"/>
+    <order slitlet="6" min_wavelength="9514" max_wavelength="10669" wavelength_scale_guess="0.4996"/>
+    <order slitlet="7" min_wavelength="9898" max_wavelength="11103" wavelength_scale_guess="0.5192"/>
+    <order slitlet="8" min_wavelength="10319" max_wavelength="11568" wavelength_scale_guess="0.5410"/>
+    <order slitlet="9" min_wavelength="10773" max_wavelength="12074" wavelength_scale_guess="0.5641"/>
+    <order slitlet="10" min_wavelength="11268" max_wavelength="12630" wavelength_scale_guess="0.5893"/>
+    <order slitlet="11" min_wavelength="11811" max_wavelength="13236" wavelength_scale_guess="0.6170"/>
+    <order slitlet="12" min_wavelength="12407" max_wavelength="13904" wavelength_scale_guess="0.6473"/>
+    <order slitlet="13" min_wavelength="13067" max_wavelength="14641" wavelength_scale_guess="0.6810"/>
+    <order slitlet="14" min_wavelength="13800" max_wavelength="15461" wavelength_scale_guess="0.7185"/>
+    <order slitlet="15" min_wavelength="14619" max_wavelength="16378" wavelength_scale_guess="0.7603"/>
+    <order slitlet="16" min_wavelength="15541" max_wavelength="17409" wavelength_scale_guess="0.8075"/>
+    <order slitlet="17" min_wavelength="16586" max_wavelength="18580" wavelength_scale_guess="0.8610"/>
+    <order slitlet="18" min_wavelength="17783" max_wavelength="19885" wavelength_scale_guess="0.9192"/>
+    <order slitlet="19" min_wavelength="19162" max_wavelength="21461" wavelength_scale_guess="0.9930"/>
+    <order slitlet="20" min_wavelength="20774" max_wavelength="23270" wavelength_scale_guess="1.0761"/>
+    <order slitlet="21" min_wavelength="22680" max_wavelength="25418" wavelength_scale_guess="1.1748"/>
+</dataset>

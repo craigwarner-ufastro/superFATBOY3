@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<!-- FIRE (Folded-port InfraRed Echellette, Magellan/Baade) echelle spectroscopy, 0.8-2.5 micron in 21 overlapping orders (11-31), R~6000 for the
+     0.6" slit.  Verified in GPU and CPU mode THROUGH RECTIFICATION only (flats, dither sky subtraction, rectification of the 21 orders; GPU and CPU agree
+     to rounding, the CPU rectified frame is one row taller).  Wavelength calibration, extraction and flux calibration were not run: see the commented block
+     at the end of <processes>.
+
+     Setup specifics:
+       * The orders are curved and stacked in y, dispersed along x.  findSlitlets takes one DS9 box region per order (region_file), centered near
+         x = 1024, drawn on the data (21 boxes here); rectify uses continuum_trace_xinit = 1024 and a narrow continuum_find window.
+       * default_master_flat points to a lamp-on JHK flat that was made separately (the flat frames themselves are not in this dataset).
+       * The ThAr arc was taken with the 0.75" slit and the science with the 0.6" slit - the line widths differ.
+       * Headers: EGAIN, ENOISE, GRISM (= Echelle), PIXSCALE; 2048 x 2048 detector. -->
+<queries>
+  <dataset dir="/path/to/fire/data/" datatype="spectrum">
+    <object type="auto" name="fire" prefix="fire">
+      <index start="29" stop="30"/>
+    </object>
+
+    <calib name="fire_lamp" type="arclamp" prefix="fire">
+      <index start="163" stop="163"/>
+      <property name="arclamp_type" value="lamp_on"/>
+    </calib>
+  </dataset>
+</queries>
+
+<processes>
+  <process name="createMasterArclamps">
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="findSlitlets">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+    <calib name="region_file" value="/path/to/fire/data/echelleregions.reg"/>
+    <option name="fit_order" value="2"/>
+    <option name="trace_slitlets_individually" value="yes"/>
+  </process>
+
+  <process name="flatDivideSpec">
+    <option name="flat_method" value="dome_on-off"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="default_master_flat" value="/path/to/fire/data/mflat-all-JHK-lampon.fits"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="flat_selection" value="all"/>
+  </process>
+
+  <process name="skySubtractSpec">
+    <option name="sky_method" value="dither"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+  </process>
+
+  <process name="rectify">
+    <option name="fit_order" value="3"/>
+    <option name="sky_fit_order" value="5"/>
+    <option name="continuum_trace_xinit" value="1024"/>
+    <option name="write_calib_output" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_noisemaps" value="yes"/>
+    <option name="drihizzle_kernel" value="turbo"/>
+    <option name="drihizzle_dropsize" value="1"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="continuum_find_xlo" value="999"/>
+    <option name="continuum_find_xhi" value="1049"/>
+    <option name="mos_double_subtract_continua" value="no"/>
+    <option name="sky_boxsize" value="10"/>
+    <option name="mos_fit_order" value="4"/>
+    <option name="min_sky_threshold" value="3"/>
+    <option name="sky_max_slope" value="0.32"/>
+    <!--
+    <option name="mos_mode" value="whole_chip"/>
+    -->
+    <option name="mos_sky_fit_order" value="2"/>
+    <option name="mos_find_lines_alternate_method" value="yes"/>
+  </process>
+  <!-- Wavelength calibration was NOT run for this instrument (only through rectification is verified).  Starting guesses for the 21 orders
+       and the FIRE facts are in data/config/wc_fire_echelle.xml (not validated; see the note in that file).  A first test with
+       ThAr_lines_IR.dat (plus the Ar lines below 9660 A from the FireHose list eso_thar_FIRE.lst, which are not shipped) matched only 3-8 lines
+       per order and graded 3 MARGINAL / 12 POOR / 4 skipped of 21 orders, so adding wavelength calibration is left to the user:
+
+  <process name="wavelengthCalibrate">
+    <option name="calibrate_slitlets_individually" value="yes"/>
+    <option name="line_list" value="ThAr_lines_IR.dat"/>
+    <option name="wavelength_calibration_file" value="/path/to/superFATBOY/data/config/wc_fire_echelle.xml"/>
+    <option name="use_arclamps" value="yes"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+  -->
+</processes>
+
+<parameters>
+  <param name="outputdir" value="/path/to/output"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="gain_keyword" value="EGAIN"/>
+  <param name="readnoise_keyword" value="ENOISE"/>
+  <param name="grism_keyword" value="GRISM"/>
+  <param name="object_keyword" value="OBJECT"/>
+  <param name="pixscale_keyword" value="PIXSCALE"/>
+  <param name="verbosity" value="normal"/>
+  <param name="gpumode" value="yes"/>
+</parameters>
+</fatboy>
