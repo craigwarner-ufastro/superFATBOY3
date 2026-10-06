@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fatboy>
+<!-- Rosemary Hill Observatory (RHO) 14" optical CCD imaging, B V R I.  Verified in GPU and CPU mode (byte-identical
+     output) on H Persei, 4 filters x 10 dithered frames, ~20 s total.  Steps: dark, lamp-on dome flat, bad pixel
+     mask, cosmic rays, triangles alignment + drizzle stack.  No bias (the darks carry it) and no sky step.
+     Darks are matched to each frame by exposure time, so take one dark set per exposure time used (5, 10, 15, 30,
+     60 s here); the flats are lamp-on dome flats, one set per filter, matched by FILTER.
+     Set the dataset directory, the prefixes/index ranges and the output directory for your night. -->
+<queries>
+  <dataset dir="/path/to/rhoImages/YYYY-MM-DD/rho/">
+    <object type="auto" name="target_i" prefix="target_seq">
+      <index start="35" stop="44"/>
+    </object>
+
+    <object type="auto" name="target_b" prefix="target_seq">
+      <index start="45" stop="54"/>
+    </object>
+
+    <object type="auto" name="target_v" prefix="target_seq">
+      <index start="55" stop="64"/>
+    </object>
+
+    <object type="auto" name="target_r" prefix="target_seq">
+      <index start="65" stop="74"/>
+    </object>
+
+<!-- one dark set per exposure time in use -->
+    <calib type="dark" name="dark10s" prefix="target_seq">
+      <index start="75" stop="84"/>
+    </calib>
+
+    <calib type="dark" name="dark15s" prefix="target_seq">
+      <index start="85" stop="94"/>
+    </calib>
+
+    <calib type="dark" name="dark5s" prefix="target_seq">
+      <index start="95" stop="104"/>
+    </calib>
+
+    <calib type="dark" name="dark30s" prefix="target_darks">
+      <index start="128" stop="132"/>
+    </calib>
+
+    <calib type="dark" name="dark60s" prefix="target_darks">
+      <index start="133" stop="137"/>
+    </calib>
+
+<!-- lamp-on dome flats, one set per filter -->
+    <calib type="flat" name="flat_r" prefix="target_flats">
+      <index start="108" stop="112"/>
+      <property name="flat_type" value="lamp_on"/>
+    </calib>
+
+    <calib type="flat" name="flat_v" prefix="target_flats">
+      <index start="113" stop="117"/>
+      <property name="flat_type" value="lamp_on"/>
+    </calib>
+
+    <calib type="flat" name="flat_b" prefix="target_flats">
+      <index start="118" stop="122"/>
+      <property name="flat_type" value="lamp_on"/>
+    </calib>
+
+    <calib type="flat" name="flat_i" prefix="target_flats">
+      <index start="123" stop="127"/>
+      <property name="flat_type" value="lamp_on"/>
+    </calib>
+  </dataset>
+</queries>
+
+<processes>
+  <process name="darkSubtract">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="flatDivide">
+    <option name="flat_method" value="dome_on"/>
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="badPixelMask">
+    <option name="write_output" value="yes"/>
+    <option name="write_calib_output" value="yes"/>
+  </process>
+
+  <process name="cosmicRays">
+    <option name="write_output" value="yes"/>
+  </process>
+
+<!-- the align box is the region of the frame used to match stars (here the 1676 x 1266 centre of the RHO frame);
+     set it to your own frame size, or remove the four align_box options to use the whole frame -->
+  <process name="alignStack">
+    <option name="align_method" value="triangles"/>
+    <option name="align_box_size_x" value="1676"/>
+    <option name="align_box_size_y" value="1266"/>
+    <option name="align_box_center_x" value="838"/>
+    <option name="align_box_center_y" value="633"/>
+    <option name="write_output" value="yes"/>
+  </process>
+</processes>
+
+<parameters>
+<!-- set your output directory (it must exist) -->
+  <param name="outputdir" value="/path/to/output"/>
+  <param name="overwrite_files" value="no"/>
+  <param name="quick_start_file" value="qs.dat"/>
+  <param name="clean_up" value="no"/>
+  <param name="prefix_delimiter" value="none"/>
+  <param name="exptime_keyword" value="EXPTIME"/>
+<!-- RHO marks the frame type (Light, Dark, Flat) in FRAME -->
+  <param name="obstype_keyword" value="FRAME"/>
+  <param name="filter_keyword" value="FILTER"/>
+  <param name="ra_keyword" value="RA"/>
+  <param name="dec_keyword" value="DEC"/>
+  <param name="date_keyword" value="DATE-OBS"/>
+<!-- set gpumode = no if the machine has no NVIDIA GPU with CUDA -->
+  <param name="gpumode" value="yes"/>
+</parameters>
+</fatboy>

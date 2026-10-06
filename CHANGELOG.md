@@ -28,6 +28,7 @@ the matching section here. New options are listed with their default.
 | MEGARA LCB (mt1), verified v2.4.12 | GPU + CPU | From the raw data (bolt): 622 fibers traced (identical to py2), 56 sky fibers identified, 622/622 wavelength-calibrated (610 excellent), sky subtracted. GPU vs CPU: 87/139 files identical, the rest within 5e-6 of the data range. `MEGARA_LCB_template.xml` |
 | Flamingos-2 longslit (lmcx1, JH + HK), verified v2.4.16 | GPU + CPU | Full chain through calibStarDivide, no errors; wavelength solutions 0.05-0.11 px. GPU vs CPU: in-band spectra within 2% (apertures 1-2 px apart), HK standard rectified one row taller on the CPU (fitted distortion differs slightly). `FLAMINGOS2_longslit_template.xml` |
 | Flamingos-2 imaging (gc, Galactic Center), verified v2.4.20 | GPU + CPU | Translated from the old text setup; matches the 2015 stacks (same sizes and frame counts, bright stars within 0.05-0.19 px). GPU vs CPU after the imcombine/linterp fixes: sky-subtracted frames within 0.33 of p99, stacks correlate 0.993-0.998. `FLAMINGOS2_imaging_template.xml` |
+| RHO 14" optical imaging (h_persei_rho, B V R I), verified v2.4.21 | GPU + CPU | 4 filters x 10 dithered frames, dark / lamp-on dome flat / bad pixel mask / cosmic rays / triangles + drizzle stack, ~20 s (GPU) / ~31 s (CPU). All 209 output FITS byte-identical GPU vs CPU; every frame in every stack (objmap 10), shift errors 0.1-0.2 px. `RHO_imaging_template.xml` |
 | Python venv (`setup_venv.sh`: numpy 2.2, scipy 1.15, astropy 6.1, CuPy 14), v2.4.13 | KAST (sarik_quack1) GPU + CPU | No tracebacks, wavelength RMS 0.065 / 0.048 px. Against the system install (numpy 1.26, scipy 1.11), same code: identical through skySubtracted; blue arm identical to 1e-7 through extraction. Red arm differs from rectify on because scipy 1.15 replaced the Fortran MINPACK behind `leastsq` with a C translation (1e-9 px differences; isolated by crossing numpy/scipy versions - numpy 2 itself changes nothing): the noisy red skyline trace (0.7 px sigma) accepts/rejects a few points differently, so the distortion fit and the faint red spectrum shift (4% median). Expect the same between any two scipy versions on either side of 1.15. |
 | FourStar, others | - | Not yet run through the refactored pipeline |
 
@@ -270,6 +271,7 @@ the matching section here. New options are listed with their default.
   `--no-editable`); a relative `--venv` is made absolute; prints a note when scipy >= 1.15 (also in requirements.txt). (2.4.15)
 
 ### Templates (data/templates)
+- New `RHO_imaging_template.xml` (Rosemary Hill Observatory 14", optical B V R I, one dark set per exposure time, lamp-on dome flats per filter, triangles). Verified GPU == CPU byte-identical. (2.4.21)
 - General templates smoke-tested on verified data, changing only the data block, keywords and setup-specific
   values: IR imaging (oriBench), optical longslit (KAST blue: 0.053 A RMS, spectrum found) and IR MOS (LUCI: 24/24
   slitlets calibrated) run through. IR longslit on Flamingos-2 lmcx1 JH runs but finds no spectrum: the bad pixel
