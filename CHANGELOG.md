@@ -329,6 +329,7 @@ the matching section here. New options are listed with their default.
   CIRCE frame was identified every `np.zeros(...)` anywhere raised `'str' object is not callable` (first hit in
   skySubtract's `createSepImage`). Now a local `zeroPad`. Swept the tree for other `np.`/`math.`/`cp.` attribute
   assignments: none. (2.4.24)
+- skySubtract `createSepImage`: when sep overflows (deblending limit of 1024 sub-objects on very structured frames such as the Crab nebula, 8 of 54 frames) the 2x-threshold retry is now logged as a WARNING that says what happens (it was an ERROR banner, and the text said minarea 16 while the code uses 15). The retry still succeeds (about 150-190 objects). Raising sep's sub-object limit instead was tried: no errors but 1000-1800 nebular objects masked and the run 3x slower, so not adopted. (2.4.27)
 - `gpu_pysurfit`: `log.verbosity` -> `log._verbosity` (AttributeError in skySubtract's sky-surface fit on every frame). (2.4.24)
 - skySubtract `createSepImage`: sep's default pixel stack (300000) overflowed on large frames ("internal pixel buffer
   full") and the object mask was lost; the stack is now the image size. (2.4.24)

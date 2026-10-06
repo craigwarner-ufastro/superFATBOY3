@@ -189,8 +189,10 @@ class skySubtractProcess(fatboyProcess):
         try:
             objects = sep.extract(ssdata, thresh, minarea=9)
         except Exception as ex:
-            print("skySubtractProcess::createSepImage> Error running sep on "+fdu.getFullId()+": "+str(ex)+" Attempting to run with thresh="+str(2*thresh)+" and minarea 16.")
-            self._log.writeLog(__name__, "Error running sep on "+fdu.getFullId()+": "+str(ex)+" Attempting to run with thresh="+str(2*thresh)+" and minarea 16.", type=fatboyLog.ERROR)
+            #Typically a very structured frame (e.g. nebulosity): sep overflows its deblending/pixel limits.  Not fatal.
+            msg = "sep overflowed on "+fdu.getFullId()+" at thresh="+str(thresh)+" ("+str(ex)+").  Retrying at 2x the threshold ("+str(2*thresh)+") and minarea 15; the object mask for this frame will be less sensitive than for other frames."
+            print("skySubtractProcess::createSepImage> WARNING: "+msg)
+            self._log.writeLog(__name__, msg, type=fatboyLog.WARNING)
             try:
                 objects = sep.extract(ssdata, 2*thresh, minarea=15)
             except Exception as ex:
