@@ -154,7 +154,7 @@ extern "C" {
         }
       }
 
-      __global__ void calcTrans3d(float *yout, float *xin, float *yin, float *z, float *ycoeffs, int order, int xsize, int size) {
+      __global__ void calcTrans3d(float *yout, float *xin, float *yin, float *z, double *ycoeffs, int order, int xsize, int size) {
         const int i = blockDim.x*blockIdx.x + threadIdx.x;
         if (i >= size) return;
         if (z[i] == 0) {
@@ -163,30 +163,27 @@ extern "C" {
         }
         int xi = i % xsize;
         int n = 0;
-        float xp [10];
-        float yp [10];
-        float zp [10];
+        //double precision throughout: the fitted coefficients can be large (1e4) and cancel, which float32 cannot hold
+        double xp [10];
+        double yp [10];
+        double zp [10];
         xp[0] = 1; yp[0] = 1; zp[0] = 1;
-        xp[1] = xin[xi]; yp[1] = yin[i]; zp[1] = z[i];
-        if (order >= 2) {
-          xp[2] = xin[xi]*xin[xi];
-          yp[2] = yin[i]*yin[i];
-          zp[2] = z[i]*z[i];
+        xp[1] = (double)xin[xi]; yp[1] = (double)yin[i]; zp[1] = (double)z[i];
+        for (int j = 2; j <= order; j++) {
+          xp[j] = xp[j-1]*xp[1];
+          yp[j] = yp[j-1]*yp[1];
+          zp[j] = zp[j-1]*zp[1];
         }
-        for (int j = 3; j <= order; j++) {
-          xp[j] = powf((float)(xin[xi]), (float)(j));
-          yp[j] = powf((float)(yin[i]), (float)(j));
-          zp[j] = powf((float)(z[i]), (float)(j));
-        }
-        yout[i] = 0;
+        double sum = 0;
         for (int x = 0; x <= order; x++) {
           for (int l = 1; l <= x+1; l++) {
             for (int k = 1; k <= l; k++) {
-              yout[i] += ycoeffs[n]*xp[x-l+1]*yp[l-k]*zp[k-1];
+              sum += ycoeffs[n]*xp[x-l+1]*yp[l-k]*zp[k-1];
               n++;
             }
           }
         }
+        yout[i] = (float)sum;
       }
 
       __global__ void calcXin(float *xin, int nx, int size) {
@@ -1442,7 +1439,7 @@ def blkrep(data, outfile=None, faccol=1, facrow=1, mef=0, log=None):
 #GPU equivalent of surface3dFunction
 def calcTrans3d(xin, yin, z, ycoeffs, order):
     xsize = xin.size
-    ycoeffs = ycoeffs.astype(np.float32)
+    ycoeffs = ycoeffs.astype(np.float64)
     yout = cp.empty(shape=yin.shape, dtype=np.float32)
     blocks = (yout.size)//512
     if (yout.size % 512 != 0):

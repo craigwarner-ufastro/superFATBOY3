@@ -120,6 +120,12 @@ the matching section here. New options are listed with their default.
   are disabled with an ERROR (unchanged behavior, documented here).
 
 ### fatboyLibs
+- `calcTrans3d` (GPU `use_slitpos` rectification y transform) evaluated the fitted polynomial in float32. With large,
+  cancelling coefficients (FISICA: -24508) the result was quantized to even integers, so the drizzle left a diagonal
+  moire of zeros over ~55% of the rectified frame (CPU: 3.7%). Now evaluated in double (output still float32): ytrans
+  matches the CPU to 0.06 px, rectified frames correlate 0.9998, zeros 3.75% in both modes. specBench (the other
+  default `use_slitpos` config) GPU vs CPU unchanged or closer at every stage (skySubtracted/rectified identical,
+  wavelengthCalibrated 5e-5). (2.4.23)
 - `linterp_gpu` / `linterp_cpu` (filling zeros in master skies) used different rules: GPU 3x3 box and at least 2
   neighbours, CPU 5x5 box and at least 1 (and it tested neighbours for != 0, not != x, and bounded columns by
   the row count). Both now take `radius` (1 = 3x3, 2 = 5x5) and `min_neighbors`, default 3x3 / 2 (the previous
