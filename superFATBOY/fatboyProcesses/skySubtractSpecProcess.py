@@ -282,14 +282,17 @@ class skySubtractSpecProcess(fatboyProcess):
                 self.applyResponseCurve(fdu, calibs, skyData, cleanSkyData)
 
         #subtract master sky and if "cleanFrame" exists, propagate it too
-        fdu.updateData(fdu.getData().astype(np.float32)-masterSky.getData(tag="preSkySubtracted").astype(np.float32))
+        #sameArrayKind: frame data, tagged sky data re-read from disk and paged data can be numpy or CuPy; make each pair the same kind
+        (fdata, sdata) = sameArrayKind(fdu.getData(), masterSky.getData(tag="preSkySubtracted"))
+        fdu.updateData(fdata.astype(np.float32)-sdata.astype(np.float32))
         if (fdu.hasProperty("cleanFrame")):
             #If masterSky has tag cleanFrame_preSkySubtracted then use it.  This is an odd frame
             if (masterSky.hasProperty("cleanFrame_preSkySubtracted")):
-                fdu.tagDataAs("cleanFrame", fdu.getData(tag="cleanFrame")-masterSky.getData(tag="cleanFrame_preSkySubtracted"))
+                (cdata, csky) = sameArrayKind(fdu.getData(tag="cleanFrame"), masterSky.getData(tag="cleanFrame_preSkySubtracted"))
             else:
                 #Otherwise subtract cleanFrame tags from each other
-                fdu.tagDataAs("cleanFrame", fdu.getData(tag="cleanFrame")-masterSky.getData(tag="cleanFrame"))
+                (cdata, csky) = sameArrayKind(fdu.getData(tag="cleanFrame"), masterSky.getData(tag="cleanFrame"))
+            fdu.tagDataAs("cleanFrame", cdata-csky)
 
         if (masterSky.hasProperty("odd_frame_match") and masterSky.getProperty("odd_frame_match") == fdu.getFullId()):
             #Now we can remove properties preSkySubtracted and optionally cleanFrame_preSkySubtracted and noisemap_preSkySubtracted

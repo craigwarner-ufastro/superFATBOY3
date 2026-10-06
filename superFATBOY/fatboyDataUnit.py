@@ -44,7 +44,7 @@ class fatboyDataUnit:
     _objectTags = [] #a list of objects that a calibration frame is associated with
     _properties = dict() #Properties defined in XML file, e.g. flattype = "lamp on".  Also data from previous steps
     _gpumode = True #Use GPU
-    _GPU_RELOAD_OBSTYPES = ('master_dark', 'master_flat', 'master_bias', 'master_sky', 'master_arclamp')
+    _GPU_RELOAD_OBSTYPES = ('master_dark', 'master_flat', 'master_bias', 'master_sky')
     _processHistory = [] #Track processes applied to this fdu
 
     _fdb = None #fatboyDatabase callback
@@ -278,9 +278,9 @@ class fatboyDataUnit:
                 self._data = self._data.view(self._data.dtype.newbyteorder('<'))
 
             #In a GPU-mode run, give back what a caller would have had without the disk round trip: data that was on the
-            #GPU when the memory manager paged it out, and master calibrations (dark, flat, bias, sky, arclamp) re-used
+            #GPU when the memory manager paged it out, and master calibrations (dark, flat, bias, sky) re-used
             #from a previous run, which are CuPy arrays when they are built in memory.
-            if (self._gpumode and hasCuda):
+            if (self._gpumode and hasCuda and self._fdb is not None and self._fdb.getGPUMode()):
                 backToGPU = self.hasProperty('memory_managed_gpu') and self.getProperty('memory_managed_gpu') is True
                 if (self.hasProperty('memory_managed_gpu')):
                     self.removeProperty('memory_managed_gpu')

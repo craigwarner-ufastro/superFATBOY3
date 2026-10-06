@@ -4631,6 +4631,19 @@ def subtractImages(image1, image2, gpm=None, scale=None):
     return image1
 #end subtractImages
 
+#Return (a, b) as arrays of the same kind: if exactly one is a CuPy array the other is moved to the GPU.  Frame data, tagged data
+#re-read from disk and data paged out by the memory manager do not always agree, and CuPy refuses to mix with numpy.
+def sameArrayKind(a, b):
+    if (hasCuda):
+        ga = isinstance(a, cp.ndarray)
+        gb = isinstance(b, cp.ndarray)
+        if (ga and not gb):
+            b = cp.asarray(b)
+        elif (gb and not ga):
+            a = cp.asarray(a)
+    return (a, b)
+#end sameArrayKind
+
 def surface3dFunction(coeffs, x, y, z, order):
     out = np.zeros(x.shape, np.float64)
     x = np.float64(x)

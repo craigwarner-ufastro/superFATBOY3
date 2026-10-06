@@ -105,6 +105,7 @@ the matching section here. New options are listed with their default.
   noisemap, carried on through rectification). Now `np.sqrt(np.abs(...))`, 8 sites; also in main. (2.4.3)
 
 ### fatboyDataUnit / datatypes
+- **Reload and mixed-array fixes** (2.4.34): master dark/flat/bias/sky re-read from disk come back as CuPy in a GPU-mode database only (standalone FDUs such as the `wavecal` slitmask stay on the CPU; master arclamp is not in the rule); skySubtractSpec uses `sameArrayKind()` (fatboyLibs) so numpy and CuPy are never mixed; MIRADAS collapse/3-d cubes and SINFONI cubes read lamp and slitmask with `force_cpu=True`; skySubtract's "Re-using master sky" branch restores the sky properties (fixed "No skies found" after a reload). Regression: F2 2017, MIRADAS SOS, SINFONI base vs new, 3669 2-d files identical except two SINFONI PSF tables (max diff 0.017 of 4e5, rounding); 3-d cubes not compared.
 - `fourStarImage` datatype and `mosaicFourStar` process moved into the package (were custom code in `MyFatboyProcesses/`, shown with the API demo);
   registered in the datatype and process dictionaries, `np.zeros` instead of the bare `zeros` left from `from numpy import *`, chips read with
   `force_cpu` so the mosaic is built in host memory in GPU runs. (2.4.31)

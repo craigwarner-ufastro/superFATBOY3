@@ -38,7 +38,7 @@ class miradasCreate3dDatacubesProcess(fatboyProcess):
         if (fdu.hasProperty("nslits")):
             nslits = fdu.getProperty("nslits")
         else:
-            nslits = int(calibs['slitmask'].getData().max())
+            nslits = int(calibs['slitmask'].getData(force_cpu=True).max())
             fdu.setProperty("nslits", nslits)
 
         if (doAllSlitlets):
@@ -80,17 +80,17 @@ class miradasCreate3dDatacubesProcess(fatboyProcess):
             else:
                 #Rerun same calcs as in miradasCollapseSpaxels
                 #Take 1-d cut of arclamp in each slitlet
-                #b = np.where(calibs['slitmask'].getData() == islit)
+                #b = np.where(calibs['slitmask'].getData(force_cpu=True) == islit)
                 if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                    b = np.where(calibs['slitmask'].getData()[:,box_lo:box_hi] == islit)
+                    b = np.where(calibs['slitmask'].getData(force_cpu=True)[:,box_lo:box_hi] == islit)
                     ylo = np.min(b[0])
                     yhi = np.max(b[0])
-                    lamp1d = (calibs[lampkey].getData()[ylo:yhi,box_lo:box_hi]*(calibs['slitmask'].getData()[ylo:yhi,box_lo:box_hi] == islit)).sum(1)
+                    lamp1d = (calibs[lampkey].getData(force_cpu=True)[ylo:yhi,box_lo:box_hi]*(calibs['slitmask'].getData(force_cpu=True)[ylo:yhi,box_lo:box_hi] == islit)).sum(1)
                 elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                    b = np.where(calibs['slitmask'].getData()[box_lo:box_hi,:] == islit)
+                    b = np.where(calibs['slitmask'].getData(force_cpu=True)[box_lo:box_hi,:] == islit)
                     ylo = np.min(b[1])
                     yhi = np.max(b[1])
-                    lamp1d = (calibs[lampkey].getData()[box_lo:box_hi,ylo:yhi]*(calibs['slitmask'].getData()[box_lo:box_hi,ylo:yhi] == islit)).sum(0)
+                    lamp1d = (calibs[lampkey].getData(force_cpu=True)[box_lo:box_hi,ylo:yhi]*(calibs['slitmask'].getData(force_cpu=True)[box_lo:box_hi,ylo:yhi] == islit)).sum(0)
                 #Median filter 1-d cut and invert so that "gaps" between slices turn into peaks
                 z = medianfilterCPU(lamp1d)
                 #Correct for values on the edges of the slitlet which will now be very negative

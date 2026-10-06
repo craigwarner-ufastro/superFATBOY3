@@ -56,9 +56,9 @@ class sinfoniCreate3dDatacubesProcess(fatboyProcess):
         for j in range(nslits):
             #Take 1-d cut of arclamp in each slitlet
             if (fdu.dispersion == fdu.DISPERSION_HORIZONTAL):
-                lamp1d = (calibs[lampkey].getData()[ylos[j]:yhis[j]+1,:]*(calibs['slitmask'].getData()[ylos[j]:yhis[j]+1,:] == j+1)).sum(1)
+                lamp1d = (calibs[lampkey].getData(force_cpu=True)[ylos[j]:yhis[j]+1,:]*(calibs['slitmask'].getData(force_cpu=True)[ylos[j]:yhis[j]+1,:] == j+1)).sum(1)
             elif (fdu.dispersion == fdu.DISPERSION_VERTICAL):
-                lamp1d = (calibs[lampkey].getData()[:,ylos[j]:yhis[j]+1]*(calibs['slitmask'].getData()[:,ylos[j]:yhis[j]+1] == j+1)).sum(0)
+                lamp1d = (calibs[lampkey].getData(force_cpu=True)[:,ylos[j]:yhis[j]+1]*(calibs['slitmask'].getData(force_cpu=True)[:,ylos[j]:yhis[j]+1] == j+1)).sum(0)
             image2d[nslits-j-1,:lamp1d.size] = lamp1d #Reverse order, slitlet 32 is top row
 
         #update row

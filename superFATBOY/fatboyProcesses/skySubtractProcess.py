@@ -265,6 +265,12 @@ class skySubtractProcess(fatboyProcess):
             print("skySubtractProcess::createMasterSky> Master sky "+prevmsfilename+" already exists!  Re-using...")
             self._log.writeLog(__name__, "Master sky "+prevmsfilename+" already exists!  Re-using...")
             masterSky = fatboyCalib(self._pname, "master_sky", skies[0], filename=prevmsfilename, log=self._log)
+            #Same properties as a freshly created master sky: later frames look it up by them (without them they report "No skies found")
+            masterSky.setProperty("sky_method", skymethod)
+            if ('sky_offsource_name' in properties):
+                masterSky.setProperty('sky_offsource_name', properties['sky_offsource_name'])
+            if ('sky_name' in properties):
+                masterSky.setProperty('sky_name', properties['sky_name'])
             if (skymethod.startswith("offsource")):
                 for skyfdu in skies:
                     skyfdu.disable()
