@@ -168,7 +168,83 @@ def generate_triangles_delaunay(x_points, y_points, name=None, doplots=False):
     return tr
 
 
-def tri_register(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsize=-1, border=20, log=None, mef=0, gui=None, refframe=0, mode=None, dataTag=None, sepDetectThresh=3, method=METHOD_DELAUNAY, min_angle=30, max_angle=110, max_stars=None, doplots=False, plotdir=".", atol=2.0, rtol=0.025, sigma_clipping=False, sig_to_clip=3):
+#Match every reference triangle to the first current triangle that agrees (translation only).
+#Returns an (n, 2) array of x, y shifts (reference - current), n = 0 if nothing matched.
+def matchTriangles(ref_triangles, curr_triangles, atol=2.0, rtol=0.025):
+    curr_shifts = []
+    for r in range(len(ref_triangles)):
+        for i in range(len(curr_triangles)):
+            z = ref_triangles[r].compareTo(curr_triangles[i], atol=atol, rtol=rtol)
+            if z is not False:
+                curr_shifts.append(z)
+                break
+    return np.array(curr_shifts).reshape(-1, 2)
+#end matchTriangles
+
+#Rescue frames that could not be matched to the reference (or only by one triangle) by matching them against
+#other frames that already have a shift, nearest in the sequence first, and composing the shifts:
+#shift(ref -> j) = shift(ref -> c) + shift(c -> j).  Needs triangles of frames that overlap each other, e.g. large
+#dithers over a sparse field where frames far from the reference share almost no stars with it.
+def chainRescue(refframe, xshifts, yshifts, tri_of, nmatch_of, pos_of, name_of, log, logtype, atol, rtol, sigma_clipping, sig_to_clip, max_candidates):
+    pending = [j for j in nmatch_of if nmatch_of[j] < 2]
+    if (len(pending) == 0):
+        return
+    print("triregister> Chaining: trying to rescue "+str(len(pending))+" frame(s) via overlapping frames.")
+    write_fatboy_log(log, logtype, "Chaining: trying to rescue "+str(len(pending))+" frame(s) via overlapping frames.", __name__)
+    def haveShift(c):
+        return c == refframe or not np.isnan(xshifts[pos_of[c]])
+    def getShift(c):
+        if (c == refframe):
+            return (0., 0.)
+        return (xshifts[pos_of[c]], yshifts[pos_of[c]])
+    progress = True
+    while (progress and len(pending) > 0):
+        progress = False
+        for j in sorted(pending):
+            anchors = [c for c in tri_of if c != j and c != refframe and haveShift(c)]
+            anchors.sort(key=lambda c: (abs(c-j), c))
+            best = None
+            for c in anchors[:max_candidates]:
+                sh = matchTriangles(tri_of[c], tri_of[j], atol=atol, rtol=rtol)
+                if (len(sh) == 0):
+                    continue
+                xd = sh[:,0]
+                yd = sh[:,1]
+                if (sigma_clipping):
+                    xd = removeOutliersSigmaClip(xd, sig_to_clip, 5)
+                    yd = removeOutliersSigmaClip(yd, sig_to_clip, 5)
+                n = len(xd)
+                if (best is None or n > best[0]):
+                    best = (n, c, xd.mean(), yd.mean())
+                if (n >= 2):
+                    break
+            if (best is None):
+                continue
+            n, c, dx, dy = best
+            #Keep an existing (single triangle) shift to the reference unless the chain is better supported
+            if (nmatch_of[j] >= 1 and n < 2):
+                continue
+            cx, cy = getShift(c)
+            xshifts[pos_of[j]] = np.round(cx+dx, 3)
+            yshifts[pos_of[j]] = np.round(cy+dy, 3)
+            nmatch_of[j] = n
+            msg = "Frame "+name_of[j]+" registered via "+name_of[c]+" ("+str(n)+" matching triangle(s)); shift from reference = ("+str(xshifts[pos_of[j]])+", "+str(yshifts[pos_of[j]])+")."
+            print("triregister> "+msg)
+            write_fatboy_log(log, logtype, msg, __name__)
+            if (n < 2):
+                warnSingleTriangle(log, logtype, name_of[c], name_of[j], n)
+            pending.remove(j)
+            progress = True
+#end chainRescue
+
+#Loudly flag a shift that rests on a single triangle: it can be a chance match (a wrong shift looks identical to a right one).
+def warnSingleTriangle(log, logtype, refName, currName, ntri):
+    msg = "Shift from "+refName+" to "+currName+" is based on only "+str(ntri)+" matching triangle(s) and may be WRONG.  Check this frame (set sep_detect_thresh lower for sparse fields, or use triangles_chain_overlapping_frames)."
+    print("triregister> WARNING: "+msg)
+    write_fatboy_log(log, logtype, msg, __name__, messageType=fatboyLog.WARNING)
+#end warnSingleTriangle
+
+def tri_register(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, yboxsize=-1, border=20, log=None, mef=0, gui=None, refframe=0, mode=None, dataTag=None, sepDetectThresh=3, method=METHOD_DELAUNAY, min_angle=30, max_angle=110, max_stars=None, doplots=False, plotdir=".", atol=2.0, rtol=0.025, sigma_clipping=False, sig_to_clip=3, chain_overlapping_frames=False, chain_max_candidates=10):
     t = time.time()
     _verbosity = fatboyLog.NORMAL
     #set log type
@@ -328,9 +404,10 @@ def tri_register(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, ybox
         frames[refframe].setProperty("triangles", ref_triangles)
 
     all_triangles = []
-
-    if (outfile is not None):
-        f = open(outfile,'w')
+    tri_of = {refframe: ref_triangles}
+    nmatch_of = {}
+    pos_of = {}
+    name_of = {refframe: refName}
 
     #if (_verbosity == fatboyLog.VERBOSE):
     if True:
@@ -414,18 +491,22 @@ def tri_register(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, ybox
             print("Find triangles "+str(j)+":",time.time()-tt,"; Total: ",time.time()-t)
         tt = time.time()
 
-        curr_shifts = []
-        for r in range(len(ref_triangles)):
-           for i in range(len(curr_triangles)):
-               z = ref_triangles[r].compareTo(curr_triangles[i],atol=atol,rtol=rtol)
-               if z is not False:
-                   curr_shifts.append(z)
-                   break
+        curr_shifts = matchTriangles(ref_triangles, curr_triangles, atol=atol, rtol=rtol)
+        tri_of[j] = curr_triangles
         if len(curr_shifts) == 0:
+            #No match.  Do NOT invent a shift of (0, 0): return NaN so the frame is discarded (or rescued below).
             print("triregister> ERROR: Could not match any triangles from reference "+refName+" to "+currName)
-            write_fatboy_log(log, logtype, "ERROR: Could not match any triangles from reference "+refName+" to "+currName, __name__)
-            curr_shifts = [[0,0]]
-        curr_shifts = np.array(curr_shifts).T
+            write_fatboy_log(log, logtype, "ERROR: Could not match any triangles from reference "+refName+" to "+currName, __name__, messageType=fatboyLog.ERROR)
+            xshifts.append(np.nan)
+            yshifts.append(np.nan)
+            nmatch_of[j] = 0
+            pos_of[j] = len(xshifts)-1
+            name_of[j] = currName
+            if (gui is not None):
+                gui = (gui[0], gui[1]+1., gui[2], gui[3], gui[4])
+                if (gui[0]): print("PROGRESS: "+str(int(gui[3]+gui[1]/gui[2]*gui[4])))
+            continue
+        curr_shifts = curr_shifts.T
         xdiff = curr_shifts[0]
         ydiff = curr_shifts[1]
         if (sigma_clipping):
@@ -441,6 +522,8 @@ def tri_register(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, ybox
         ysd = np.round(ydiff.std(), 3)
         print("triregister> Used "+str(len(xdiff))+" matching triangles.  xshift = "+str(xshift)+" +/- "+str(xsd)+"; yshift = "+str(yshift)+" +/- "+str(ysd))
         write_fatboy_log(log, logtype, "Used "+str(len(xdiff))+" matching triangles.  xshift = "+str(xshift)+" +/- "+str(xsd)+"; yshift = "+str(yshift)+" +/- "+str(ysd), __name__)
+        if (len(xdiff) < 2):
+            warnSingleTriangle(log, logtype, refName, currName, len(xdiff))
 
         #if (_verbosity == fatboyLog.VERBOSE):
         if True:
@@ -449,17 +532,32 @@ def tri_register(frames, outfile=None, xcenter=-1, ycenter=-1, xboxsize=-1, ybox
 
         print("Shift from "+refName+" to "+currName+" is ("+str(xshift)+", "+str(yshift)+").")
         write_fatboy_log(log, logtype, "Shift from "+refName+" to "+currName+" is ("+str(xshift)+", "+str(yshift)+").", __name__)
-        if (outfile is not None):
-            f.write(str(xshift)+'\t'+str(yshift)+'\n')
         xshifts.append(xshift)
         yshifts.append(yshift)
+        nmatch_of[j] = len(xdiff)
+        pos_of[j] = len(xshifts)-1
+        name_of[j] = currName
 
         #GUI message:
         if (gui is not None):
             gui = (gui[0], gui[1]+1., gui[2], gui[3], gui[4])
             if (gui[0]): print("PROGRESS: "+str(int(gui[3]+gui[1]/gui[2]*gui[4])))
 
+    if (chain_overlapping_frames):
+        chainRescue(refframe, xshifts, yshifts, tri_of, nmatch_of, pos_of, name_of, log, logtype, atol, rtol, sigma_clipping, sig_to_clip, chain_max_candidates)
+
+    #Frames that could not be registered at all: report them together (alignStack discards them)
+    nfail = int(np.sum(np.isnan(xshifts)))
+    if (nfail > 0):
+        failed = [name_of[j] for j in sorted(pos_of, key=lambda k: pos_of[k]) if np.isnan(xshifts[pos_of[j]])]
+        msg = str(nfail)+" of "+str(nframes)+" frames could NOT be registered and will be discarded: "+", ".join(failed)
+        print("triregister> ERROR: "+msg)
+        write_fatboy_log(log, logtype, msg, __name__, messageType=fatboyLog.ERROR)
+
     if (outfile is not None):
+        f = open(outfile,'w')
+        for k in range(1, len(xshifts)):
+            f.write(str(xshifts[k])+'\t'+str(yshifts[k])+'\n')
         f.close()
 
     #if (_verbosity == fatboyLog.VERBOSE):

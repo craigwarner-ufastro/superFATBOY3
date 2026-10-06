@@ -105,6 +105,7 @@ class alignStackProcess(fatboyProcess):
             triangles_min_angle = float(self.getOption('triangles_min_angle', fdu.getTag()))
             triangles_max_angle = float(self.getOption('triangles_max_angle', fdu.getTag()))
             triangles_sigma = float(self.getOption('triangles_sigma', fdu.getTag()))
+            triangles_chain = self.getOption('triangles_chain_overlapping_frames', fdu.getTag()).lower() == 'yes'
             triangles_use_sigma_clipping = False
             if (self.getOption('triangles_use_sigma_clipping', fdu.getTag()).lower() == 'yes'):
                 triangles_use_sigma_clipping = True
@@ -112,7 +113,7 @@ class alignStackProcess(fatboyProcess):
             outdir = str(self._fdb.getParam("outputdir", fdu.getTag()))
             if (not os.access(outdir+"/alignedStacked", os.F_OK)):
                 os.mkdir(outdir+"/alignedStacked",0o755)
-            shifts = triregister_method(frameList, xcenter=xcenter, ycenter=ycenter, xboxsize=xboxsize, yboxsize=yboxsize, refframe=refframe, log=self._log, sepDetectThresh=sepDetectThresh, method=trimethod, min_angle=triangles_min_angle, max_angle=triangles_max_angle, max_stars=max_stars, doplots=debug_plots, plotdir=outdir+"/alignedStacked/", atol=triangles_atol, rtol=triangles_rtol, sigma_clipping=triangles_use_sigma_clipping, sig_to_clip=triangles_sigma)
+            shifts = triregister_method(frameList, xcenter=xcenter, ycenter=ycenter, xboxsize=xboxsize, yboxsize=yboxsize, refframe=refframe, log=self._log, sepDetectThresh=sepDetectThresh, method=trimethod, min_angle=triangles_min_angle, max_angle=triangles_max_angle, max_stars=max_stars, doplots=debug_plots, plotdir=outdir+"/alignedStacked/", atol=triangles_atol, rtol=triangles_rtol, sigma_clipping=triangles_use_sigma_clipping, sig_to_clip=triangles_sigma, chain_overlapping_frames=triangles_chain)
         elif (alignMethod == "manual"):
             if (not os.access(shiftsFile, os.F_OK)):
                 print("alignStackProcess::alignFrames> ERROR: align_shifts_file "+shiftsFile+" not found! Alignment and stacking not done!")
@@ -125,6 +126,26 @@ class alignStackProcess(fatboyProcess):
             return None
         return shifts
     #end alignFrames
+
+    #Disable frames whose shift is NaN/inf (alignment found no match) and drop them from the frame list and shifts
+    def discardUnregisteredFrames(self, fdu, frameList, shifts):
+        xs = np.array(shifts[0], dtype=np.float64)
+        ys = np.array(shifts[1], dtype=np.float64)
+        if (len(xs) != len(frameList) or len(ys) != len(frameList)):
+            return (frameList, shifts)
+        bad = ~(np.isfinite(xs) & np.isfinite(ys))
+        if (not bad.any()):
+            return (frameList, shifts)
+        names = []
+        for i in np.where(bad)[0]:
+            names.append(frameList[i].getFullId())
+            frameList[i].disable()
+        msg = "Could not register "+str(int(bad.sum()))+" of "+str(len(frameList))+" frames; DISCARDED from the stack: "+", ".join(names)
+        print("alignStackProcess::execute> ERROR: "+msg)
+        self._log.writeLog(__name__, msg, type=fatboyLog.ERROR)
+        good = np.where(~bad)[0]
+        return ([frameList[i] for i in good], [xs[good].tolist(), ys[good].tolist()])
+    #end discardUnregisteredFrames
 
     ## OVERRIDE execute
     def execute(self, fdu, prevProc=None):
@@ -164,6 +185,9 @@ class alignStackProcess(fatboyProcess):
 
         #Find shifts
         shifts = self.alignFrames(fdu, frameList)
+        #Discard frames that could not be registered (non-finite shift), loudly, and stack the rest
+        if (shifts is not None):
+            (frameList, shifts) = self.discardUnregisteredFrames(fdu, frameList, shifts)
         #Stack frames
         if (shifts is not None):
             self.stackFrames(fdu, frameList, shifts)
@@ -265,6 +289,8 @@ class alignStackProcess(fatboyProcess):
         self._optioninfo.setdefault('triangles', 'delaunay | all')
         self._options.setdefault('triangles_atol', '2.0') #maximum absolute tolerance in pixels for matching triangles
         self._optioninfo.setdefault('triangles_atol', 'maximum absolute tolerance in pixels for matching triangles')
+        self._options.setdefault('triangles_chain_overlapping_frames', 'no')
+        self._optioninfo.setdefault('triangles_chain_overlapping_frames', 'yes | no.  Frames that cannot be matched to the reference frame (or only by one triangle) are matched against other already-registered frames, nearest in the sequence first, and the shifts are composed.  For large dithers over sparse fields where frames far from the reference share few stars.  Unmatched frames are always discarded with an ERROR.')
         self._options.setdefault('triangles_debug_plots', 'yes')
         self._options.setdefault('triangles_max_angle', '110')
         self._optioninfo.setdefault('triangles_max_angle', 'max angle for any triangle to have')

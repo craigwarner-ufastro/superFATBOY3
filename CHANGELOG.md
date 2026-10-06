@@ -257,6 +257,13 @@ the matching section here. New options are listed with their default.
 - `pysurfit` input-type detection and output message referenced undefined names. (2.3.43)
 
 ### xregister / gpu_xregister / tri_register
+- **tri_register / alignStack (triangles)**: a frame with no matching triangle used to get a silent shift of (0, 0) and
+  was stacked at the wrong position. It now gets NaN and `alignStack` discards it with an ERROR naming it (and
+  disables it); the rest are stacked. A shift based on a single matching triangle logs a loud WARNING. New option
+  `triangles_chain_overlapping_frames` (default `no`): frames that fail (or match by one triangle) are matched against
+  other already-registered frames, nearest in the sequence first, and the shifts composed - for large dithers over
+  sparse fields. CIRCE SextansA: 12 of 32 frames unmatched without it, all 32 registered with it (within 4 px of the
+  cross-correlation shifts, 27 within 2 px). Frames that matched before are bit-identical. End to end on SextansA (chain on): GPU and CPU stacks identical, 33 x 15 s = 495 s exposure at the peak. (2.4.26)
 - Bare `ndarray`, `loadtxt`, `ascontiguousarray`; `frame` vs `frames` in difference mode. (Sept 16, 2.3.43)
 
 ### superFatboy3.py / setup.py

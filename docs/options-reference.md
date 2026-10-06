@@ -2,7 +2,7 @@
 
 *[Docs home](README.md)*
 
-**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.20.
+**This file is generated.** It is a snapshot of `superFatboy3.py -list` for superFATBOY v2.4.25.
 Run `superFatboy3.py -list` yourself for the live list, or regenerate this file with
 `python3 docs/gen_options_reference.py`. For prose descriptions of what each process does, see the
 [process guide](processes/README.md).
@@ -128,6 +128,7 @@ Set in the `<parameters>` section of the XML file with `<param name="..." value=
 | `stack_reject_type` | `sigclip` |  |
 | `triangles` | `delaunay` | delaunay \| all |
 | `triangles_atol` | `2.0` | maximum absolute tolerance in pixels for matching triangles |
+| `triangles_chain_overlapping_frames` | `no` | yes \| no.  Frames that cannot be matched to the reference frame (or only by one triangle) are matched against other already-registered frames, nearest in the sequence first, and the shifts are composed.  For large dithers over sparse fields where frames far from the reference share few stars.  Unmatched frames are always discarded with an ERROR. |
 | `triangles_debug_plots` | `yes` |  |
 | `triangles_max_angle` | `110` | max angle for any triangle to have |
 | `triangles_max_stars` | `150` | Use only the N brightest stars for triangles (none = all). In crowded fields all stars are slow and match by chance. |

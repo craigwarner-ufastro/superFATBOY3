@@ -188,6 +188,17 @@ The `triangles` method is the default and is used by the imaging templates. It h
 Flamingos-2 Galactic Center frames (thousands of stars) the unlimited, unclipped shifts were 1-2.5 px off, at about 35 s
 per frame; with the defaults they agree with `xregister` to 0.12 px (median), in a few seconds per filter.
 
+**Sparse fields and large dithers.** Triangles can only match stars the two frames share. When the field has few
+stars (tens at 3 sigma) and the dither moves a frame by a large fraction of the chip, a frame far from the reference
+may share fewer than three stars with it, and no triangle can match. A frame with no match is **discarded with an
+ERROR** naming it (it is never given a shift of 0, 0), and a shift based on a **single** matching triangle is reported
+as a loud WARNING, because a chance match looks identical to a right one. Set `triangles_chain_overlapping_frames =
+yes` to rescue such frames: a frame that cannot be matched to the reference (or only by one triangle) is matched
+against other frames that already have a shift, nearest in the sequence first (up to 10 candidates), and the shifts
+are composed. Frames that match the reference directly are unchanged, so the option only adds registered frames. On
+CIRCE SextansA (22 stars in the reference, dithers up to 720 px) 12 of 32 frames had no match; with the option all 32
+are registered, within 4 px of cross-correlation (27 within 2 px). Lowering `sep_detect_thresh` can also help.
+
 | Option | Default | Meaning |
 |---|---|---|
 | `align_method` | `triangles` | See above |
