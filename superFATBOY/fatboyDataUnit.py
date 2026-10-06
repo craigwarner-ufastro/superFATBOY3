@@ -750,23 +750,32 @@ class fatboyDataUnit:
         if (self._gpumode and hasCuda and not isinstance(bpm, cp.ndarray)):
             bpm = cp.asarray(bpm)
         #Find median of good pixels but do not apply mask to data itself!
+        #This FDU's data may be numpy even in a GPU-mode run (e.g. re-read from disk after an interrupted run),
+        #so match it to bpm's type before combining.
+        def matchBpm(data):
+            if (self._gpumode and hasCuda):
+                if (not isinstance(data, cp.ndarray)):
+                    data = cp.asarray(data)
+            elif (hasattr(data, 'get')):
+                data = data.get()
+            return data
         if (self.hasProperty("median_section_indices") and self.hasProperty("median_section")):
             #Apply median section tagged above to bpm
             section = self.getProperty("median_section_indices")
             bpm = bpm[section[0][0]:section[0][1], section[1][0]:section[1][1]]
             if (self._gpumode):
-                mfmed = gpu_arraymedian(self.getData(tag="median_section")*(1-bpm), nonzero=True, kernel=self._fdb.getParam('median_kernel'))
+                mfmed = gpu_arraymedian(matchBpm(self.getData(tag="median_section"))*(1-bpm), nonzero=True, kernel=self._fdb.getParam('median_kernel'))
             else:
-                mfmed = gpu_arraymedian(self.getData(tag="median_section")*(1-bpm), nonzero=True, kernel=fatboyclib.median)
+                mfmed = gpu_arraymedian(matchBpm(self.getData(tag="median_section"))*(1-bpm), nonzero=True, kernel=fatboyclib.median)
             print("fatboyDataUnit::renormalize> Using BPM and median section "+str(self.getProperty("median_section_indices"))+"; median="+str(mfmed))
             if (self._log is not None):
                 self._log.writeLog(__name__, "Using BPM and median section "+str(self.getProperty("median_section_indices"))+"; median="+str(mfmed))
         else:
             #Default case
             if (self._gpumode):
-                mfmed = gpu_arraymedian(self.getData()*(1-bpm), nonzero=True, kernel=self._fdb.getParam('median_kernel'))
+                mfmed = gpu_arraymedian(matchBpm(self.getData())*(1-bpm), nonzero=True, kernel=self._fdb.getParam('median_kernel'))
             else:
-                mfmed = gpu_arraymedian(self.getData()*(1-bpm), nonzero=True, kernel=fatboyclib.median)
+                mfmed = gpu_arraymedian(matchBpm(self.getData())*(1-bpm), nonzero=True, kernel=fatboyclib.median)
         #Do NOT update data - just set history with normalization value
         self.setHistory('renormalized_bpm', mfmed)
         return True

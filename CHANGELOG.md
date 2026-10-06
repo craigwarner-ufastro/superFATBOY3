@@ -100,6 +100,12 @@ the matching section here. New options are listed with their default.
   noisemap, carried on through rectification). Now `np.sqrt(np.abs(...))`, 8 sites; also in main. (2.4.3)
 
 ### fatboyDataUnit / datatypes
+- `renormalize`: in a GPU-mode run, a master flat re-read from disk (e.g. after a Ctrl-C and rerun, `overwrite_files=no`)
+  holds numpy data while the bad pixel mask was already converted to CuPy, so `data*(1-bpm)` raised
+  `Unsupported type <class 'numpy.ndarray'>` for every frame in badPixelMask. The data is now matched to the mask's type.
+  Reproduced on CIRCE SextansA (66 failures with the old code, interrupt at 150 s then rerun); the full rerun now completes
+  with no tracebacks. Other GPU paths that mix reloaded numpy data with device arrays may remain: the CuPy migration
+  lost PyCUDA's implicit host->device handling at kernel/ufunc boundaries. (2.4.25)
 - `readHeader()`: COMMENT/HISTORY/blank cards from the frame's previous header are copied card by card (skipping ones
   already there). Assigning them by key handed astropy all of a file's COMMENT lines as one multi-line value, which
   it refuses ("FITS header values must contain standard printable ASCII characters") - every Gemini/Flamingos-2
