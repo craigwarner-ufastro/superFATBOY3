@@ -107,7 +107,8 @@ for slitlet in range(1, 25):
 ```
 
 `extract1DFromImage(image, ylo, yhi)` takes a cut between two rows instead, and `read1DFromImage(file)` reads a 1-d
-spectrum. Any `wavelengthCalibrate` option can go in the options dict. With a single cut there is no second pass;
+spectrum. Any `wavelengthCalibrate` option can go in the options dict; for example `"wavecal_initial_method": "vote"`
+when the scale guess is rough (see the [line-identification vote](processes/spectroscopy.md#line-identification-vote)). With a single cut there is no second pass;
 instead a solution graded `wavecal_retry_grade` or worse is retried with the fallbacks at once and replaced only if
 clearly better. After a successful fit the FDU has the properties `wcHeader`, `wcQuality` (RMS, RMS px, grade,
 number of lines), `solvedCuts` and `lineMeasures`.

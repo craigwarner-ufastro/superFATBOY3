@@ -23,7 +23,7 @@ the matching section here. New options are listed with their default.
 | GPU == CPU, v2.4.3 | all 9 verified configs, GPU and CPU (run one at a time) | No tracebacks; same ERRORs as before. LUCI byte-identical GPU vs CPU (107/107 files), MIRADAS SOS 107/108, SOL 94/111, MOS 75/91 (left: bad pixel mask GPU vs CPU); specBench (linearity/dark onward), oriBench (imaging) and longslit (fitted-distortion drizzle) still differ at the rounding level. Every dataset calibrates the same number of slitlets as its previous verified run, median wavelength sigma within noise |
 | wavelengthCalibrate QA / fallbacks / second pass, v2.4.4-2.4.6 | WC reruns of LUCI (sky and arc), KAST, OSIRIS x2, MIRADAS SOL/SOS/MOS, specBench (one at a time) | First pass log-identical to before on every dataset; no tracebacks. Medians 0.05-0.10 px (FLAMINGOS-1, OSIRIS, KAST, LUCI), 0.22-0.25 px (MIRADAS). Second pass replaced MIRADAS SOS orders 1-2 seg 1 (order 2 was a wrong match) and LUCI arc slit 10 (100 A off at the blue end) with solutions that fit their neighbors. Offline bench of every fallback on ~180 calibrated cuts: no wrong solution accepted |
 | avrajit-osiris (OSIRIS R2500U Xe arc), v2.4.5 | WC rerun | Calibrates on the first match with `Xenon_optical_air.dat` (0.057 px, 16 lines); with the old Xe list it fails cleanly (fallback solutions rejected as poor) |
-| Line-identification vote (`wavecal_initial_method = vote`), v2.4.36 | standalone `wavecal`, 148 cuts / 13 datasets x guess scale 0.5-2; WC reruns of LUCI and MIRADAS SOS | No wrong solution accepted in 740 vote runs. Recovered with the guess 30-100% off: LUCI NeArXe arcs 92/92 (default 2/92), LUCI OH 96/96 (74), MIRADAS SOL/MOS 130/132 (2), SOS 34/68 (7); at the correct guess never fewer than the default. Default mode: 625/625 standalone logs and the LUCI/SOS pipeline WC logs and outputs identical to 2.4.35 |
+| Line-identification vote (`wavecal_initial_method = vote`), v2.4.36 / 2.5.0 | standalone `wavecal`, 148 cuts / 13 datasets x guess scale 0.5-2; WC reruns of LUCI and MIRADAS SOS | No wrong solution accepted in 740 vote runs. Recovered with the guess 30-100% off: LUCI NeArXe arcs 92/92 (default 2/92), LUCI OH 96/96 (74), MIRADAS SOL/MOS 130/132 (2), SOS 34/68 (7); at the correct guess never fewer than the default. Default mode: 625/625 standalone logs and the LUCI/SOS pipeline WC logs and outputs identical to 2.4.35 |
 | `wavecal.py` standalone, v2.4.7 | 24 LUCI arc slitlets in a loop | Same grades as the pipeline, RMS within 0.004 px, slit 10 replaced the same way |
 | SINFONI 30 Dor (sinfoni_test_30Dor), verified v2.4.12 | GPU + CPU | Full chain to registered/stacked datacubes, no tracebacks; slitmask identical to the py2 original; stacked image and cube correlate 0.9998 / 0.9987 with py2 (flux 0.6% lower). GPU vs CPU: 1.000000 / 0.999998. `SINFONI_IFU_template.xml` |
 | MEGARA LCB (mt1), verified v2.4.12 | GPU + CPU | From the raw data (bolt): 622 fibers traced (identical to py2), 56 sky fibers identified, 622/622 wavelength-calibrated (610 excellent), sky subtracted. GPU vs CPU: 87/139 files identical, the rest within 5e-6 of the data range. `MEGARA_LCB_template.xml` |
@@ -57,7 +57,9 @@ the matching section here. New options are listed with their default.
   has the host-buffer problem noted under gpu_drihizzle.
 - **wavelengthCalibrate**: the pattern-match fallback finds nothing on very dense line lists (LUCI NeArXe arcs, MIRADAS
   UArNe) - the learned/neighbor/trend fallbacks and the vote (`wavecal_initial_method = vote`) cover those. The vote still
-  misses MIRADAS SOS segments with only 10-13 lines when the guess is off by 30% or more. MIRADAS fits grade 0.2-0.5 px although correct (consider
+  misses MIRADAS SOS segments with only 10-13 lines when the guess is off by 30% or more. In vote mode the fallback loop still
+  evaluates the configured guess and the remaining fallbacks after the vote succeeds (the loop stops only when the next
+  method yields a candidate); stopping at the end of the first successful method would save several seconds per slitlet. MIRADAS fits grade 0.2-0.5 px although correct (consider
   looser `wavecal_quality_thresholds` in the MIRADAS templates). avrajit-osiris's own config still names the old
   `xml/xenon_optical.dat` (no bright blue Xe I lines); it calibrates with the shipped `Xenon_optical_air.dat`.
 - **traceOrders mask bias**: a `traceOrders` slitmask sits ~1.0 px below the flat's half-max center on LUCI
@@ -453,17 +455,20 @@ the matching section here. New options are listed with their default.
   (2.3.43)
 
 ### wavelengthCalibrate
-- **Line-identification vote** (new module `wavecalVote.py`; 2.4.36): a starting solution that needs neither a good
+- **Line-identification vote** (new module `wavecalVote.py`; 2.4.36, released as **2.5.0**): a starting solution that needs neither a good
   `wavelength_scale_guess` nor line intensities. Peaks (adaptive 3/2/1.5 sigma) and list lines vote, window by window, in a
   Hough grid of (log scale, wavelength at the window centre); cells are scored by the binomial chance of their matches for the
   local line density (raw counts pick too-large scales on dense lists), chained across windows when they fit one smooth
   solution, then fit and refined. A solution is used only if -log10(chance x number of scales and zero points searched)
-  >= `wavecal_vote_min_significance` (10; null tests with mirrored or shuffled lists reach 7). Its identified lines seed the
+  >= `wavecal_vote_min_significance` (10; null tests with mirrored or shuffled lists reach 6.8 at most on 148 cuts). Its identified lines seed the
   usual match/fit (`seedFromIdentifiedLines`, `solveFromMatch(matchedWaves=...)`) and the solution passes the fallback gate.
   New options `wavecal_initial_method` (`guess` default | `vote`: vote, then the configured guess judged like a fallback,
   then the fallbacks), `wavecal_vote_scale_range` (0.33,3), `wavecal_vote_min_significance`, `wavecal_vote_use_guess_shape`
   (a polynomial guess's shape straightens curved echelle cuts); `vote` is also a `wavecal_fallback` method (not in the
   default list). Same in standalone `wavecal`. Default path unchanged (625/625 standalone runs log-identical to 2.4.35).
+- 2.5.0: release of the wavelength-calibration work (QA grades, fallbacks, second pass, primary-match gate, line vote).
+  `docs/processes/spectroscopy.md` has a full *Line-identification vote* section (algorithm, options, log, tests), linked
+  from the new-instrument steps in `docs/instruments.md` and the `wavecal` API page.
 - **Primary-match gate** (2.4.33): a solution from the configured guess is rejected (and the `wavecal_fallback` guesses tried) with fewer
   than `wavecal_min_lines` lines (default auto = max(8, 2*(fit_order+1)); a cubic through 4 lines has zero residual and graded
   excellent while wrong) or with a mean dispersion more than `wavecal_max_scale_deviation` (0.5) from the guess; fallbacks use the same minimum.

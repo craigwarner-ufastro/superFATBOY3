@@ -107,6 +107,8 @@ mode) and change the instrument-specific parts. Usually these are:
 5. **Wavelength calibration**: `line_list`, `wavelength_scale_guess`, `min_wavelength` and `max_wavelength` are
    specific to your grating and lamp. Line lists shipped with superFATBOY live in
    [`superFATBOY/data/linelists/`](../superFATBOY/data/linelists/) and can be named without a path.
+   If you only know the dispersion roughly, or the lamp's line intensities don't match the list, set
+   `wavecal_initial_method = vote` (see the [line-identification vote](processes/spectroscopy.md#line-identification-vote)).
 6. **Tracing geometry** for `findSlitlets` and `rectify`: `slitlet_autodetect_x`, `continuum_trace_xinit`,
    `fit_order`, and the like. These depend on where your data is illuminated and how curved it is. Turn on
    `write_output` and `write_calib_output` for these steps and look at the QA files.
