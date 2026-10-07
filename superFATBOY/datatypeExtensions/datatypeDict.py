@@ -10,4 +10,5 @@ def getDatatypeDict():
     datatypeDict['miradasSpectrum'] = miradasSpectrum.miradasSpectrum
     datatypeDict['megaraSpectrum'] = megaraSpectrum.megaraSpectrum
     datatypeDict['osirisSpectrum'] = osirisSpectrum.osirisSpectrum
+    datatypeDict['gmosSpectrum'] = gmosSpectrum.gmosSpectrum
     return datatypeDict
