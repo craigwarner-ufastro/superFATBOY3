@@ -83,6 +83,11 @@ class wavelengthCalibrateSingleProcess(wavelengthCalibrateProcess):
             use_tolerance = True
             shift_tol = int(self.getOption("max_shift_tolerance", fdu.getTag()))
         fallbackMethods = [m.strip().lower() for m in str(self.getOption("wavecal_fallback", fdu.getTag())).split(",") if m.strip().lower() not in ["", "none"]]
+        #wavecal_initial_method = vote: the vote comes first, then the configured guess (judged like a fallback), then
+        #the fallbacks
+        initialVote = (str(self.getOption("wavecal_initial_method", fdu.getTag())).lower() == "vote")
+        if (initialVote):
+            fallbackMethods = ["vote", "guess"]+[m for m in fallbackMethods if m not in ["vote", "guess"]]
         retryGrade = str(self.getOption("wavecal_retry_grade", fdu.getTag())).lower()
         gradeRank = {"excellent": 0, "good": 1, "satisfactory": 2, "marginal": 3, "poor": 4}
 
@@ -261,7 +266,9 @@ class wavelengthCalibrateSingleProcess(wavelengthCalibrateProcess):
 
             #The configured guess: template, 3 brightest lines, then the full match and fit
             (dummySize, dummyFlux, dummyWave, dummyOrder) = self.buildDummySpectrum(min_wavelength, max_wavelength, scale, nonlinear, coeffs, masterFlux, masterWave, gaussWidth)
-            if (len(dummyFlux) <= 200 or dummyFlux[100:-100].max() == 0):
+            if (initialVote):
+                failReason = "no significant line vote"
+            elif (len(dummyFlux) <= 200 or dummyFlux[100:-100].max() == 0):
                 #If this happened, no lines were found in the given wavelength range!
                 print("wavelengthCalibrateProcess::wavelengthCalibrate> ERROR: No lines found in wavelength range ["+str(min_wavelength)+":"+str(max_wavelength)+"] "+pass_name+fdu.getFullId()+"!")
                 failReason = "no lines in range"

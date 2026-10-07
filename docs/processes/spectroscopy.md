@@ -409,6 +409,10 @@ of known wavelengths and relative intensities. The heart of the algorithm:
 | `wavecal_max_scale_deviation` | `0.5` | A solution from the configured guess whose mean dispersion differs from `wavelength_scale_guess` by more than this fraction is rejected as a wrong match (0 = no check). |
 | `wavecal_retry_grade` | `poor` | Once every slitlet has been tried, slitlets that failed or were graded this or worse are tried again with all the fallbacks (`none`: only failed ones) |
 | `wavecal_blind_scale_range` | `0.5,2` | Scales searched by the pattern and blind fallbacks, as factors of `wavelength_scale_guess` |
+| `wavecal_initial_method` | `guess` | `guess`: the first solution of each slitlet comes from the configured guess and the 3 brightest lines. `vote`: skip that and start with the line-identification vote (no good `wavelength_scale_guess` or reliable intensities needed), then the configured guess judged like a fallback, then the `wavecal_fallback` methods. See **Line-identification vote** below. |
+| `wavecal_vote_scale_range` | `0.33,3` | Mean dispersions searched by the vote, as factors of `wavelength_scale_guess` |
+| `wavecal_vote_min_significance` | `10` | A vote solution is used only if -log10(chance of that many matched peaks x hypotheses searched) is at least this |
+| `wavecal_vote_use_guess_shape` | `yes` | With a polynomial `wavelength_scale_guess`, the vote uses its shape (not its scale) to straighten the cut first |
 | `wavelength_fit_function` | `polynomial` | `polynomial`, `legendre` or `chebyshev`, of order `fit_order` (see **Fit functions** below) |
 | `wavecal_quality_thresholds` | `0.1,0.2,0.3,0.4` | RMS of each fit in **pixels** separating excellent / good / satisfactory / marginal / poor |
 | `write_plots` | `no` | Save QA plots as PNG |
@@ -446,6 +450,9 @@ tried in the order of `wavecal_fallback`, each building a new template and redoi
   are swamped by chance and it finds nothing (it does not find something wrong).
 - **blind**: cross-correlation with the line list over the range of scales and all zero points.
 
+- **vote**: the line-identification vote (below). Not in the default list; add it (for example
+  `learned,neighbor,trend,vote,pattern,blind`) or set `wavecal_initial_method = vote`.
+
 Pattern and blind candidates are judged by how many peaks land on line-list lines compared with what chance would give
 for that list's density, so a dense list is not mistaken for a match. A solution from any fallback is kept only if it is
 graded satisfactory or better with at least max(2(order+1), 8) lines: a wrong guess can still match 3 lines in a dense
@@ -458,6 +465,48 @@ the lines with no worse RMS). The log says which slitlets were replaced and with
 wrong first match, 3.3 px) and order 1 are replaced by trend solutions that continue the order-to-order progression
 (0.08 and 0.14 px); LUCI arclamp slitlet 10 (wrong by 100 A at the blue end) by a solution with measured intensities
 that agrees with the OH solution; data that calibrated well before are unchanged.
+
+**Line-identification vote** (`wavecal_initial_method = vote`, or `vote` in `wavecal_fallback`). For an instrument
+whose dispersion is only roughly known and whose lamp intensities don't match the line list. It uses only the positions of
+the cut's peaks (the 60 brightest above 3 sigma, lowered to 2 and 1.5 sigma if that gives fewer than 30) and the list's
+wavelengths:
+
+1. The cut is split into 1, 2, 3, 4 and 6 windows in turn. In each window every (peak, list line) pair votes, for each scale
+   of a log grid spanning `wavecal_vote_scale_range`, for the wavelength at the window centre (a Hough transform). A cell is
+   scored by how improbable its number of matched peaks is by chance, given how many list lines fall per pixel there: a raw
+   count would favor too large a scale, where a dense list puts a line near every peak.
+2. Cells of neighboring windows are chained when they fit one smooth solution (the wavelengths at the two window centres
+   differ by the mean of their scales times the distance - exact for a quadratic), adding their scores.
+3. The best chains are fit with a polynomial (up to cubic), refined by matching every peak to its nearest line.
+4. A solution's **significance** is -log10 of the binomial chance of matching that many peaks within 0.3, 0.5 or 1 px (the
+   chance per peak is the fraction of the range within that distance of a list line, so dense lists are judged fairly),
+   times the number of independent scales and zero points searched (look-elsewhere correction). Only solutions with
+   significance >= `wavecal_vote_min_significance` are used.
+
+The middle of the cut must fall within `min_wavelength`-`max_wavelength`, so give the widest range you are sure of. If
+`wavelength_scale_guess` is a polynomial, its shape (not its scale) straightens the cut before the search
+(`wavecal_vote_use_guess_shape`): echelle orders are strongly curved, and the windows then hold more peaks. The vote only
+supplies the start: the full match starts from the lines it identified (not from the template's 3 brightest), and the
+solution must pass the same gates as any fallback (satisfactory or better, enough lines).
+
+*Tests* (standalone `wavecal`, 148 calibrated cuts from 13 datasets: LUCI OH sky and NeArXe arcs, FLAMINGOS-1 OH,
+FISICA, Flamingos-2, OSIRIS, KAST, MIRADAS SOL/SOS/MOS UArNe), with `wavelength_scale_guess` multiplied by 0.5, 0.7, 1,
+1.5 and 2. No wrong solution was accepted in any of the 740 vote runs (a wrong solution here means its lines are
+identified differently from the known solution). Recovered cuts (vote / default):
+
+| Guess x | 0.5 | 0.7 | 1 | 1.5 | 2 |
+|---|---|---|---|---|---|
+| LUCI NeArXe arc (23) | 23 / 2 | 23 / 0 | 23 / 23 | 23 / 0 | 23 / 0 |
+| LUCI OH sky (24) | 24 / 15 | 24 / 19 | 24 / 24 | 24 / 18 | 24 / 22 |
+| FISICA HeNeAr (22) | 22 / 20 | 22 / 20 | 22 / 22 | 22 / 22 | 22 / 9 |
+| MIRADAS SOL (17) | 17 / 1 | 17 / 1 | 17 / 17 | 16 / 0 | 16 / 0 |
+| MIRADAS MOS order 20 (16) | 16 / 0 | 16 / 0 | 16 / 16 | 16 / 0 | 16 / 0 |
+| MIRADAS SOS (17) | 11 / 6 | 9 / 1 | 17 / 17 | 7 / 0 | 7 / 0 |
+
+FLAMINGOS-1 OH (23 slitlets) and the 6 single-cut datasets were recovered at every factor by the vote (the default missed
+OSIRIS, KAST red, Flamingos-2 HK at 0.5 and Flamingos-2 Ks at 2). The MIRADAS SOS misses are segments with only 10-13
+lines. Null tests (the list mirrored, or its gaps shuffled) never reach significance 7. The vote takes 10-15 s per cut
+(1-5 s for the default), so use it when the guess is not trusted, not as a matter of course.
 
 **Measured line intensities and offsets.** Every frame also gets `wavelengthCalibrated/measured_lines_<frame>.dat`, in
 the line-list format: wavelength, measured intensity (median over the calibrated slitlets, on the list's scale; near 0

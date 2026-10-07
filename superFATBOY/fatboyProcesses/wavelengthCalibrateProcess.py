@@ -1624,7 +1624,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
     #then fit the wavelength solution with iterative sigma clipping.  Returns a dict with the matched lines
     #(reflines = pixel centroids, wlines = wavelengths, lineParams), the fit (coeffs, fit_order, residLines,
     #norig) and the refined gaussWidth, fluxScale, scale and obsSpec.  coeffs (a nonlinear guess) is refined in place.
-    def solveFromMatch(self, fdu, oned, currLines, dumPeak, idx, wclines, wccentroids, lineParams, lineWidths, linePeaks, dummySize, dummyFlux, dummyWave, dummyOrder, fluxScale, masterWave, masterFlux, masterFlag, gaussWidth, scale, nonlinear, coeffs, min_wavelength, max_wavelength, min_lines_nonlinear, min_threshold, min_intensity_pct, use_tolerance, shift_tol, fit_order, pass_name):
+    def solveFromMatch(self, fdu, oned, currLines, dumPeak, idx, wclines, wccentroids, lineParams, lineWidths, linePeaks, dummySize, dummyFlux, dummyWave, dummyOrder, fluxScale, masterWave, masterFlux, masterFlag, gaussWidth, scale, nonlinear, coeffs, min_wavelength, max_wavelength, min_lines_nonlinear, min_threshold, min_intensity_pct, use_tolerance, shift_tol, fit_order, pass_name, matchedWaves=None):
         #reflines = pixel value in image, wlines = wavelength taken from masterWave
         reflines = []
         wlines = []
@@ -1642,6 +1642,10 @@ class wavelengthCalibrateProcess(fatboyProcess):
         obsFlag = np.ones(len(oned))
         #Add actual wavelengths of 3 lines to wlines np.array
         for i in range(len(currLines)):
+            if (matchedWaves is not None):
+                #Line-list wavelengths already identified (wavecal_initial_method = vote)
+                wlines.append(matchedWaves[i])
+                continue
             #Get wavelgnth from masterWave -- dummyWave is now an approximation
             #Find closest wavelength in masterWave
             currWave =  masterWave[np.where(np.abs(masterWave-dummyWave[currLines[i]]) == np.min(np.abs(masterWave-dummyWave[currLines[i]])))][0]
@@ -2472,6 +2476,47 @@ class wavelengthCalibrateProcess(fatboyProcess):
         return guesses
     #end patternWavelengthGuess
 
+    #Line-identification vote (wavecalVote.voteSolutions): intensity-free starting solutions from how the cut's peaks line
+    #up with line-list lines, searched over wavecal_vote_scale_range times the guessed dispersion, with the middle of the
+    #cut inside min/max_wavelength.  A solution is used only if its matches are improbable by chance after the look-elsewhere
+    #correction (significance >= wavecal_vote_min_significance).  Returns up to 3 polynomial guesses carrying the identified
+    #lines (tryWavelengthGuess starts from them instead of the template's 3 brightest lines), or None.
+    def voteWavelengthGuess(self, oned, masterWave, masterFlux, scaleGuess, configGuess, fit_order, fdu, label=""):
+        from superFATBOY import wavecalVote
+        try:
+            (rlo, rhi) = [float(v) for v in str(self.getOption("wavecal_vote_scale_range", fdu.getTag())).split(",")]
+        except Exception:
+            (rlo, rhi) = (1/3.0, 3.0)
+        minSig = float(self.getOption("wavecal_vote_min_significance", fdu.getTag()))
+        (min_wavelength, max_wavelength, scale, nonlinear, coeffs) = configGuess
+        npix = len(oned)
+        shape = None
+        if (nonlinear and len(coeffs) > 2):
+            #mean dispersion of the configured polynomial; its shape straightens the cut
+            scale = (polyFunction(coeffs, float(npix-1), len(coeffs)-1)-polyFunction(coeffs, 0.0, len(coeffs)-1))/float(npix-1)
+            if (str(self.getOption("wavecal_vote_use_guess_shape", fdu.getTag())).lower() == "yes"):
+                shape = list(coeffs[1:])
+        if (scale == 0):
+            scale = scaleGuess
+        lines = np.asarray(masterWave, dtype=np.float64)[np.asarray(masterFlux) > 0]
+        sols = wavecalVote.voteSolutions(oned, lines, scale, window=(min_wavelength, max_wavelength), shape=shape, scaleRange=(rlo, rhi), maxOrder=max(1, min(int(fit_order), 3)))
+        good = [r for r in sols if r["significance"] >= minSig]
+        if (len(sols) > 0):
+            best = sols[0]
+            msg = "Line vote"+label+": best solution matches "+str(best["nmatched"])+" of "+str(best["npeaks"])+" peaks within "+str(best["tol"])+" px (chance "+formatNum(best["chance"])+" per peak), significance "+formatNum(best["significance"])
+            print("wavelengthCalibrateProcess::voteWavelengthGuess> "+msg)
+            self._log.writeLog(__name__, msg)
+        if (len(good) == 0):
+            print("wavelengthCalibrateProcess::voteWavelengthGuess> No significant solution (need "+formatNum(minSig)+")"+label)
+            self._log.writeLog(__name__, "No significant line-vote solution (need "+formatNum(minSig)+")"+label)
+            return None
+        guesses = []
+        for r in good[:3]:
+            glabel = "line vote ("+str(r["nmatched"])+" of "+str(r["npeaks"])+" peaks, significance "+formatNum(r["significance"])+")"+label
+            guesses.append({"poly": np.asarray(r["coeffs"], dtype=np.float64), "ids": r["ids"], "label": glabel, "pad": 0.03})
+        return guesses
+    #end voteWavelengthGuess
+
     #Build the template for one guess, match the 3 brightest lines and, if they match, find the other lines and
     #fit (solveFromMatch).  guess: {"config": (min_wavelength, max_wavelength, scale, nonlinear, coeffs)}, a linear
     #{"lamLo", "lamHi", "scale"} or a polynomial {"poly": power coefficients}, plus "pad" (fraction of the range added
@@ -2521,19 +2566,62 @@ class wavelengthCalibrateProcess(fatboyProcess):
         dummyFlux *= fluxScale
         dummyFlux[dummyFlux == 0] = 1.e-6
         dummyFlux[np.where(dummyFlux < -100)] = 1.e-6
-        (dlines, dpeak, dwave) = self.findTemplateLines(dummyFlux, dummyWave, ctx["masterWave"], ctx["n_brightest_lines"], ctx["gaussWidth"])
-        if (len(dlines) < 3):
-            return None
-        (success, currLines, dumPeak, idx) = self.match3BrightestLines(coeffs, dlines, dpeak, dwave, dummyFlux, dummyOrder, dummyWave, fdu, oned, nonlinear, scale, usePlot, ctx["wccentroids"], ctx["wclines"])
-        if (not success):
-            return None
-        cand = self.solveFromMatch(fdu, oned, currLines, dumPeak, idx, ctx["wclines"], ctx["wccentroids"], ctx["lineParams"], ctx["lineWidths"], ctx["linePeaks"], dummySize, dummyFlux, dummyWave, dummyOrder, fluxScale, ctx["masterWave"], flux, ctx["masterFlag"], ctx["gaussWidth"], scale, nonlinear, coeffs, min_wavelength, max_wavelength, ctx["min_lines_nonlinear"], ctx["min_threshold"], ctx["min_intensity_pct"], ctx["use_tolerance"], ctx["shift_tol"], ctx["fit_order"], ctx["pass_name"])
+        matchedWaves = None
+        seeded = None
+        if ("ids" in guess):
+            #The guess identified lines itself (vote): start from the 3 brightest of them, no template intensities
+            seeded = self.seedFromIdentifiedLines(guess["ids"], ctx, dummyWave, dummyFlux)
+        if (seeded is not None):
+            (currLines, dumPeak, idx, matchedWaves) = seeded
+        else:
+            (dlines, dpeak, dwave) = self.findTemplateLines(dummyFlux, dummyWave, ctx["masterWave"], ctx["n_brightest_lines"], ctx["gaussWidth"])
+            if (len(dlines) < 3):
+                return None
+            (success, currLines, dumPeak, idx) = self.match3BrightestLines(coeffs, dlines, dpeak, dwave, dummyFlux, dummyOrder, dummyWave, fdu, oned, nonlinear, scale, usePlot, ctx["wccentroids"], ctx["wclines"])
+            if (not success):
+                return None
+        cand = self.solveFromMatch(fdu, oned, currLines, dumPeak, idx, ctx["wclines"], ctx["wccentroids"], ctx["lineParams"], ctx["lineWidths"], ctx["linePeaks"], dummySize, dummyFlux, dummyWave, dummyOrder, fluxScale, ctx["masterWave"], flux, ctx["masterFlag"], ctx["gaussWidth"], scale, nonlinear, coeffs, min_wavelength, max_wavelength, ctx["min_lines_nonlinear"], ctx["min_threshold"], ctx["min_intensity_pct"], ctx["use_tolerance"], ctx["shift_tol"], ctx["fit_order"], ctx["pass_name"], matchedWaves)
         (rmsWave, rmsPix, quality, coverage) = self.wavecalQuality(cand["coeffs"], cand["fit_order"], cand["reflines"], cand["residLines"], npix, fdu)
         cand.update({"label": label, "min_wavelength": min_wavelength, "max_wavelength": max_wavelength, "nonlinear": nonlinear, "coeffsGuess": coeffs, "dummySize": dummySize, "dummyOrder": dummyOrder, "masterFlux": flux, "rmsWave": rmsWave, "rmsPix": rmsPix, "quality": quality, "coverage": coverage})
         print("wavelengthCalibrateProcess::tryWavelengthGuess> Solution from "+label+": RMS "+formatNum(rmsPix)+" px ("+quality+"), "+str(len(cand["reflines"]))+" lines")
         self._log.writeLog(__name__, "Solution"+ctx["pass_name"]+fdu.getFullId()+" from "+label+": RMS "+formatNum(rmsPix)+" px ("+quality+"), "+str(len(cand["reflines"]))+" lines")
         return cand
     #end tryWavelengthGuess
+
+    #Start the match from lines a guess has already identified (ids = (pixels, wavelengths), from the vote): the 3
+    #brightest bright data lines (findDataLines) that lie within 1.5 px of an identified peak, in pixel order, with
+    #their template pixels and wavelengths.  Returns (currLines, dumPeak, idx, wavelengths) or None.
+    def seedFromIdentifiedLines(self, ids, ctx, dummyWave, dummyFlux):
+        (xs, lams) = (np.asarray(ids[0], dtype=np.float64), np.asarray(ids[1], dtype=np.float64))
+        if (len(xs) < 3):
+            return None
+        wcc = np.asarray(ctx["wccentroids"], dtype=np.float64)
+        sel = []
+        waves = []
+        for i in range(len(wcc)):
+            k = int(np.argmin(np.abs(xs-wcc[i])))
+            if (abs(xs[k]-wcc[i]) < 1.5 and lams[k] not in waves):
+                sel.append(i)
+                waves.append(lams[k])
+            if (len(sel) == 3):
+                break
+        if (len(sel) < 3):
+            return None
+        order = np.argsort(wcc[sel])
+        idx = np.array(sel)[order]
+        waves = [waves[k] for k in order]
+        dw = np.asarray(dummyWave, dtype=np.float64)
+        if (min(waves) < dw.min() or max(waves) > dw.max()):
+            return None
+        currLines = [int(np.argmin(np.abs(dw-w))) for w in waves]
+        dumPeak = float(sum(dummyFlux[c] for c in currLines))
+        #solveFromMatch rescales the template by (data peaks / template peaks): leave it alone when the list's
+        #intensities put almost nothing at these lines
+        dataPeak = float(np.sum(np.asarray(ctx["linePeaks"])[idx]))
+        if (dumPeak < 0.05*dataPeak):
+            dumPeak = dataPeak
+        return (currLines, dumPeak, idx, waves)
+    #end seedFromIdentifiedLines
 
     #Guesses for a slitlet whose 3 brightest lines did not match, or whose solution is poor (see wavecal_fallback),
     #in the order given.  Each guess uses the line intensities measured in the calibrated slitlets (learnedFlux) when
@@ -2553,6 +2641,12 @@ class wavelengthCalibrateProcess(fatboyProcess):
                     guesses.append(self.neighborWavelengthGuess(oned, solvedCuts, j, seg, window))
             elif (method == "trend"):
                 guesses.append(self.trendWavelengthGuess(j, seg, npix, solvedCuts))
+            elif (method == "guess"):
+                guesses.append({"config": configGuess, "label": "the configured guess"})
+            elif (method == "vote"):
+                g = self.voteWavelengthGuess(oned, ctx["masterWave"], ctx["masterFlux"], scaleGuess, configGuess, ctx["fit_order"], fdu)
+                if (g is not None):
+                    guesses.extend(g)
             elif (method == "pattern" or method == "blind"):
                 #central half first: a linear solution describes it well even when the dispersion is strongly
                 #nonlinear across the whole cut; then the whole cut
@@ -2728,7 +2822,7 @@ class wavelengthCalibrateProcess(fatboyProcess):
         self._options.setdefault('wavelength_scale_guess', None)
         self._optioninfo.setdefault('wavelength_scale_guess', 'Initial guess of linear wavelength scale,\nfor use in constructing "dummy" spectrum.\nCan also be space delmited list of\npolynomail coefficients, starting with linear term.')
         self._options.setdefault('wavecal_fallback', 'learned,neighbor,trend,pattern,blind')
-        self._optioninfo.setdefault('wavecal_fallback', 'If the 3 brightest lines cannot be matched with wavelength_scale_guess and\nmin/max_wavelength (or the solution is graded wavecal_retry_grade or worse), try these guesses,\nin order (comma-separated, or none).  Each uses line intensities measured in the calibrated\nslitlets when there are any.  learned = the configured guess with those measured intensities;\nneighbor = the solution of a calibrated slitlet covering the same range, shifted by\ncross-correlating the 1-d cuts; trend = predicted from the calibrated slitlets on either side\n(orders, e.g. MIRADAS); pattern = matching the spacing ratios of neighboring bright lines\n(no intensities); blind = cross-correlation over scales and zero points.  A solution from a\nfallback is kept only if graded satisfactory or better with enough lines.')
+        self._optioninfo.setdefault('wavecal_fallback', 'If the 3 brightest lines cannot be matched with wavelength_scale_guess and\nmin/max_wavelength (or the solution is graded wavecal_retry_grade or worse), try these guesses,\nin order (comma-separated, or none).  Each uses line intensities measured in the calibrated\nslitlets when there are any.  learned = the configured guess with those measured intensities;\nneighbor = the solution of a calibrated slitlet covering the same range, shifted by\ncross-correlating the 1-d cuts; trend = predicted from the calibrated slitlets on either side\n(orders, e.g. MIRADAS); pattern = matching the spacing ratios of neighboring bright lines\n(no intensities); blind = cross-correlation over scales and zero points; vote = the\nline-identification vote (see wavecal_initial_method).  A solution from a\nfallback is kept only if graded satisfactory or better with enough lines.')
         self._options.setdefault('wavecal_retry_grade', 'poor')
         self._optioninfo.setdefault('wavecal_retry_grade', 'Once all slitlets have been tried, try the wavecal_fallback guesses again for slitlets that\nfailed or were graded this or worse (excellent, good, satisfactory, marginal, poor, or none = only\nfailures); a new solution replaces the old one only if it is clearly better.')
         self._options.setdefault('wavelength_fit_function', 'polynomial')
@@ -2737,6 +2831,14 @@ class wavelengthCalibrateProcess(fatboyProcess):
         self._optioninfo.setdefault('wavecal_blind_scale_range', 'Range of scales searched by the pattern and blind fallbacks, as factors of wavelength_scale_guess')
         self._options.setdefault('wavecal_min_lines', 0)
         self._optioninfo.setdefault('wavecal_min_lines', 'Fewest lines a wavelength solution may be fit with and still be accepted (also for the first-guess match;\nfallback solutions always need at least this many).  0 = automatic, max(8, 2*(fit_order+1)): a fit with\nonly fit_order+1 lines has zero residual and is graded excellent even when wrong.')
+        self._options.setdefault('wavecal_initial_method', 'guess')
+        self._optioninfo.setdefault('wavecal_initial_method', 'How the first solution of each slitlet is found.  guess = the configured guess (wavelength_scale_guess,\nmin/max_wavelength) and the 3 brightest lines matched against the line-list template;\nvote = the line-identification vote (no reliable scale or line intensities needed; see\nwavecal_vote_*), then the configured guess judged like a fallback, then the\nwavecal_fallback methods.')
+        self._options.setdefault('wavecal_vote_scale_range', '0.33,3')
+        self._optioninfo.setdefault('wavecal_vote_scale_range', 'Range of mean dispersions searched by the vote, as factors of wavelength_scale_guess')
+        self._options.setdefault('wavecal_vote_min_significance', 10)
+        self._optioninfo.setdefault('wavecal_vote_min_significance', 'A vote solution is used only if -log10 of the chance of matching that many peaks with list lines,\ntimes the number of hypotheses searched, is at least this')
+        self._options.setdefault('wavecal_vote_use_guess_shape', 'yes')
+        self._optioninfo.setdefault('wavecal_vote_use_guess_shape', 'If wavelength_scale_guess is a polynomial, the vote uses its shape (not its scale) to straighten\nthe cut before searching')
         self._options.setdefault('wavecal_max_scale_deviation', 0.5)
         self._optioninfo.setdefault('wavecal_max_scale_deviation', 'A solution found with the configured guess whose mean dispersion differs from the guess by more than\nthis fraction is rejected (and the wavecal_fallback guesses tried) - it matched the wrong lines.  0 = no check.')
         self._options.setdefault('wavecal_quality_thresholds', '0.1,0.2,0.3,0.4')
@@ -2958,6 +3060,11 @@ class wavelengthCalibrateProcess(fatboyProcess):
         #Offsets of the matched lines from the solutions, per line list: {index: [(j, seg, offset, offset in px)]}
         lineOffsets = dict()
         fallbackMethods = [m.strip().lower() for m in str(self.getOption("wavecal_fallback", fdu.getTag())).split(",") if m.strip().lower() not in ["", "none"]]
+        #wavecal_initial_method = vote: the vote comes first, then the configured guess (judged like a fallback), then
+        #the fallbacks
+        initialVote = (str(self.getOption("wavecal_initial_method", fdu.getTag())).lower() == "vote")
+        if (initialVote):
+            fallbackMethods = ["vote", "guess"]+[m for m in fallbackMethods if m not in ["vote", "guess"]]
         retryGrade = str(self.getOption("wavecal_retry_grade", fdu.getTag())).lower()
         gradeRank = {"excellent": 0, "good": 1, "satisfactory": 2, "marginal": 3, "poor": 4}
         retrySet = set()
@@ -3288,22 +3395,26 @@ class wavelengthCalibrateProcess(fatboyProcess):
                     cand = None
                     failReason = "3 brightest lines not matched"
                     if (passNum == 1):
-                        #Use helper method to match 3 brightest lines in image with
-                        #corresponding lines in template
-                        (success, currLines, dumPeak, idx) = self.match3BrightestLines(coeffs, dlines, dpeak, dwave, dummyFlux, dummyOrder, dummyWave, fdu, oned, nonlinear, scale, usePlot, wccentroids, wclines)
-                        if (success):
-                            #oned = one-d cut of image; match the remaining lines and fit the solution
-                            cand = self.solveFromMatch(fdu, oned, currLines, dumPeak, idx, wclines, wccentroids, lineParams, lineWidths, linePeaks, dummySize, dummyFlux, dummyWave, dummyOrder, fluxScale, masterWave, masterFlux, masterFlag, gaussWidth, scale, nonlinear, coeffs, min_wavelength, max_wavelength, min_lines_nonlinear, min_threshold, min_intensity_pct, use_tolerance, (shift_tol if use_tolerance else None), fit_order, pass_name)
-                            (cand["rmsWave"], cand["rmsPix"], cand["quality"], cand["coverage"]) = self.wavecalQuality(cand["coeffs"], cand["fit_order"], cand["reflines"], cand["residLines"], len(oned), fdu)
-                            cand["label"] = None
-                            reject = self.primaryRejection(cand, scale, len(oned), fdu)
-                            if (reject is not None):
-                                msg = "Rejecting the solution from the configured guess"+pass_name+fdu.getFullId()+" ("+cand["quality"]+"): "+reject
-                                print("wavelengthCalibrateProcess::wavelengthCalibrate> "+msg)
-                                self._log.writeLog(__name__, msg, type=fatboyLog.WARNING)
-                                cand = None
-                                failReason = "fallback solution rejected: "+reject
-                                success = False
+                        success = False
+                        if (initialVote):
+                            failReason = "fallback: no significant line vote"
+                        else:
+                            #Use helper method to match 3 brightest lines in image with
+                            #corresponding lines in template
+                            (success, currLines, dumPeak, idx) = self.match3BrightestLines(coeffs, dlines, dpeak, dwave, dummyFlux, dummyOrder, dummyWave, fdu, oned, nonlinear, scale, usePlot, wccentroids, wclines)
+                            if (success):
+                                #oned = one-d cut of image; match the remaining lines and fit the solution
+                                cand = self.solveFromMatch(fdu, oned, currLines, dumPeak, idx, wclines, wccentroids, lineParams, lineWidths, linePeaks, dummySize, dummyFlux, dummyWave, dummyOrder, fluxScale, masterWave, masterFlux, masterFlag, gaussWidth, scale, nonlinear, coeffs, min_wavelength, max_wavelength, min_lines_nonlinear, min_threshold, min_intensity_pct, use_tolerance, (shift_tol if use_tolerance else None), fit_order, pass_name)
+                                (cand["rmsWave"], cand["rmsPix"], cand["quality"], cand["coverage"]) = self.wavecalQuality(cand["coeffs"], cand["fit_order"], cand["reflines"], cand["residLines"], len(oned), fdu)
+                                cand["label"] = None
+                                reject = self.primaryRejection(cand, scale, len(oned), fdu)
+                                if (reject is not None):
+                                    msg = "Rejecting the solution from the configured guess"+pass_name+fdu.getFullId()+" ("+cand["quality"]+"): "+reject
+                                    print("wavelengthCalibrateProcess::wavelengthCalibrate> "+msg)
+                                    self._log.writeLog(__name__, msg, type=fatboyLog.WARNING)
+                                    cand = None
+                                    failReason = "fallback solution rejected: "+reject
+                                    success = False
                         if (not success):
                             #Fallbacks for a bad initial guess (wavecal_fallback): the best good-enough solution from the
                             #first method that gives one
@@ -3341,8 +3452,11 @@ class wavelengthCalibrateProcess(fatboyProcess):
                     if (cand is None):
                         #Could not match 3 brightest lines
                         if (failReason.startswith("fallback")):
-                            print("wavelengthCalibrateProcess::wavelengthCalibrate> ERROR: No acceptable solution "+pass_name+fdu.getFullId()+" (3 brightest lines not matched with the configured guess; fallback solutions not good enough)! Skipping order!")
-                            self._log.writeLog(__name__, "No acceptable solution "+pass_name+fdu.getFullId()+" (3 brightest lines not matched with the configured guess; fallback solutions not good enough)! Skipping order!", type=fatboyLog.ERROR)
+                            why = "3 brightest lines not matched with the configured guess"
+                            if (initialVote):
+                                why = "no significant line vote"
+                            print("wavelengthCalibrateProcess::wavelengthCalibrate> ERROR: No acceptable solution "+pass_name+fdu.getFullId()+" ("+why+"; fallback solutions not good enough)! Skipping order!")
+                            self._log.writeLog(__name__, "No acceptable solution "+pass_name+fdu.getFullId()+" ("+why+"; fallback solutions not good enough)! Skipping order!", type=fatboyLog.ERROR)
                         else:
                             print("wavelengthCalibrateProcess::wavelengthCalibrate> ERROR: Could not match 3 brightest lines "+pass_name+fdu.getFullId()+"! Skipping order!")
                             self._log.writeLog(__name__, "Could not match 3 brightest lines "+pass_name+fdu.getFullId()+"! Skipping order!", type=fatboyLog.ERROR)
