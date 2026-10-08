@@ -172,7 +172,7 @@
     <option name="max_wavelength" value="26000"/>
     <option name="wavelength_scale_guess" value="-4.5"/>
 <!-- Other line lists and starting guesses (see docs/instruments.md, "Line lists by instrument"):
-  NeArXe arclamps (set use_arclamps = yes; NeArXe.dat is not shipped - copy it next to this file):
+  NeArXe arclamps (set use_arclamps = yes; NeArXe.dat is shipped with the package):
     <option name="line_list" value="NeArXe.dat"/>
   Denser OH list for higher resolution:
     <option name="line_list" value="OHlines_hires_250.dat"/>

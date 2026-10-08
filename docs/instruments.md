@@ -139,6 +139,8 @@ there if the file is not found as given. `superFatboy3.py -config` lists them.
 | `KAST_neon.txt` | 42 | 5770-8635 | air | KAST red arm Ne (and Ar) lamps |
 | `osiris_HgAr_air_nist.dat` | 26 | 3651-9123 | air | OSIRIS HgAr lamp (NIST) |
 | `Xenon_optical_air.dat` | 196 | 2865-8232 | air | Xe I and Xe II, with the strong blue Xe I lines (4501, 4525, 4583, 4624, 4671 A) and intensities measured from a GTC/OSIRIS xenon arc between 3446 and 4606 A (see the file header for how each intensity was derived) |
+| `NeArXe.dat` | 368 | 9489-25794 | not recorded | Ne, Ar and Xe lines for NIR arclamps (LUCI MOS arclamp reduction `caden_luci_lamp.xml`); supplied by Craig |
+| `CuAr_GMOS.dat` | 136 | 3478-10470 | air | Gemini's CuAr list for GMOS (as distributed with DRAGONS), no intensities |
 | `megara_ThArNe_list.dat` | 299 | 5111-8998 | ? | MEGARA ThArNe lamp, all VPH filters (sections by filter in the file) |
 | `wc_miradas_sol.xml`, `wc_miradas_sos.xml`, `wc_miradas_mos_NN.xml` | | | | MIRADAS per-slitlet wavelength-calibration starting guesses (see the [MIRADAS guide](miradas.md)) |
 
@@ -163,7 +165,7 @@ marked *not shipped* live with the user's configurations; copy them next to your
 | Flamingos-2 | HK grism, longslit | `HeNeAr_vac.dat` | `OHlines_hires_*.dat` | -7.5 | 12500 - 22500 | lmcx1 |
 | Flamingos-2 | K, R3000 | `HeNeAr_vac.dat` | | -3.5 | 18000 - 22500/24000 | flamingos2_XID6592 |
 | FISICA | JH | `henearjhuse_air.dat` | `OHlines.dat` | 4.9 | | daveFisica (with `wc_specbench.xml`) |
-| LUCI (LBT) | H+K, MOS | `NeArXe.dat` (*not shipped*) | `OHlines_hires_100.dat` | -4.5 | 13000 - 26000 | caden_luci_test (sky) |
+| LUCI (LBT) | H+K, MOS | `NeArXe.dat` | `OHlines_hires_100.dat` | -4.5 | 13000 - 26000 | caden_luci_test (sky) |
 | SINFONI (VLT) | H+K | `Xenon_IR.dat` | `OHlines_hires_250.dat` | -5.0 | 14000 - 25000 | sinfoni_test_30Dor (lamp); `hklines_mod.dat` also tried |
 | MIRADAS | SOL / SOS / MOS | `Redman_UArNe_lines.dat` or `_MIRADAS.dat`; `NeAr_lines_IR.dat`, `ThAr_lines_IR.dat` | `OHlines_hires_4000.dat` | 0.25 | per order: `wc_miradas_*.xml` | verified configs |
 | KAST (Lick) | blue arm | `KAST_hehgcd.txt` | | 1.0 | 3200 - 5700 | sarik_quack1 |

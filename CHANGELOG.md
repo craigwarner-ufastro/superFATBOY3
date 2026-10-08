@@ -357,6 +357,8 @@ the matching section here. New options are listed with their default.
   crowded-field settings; on-source dithers shown as the alternative). (2.4.19)
 
 ### Line lists (data/linelists)
+
+- `NeArXe.dat` (Ne/Ar/Xe, 9489-25794 A, from Craig; the LUCI arclamp reduction `caden_luci_lamp.xml` ran with it on the defaults) and `CuAr_GMOS.dat` (Gemini's GMOS CuAr list, air, 3478-10470 A) are shipped, v2.5.1.
 - docs/instruments.md: every shipped list with its line count, range and medium, and a "Line lists by instrument"
   table (lamp and sky lists, scale guesses, wavelength ranges, source configs); the spectroscopy templates carry
   the alternatives as commented-out options. (2.4.16)
